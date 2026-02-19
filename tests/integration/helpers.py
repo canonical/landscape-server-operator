@@ -135,6 +135,8 @@ def restore_db_relations(juju: jubilant.Juju, expected: set[str]) -> None:
             )
             juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
 
+    juju.wait(jubilant.all_active, timeout=300)
+
 
 def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
     """
