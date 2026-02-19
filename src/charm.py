@@ -598,13 +598,19 @@ class LandscapeServerCharm(CharmBase):
         logger.info("Writing cookie encryption key")
         update_service_conf({"api": {"cookie-encryption-key": cookie_encryption_key}})
 
-    def _ensure_haproxy_installed(self) -> None:
+    def _is_haproxy_installed(self) -> bool:
         try:
             apt.DebianPackage.from_installed_package(haproxy.HAPROXY_APT_PACKAGE_NAME)
+            return True
+        except PackageNotFoundError:
+            return False
+
+    def _ensure_haproxy_installed(self) -> None:
+        if self._is_haproxy_installed():
             logger.debug("HAProxy is already installed")
             return
-        except PackageNotFoundError:
-            logger.info("HAProxy not installed, installing...")
+
+        logger.info("HAProxy not installed, installing...")
 
         try:
             haproxy.install()
