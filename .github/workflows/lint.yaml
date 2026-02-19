@@ -9,11 +9,6 @@ concurrency:
 
 on:
   pull_request:
-    paths-ignore:
-      - ".gitignore"
-      - "LICENSE"
-      - "**.md"
-      - ".jujuignore"
   workflow_call:
 
 jobs:
