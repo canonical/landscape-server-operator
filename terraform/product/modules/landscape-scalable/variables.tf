@@ -12,7 +12,7 @@ variable "landscape_server" {
     channel  = optional(string, "25.10/edge")
     config = optional(map(string), {
       autoregistration               = "true"
-      landscape_ppa                  = "ppa:landscape/self-hosted-25.10"
+      landscape_ppa                  = "ppa:landscape/self-hosted-beta"
       min_install                    = "true"
       enable_hostagent_messenger     = "true"
       enable_ubuntu_installer_attach = "true"

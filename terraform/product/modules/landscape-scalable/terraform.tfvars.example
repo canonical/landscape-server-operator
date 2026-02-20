@@ -7,6 +7,6 @@ landscape_server = {
   config = {
     min_install      = "true"
     autoregistration = "true"
-    landscape_ppa    = "ppa:landscape/self-hosted-25.10"
+    landscape_ppa    = "ppa:landscape/self-hosted-beta"
   }
 }
