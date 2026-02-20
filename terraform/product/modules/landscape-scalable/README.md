@@ -50,8 +50,8 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
-| Name | Version |
-|------|---------|
+| Name                                                                      | Version |
+| ------------------------------------------------------------------------- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.10 |
 | <a name="requirement_juju"></a> [juju](#requirement\_juju) | ~> 1.0 |
 
@@ -71,15 +71,15 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 
 ## Resources
 
-| Name | Type |
-|------|------|
-| [juju_application.rabbitmq_server](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/application) | resource |
-| [juju_integration.landscape_server_haproxy](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
-| [juju_integration.landscape_server_inbound_amqp](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
-| [juju_integration.landscape_server_outbound_amqp](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
+| Name                                                                                                                                       | Type     |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| [juju_application.rabbitmq_server](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/application)                    | resource |
+| [juju_integration.landscape_server_haproxy](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration)           | resource |
+| [juju_integration.landscape_server_inbound_amqp](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration)      | resource |
+| [juju_integration.landscape_server_outbound_amqp](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration)     | resource |
 | [juju_integration.landscape_server_postgresql_legacy](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_server_postgresql_modern](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
-| [juju_integration.landscape_server_rabbitmq_server](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
+| [juju_integration.landscape_server_rabbitmq_server](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration)   | resource |
 
 ## Inputs
 
@@ -93,13 +93,13 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| <a name="output_admin_email"></a> [admin\_email](#output\_admin\_email) | Administrator email from the Landscape Server config. |
-| <a name="output_admin_password"></a> [admin\_password](#output\_admin\_password) | Administrator password from the Landscape Server config (sensitive). |
-| <a name="output_applications"></a> [applications](#output\_applications) | The charms included in the module. |
-| <a name="output_haproxy_self_signed"></a> [haproxy\_self\_signed](#output\_haproxy\_self\_signed) | Indicates whether HAProxy is using a self-signed TLS certificate. |
-| <a name="output_has_modern_amqp_relations"></a> [has\_modern\_amqp\_relations](#output\_has\_modern\_amqp\_relations) | Indicates whether the deployment uses the modern inbound/outbound AMQP endpoints. |
-| <a name="output_has_modern_postgres_interface"></a> [has\_modern\_postgres\_interface](#output\_has\_modern\_postgres\_interface) | Indicates whether the deployment supports the modern PostgreSQL charm interface. |
-| <a name="output_registration_key"></a> [registration\_key](#output\_registration\_key) | Registration key from the Landscape Server config. |
+| Name                                                                                                                              | Description                                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| <a name="output_admin_email"></a> [admin\_email](#output\_admin\_email)                                                           | Administrator email from the Landscape Server config.                             |
+| <a name="output_admin_password"></a> [admin\_password](#output\_admin\_password)                                                  | Administrator password from the Landscape Server config (sensitive).              |
+| <a name="output_applications"></a> [applications](#output\_applications)                                                          | The charms included in the module.                                                |
+| <a name="output_haproxy_self_signed"></a> [haproxy\_self\_signed](#output\_haproxy\_self\_signed)                                 | Indicates whether HAProxy is using a self-signed TLS certificate.                 |
+| <a name="output_has_modern_amqp_relations"></a> [has\_modern\_amqp\_relations](#output\_has\_modern\_amqp\_relations)             | Indicates whether the deployment uses the modern inbound/outbound AMQP endpoints. |
+| <a name="output_has_modern_postgres_interface"></a> [has\_modern\_postgres\_interface](#output\_has\_modern\_postgres\_interface) | Indicates whether the deployment supports the modern PostgreSQL charm interface.  |
+| <a name="output_registration_key"></a> [registration\_key](#output\_registration\_key)                                            | Registration key from the Landscape Server config.                                |
 <!-- END_TF_DOCS -->

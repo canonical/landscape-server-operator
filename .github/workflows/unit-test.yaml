@@ -4,16 +4,11 @@
 name: Unit test charm
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: unit-test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   pull_request:
-    paths-ignore:
-      - ".gitignore"
-      - "LICENSE"
-      - "**.md"
-      - ".jujuignore"
   workflow_call:
 
 jobs:

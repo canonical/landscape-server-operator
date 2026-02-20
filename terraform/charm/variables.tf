@@ -44,7 +44,14 @@ variable "revision" {
 }
 
 variable "units" {
-  description = "Number of units to deploy."
+  description = "Number of units to deploy. Ignored when 'machines' is set."
   type        = number
   default     = 1
+}
+
+variable "machines" {
+  description = "Set of machine IDs to deploy units to. When specified, the 'units' variable is ignored."
+  type        = set(string)
+  default     = null
+  nullable    = true
 }

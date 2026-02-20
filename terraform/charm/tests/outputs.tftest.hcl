@@ -237,3 +237,84 @@ run "modern_postgres_relations_null_revision" {
     error_message = "Null revision should have db relation"
   }
 }
+
+run "internal_haproxy_relations" {
+  command = plan
+
+  variables {
+    model    = "test-model"
+    channel  = "26.04/beta"
+    revision = 216
+    base     = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.load_balancer_certificates == "load-balancer-certificates"
+    error_message = "Rev 216+ should have load-balancer-certificates relation"
+  }
+
+  assert {
+    condition     = output.requires.http_ingress == "http-ingress"
+    error_message = "Rev 216+ should have http-ingress relation"
+  }
+
+  assert {
+    condition     = output.requires.hostagent_messenger_ingress == "hostagent-messenger-ingress"
+    error_message = "Rev 216+ should have hostagent-messenger-ingress relation"
+  }
+
+  assert {
+    condition     = output.requires.ubuntu_installer_attach_ingress == "ubuntu-installer-attach-ingress"
+    error_message = "Rev 216+ should have ubuntu-installer-attach-ingress relation"
+  }
+
+  assert {
+    condition     = !can(output.requires.website)
+    error_message = "Rev 216+ should not have legacy website relation"
+  }
+}
+
+run "legacy_haproxy_relations" {
+  command = plan
+
+  variables {
+    model    = "test-model"
+    channel  = "25.10/edge"
+    revision = 215
+    base     = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.website == "website"
+    error_message = "Pre-216 should have legacy website relation"
+  }
+
+  assert {
+    condition     = !can(output.requires.load_balancer_certificates)
+    error_message = "Pre-216 should not have load-balancer-certificates relation"
+  }
+
+  assert {
+    condition     = !can(output.requires.http_ingress)
+    error_message = "Pre-216 should not have ingress relations"
+  }
+}
+
+run "internal_haproxy_null_revision" {
+  command = plan
+
+  variables {
+    model    = "test-model"
+    revision = null
+  }
+
+  assert {
+    condition     = can(output.requires.load_balancer_certificates)
+    error_message = "Null revision should have internal haproxy relations"
+  }
+
+  assert {
+    condition     = !can(output.requires.website)
+    error_message = "Null revision should not have legacy website relation"
+  }
+}

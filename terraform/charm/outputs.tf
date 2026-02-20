@@ -30,11 +30,22 @@ locals {
   postgres_rels_updated_rev     = 213
   has_modern_postgres_interface = var.revision != null ? var.revision >= local.postgres_rels_updated_rev : true
   db_relations                  = local.has_modern_postgres_interface ? { database = "database", db = "db" } : { db = "db" }
+
+  # Internal HAProxy support added in rev 216 (26.04 beta)
+  internal_haproxy_rev = 216
+  has_internal_haproxy = var.revision != null ? var.revision >= local.internal_haproxy_rev : true
+  haproxy_relations    = local.has_internal_haproxy ? {} : { website = "website" }
+  tls_relations        = local.has_internal_haproxy ? { load_balancer_certificates = "load-balancer-certificates" } : {}
+  ingress_relations = local.has_internal_haproxy ? {
+    http_ingress                    = "http-ingress"
+    hostagent_messenger_ingress     = "hostagent-messenger-ingress"
+    ubuntu_installer_attach_ingress = "ubuntu-installer-attach-ingress"
+  } : {}
 }
 
 output "requires" {
-  description = "Map of integration endpoints this charm requires (`application-dashboard`, `db` or `db`/`database`, `amqp` or `inbound-amqp`/`outbound-amqp`)."
+  description = "Map of integration endpoints this charm requires (`application-dashboard`, `db` or `db`/`database`, `amqp` or `inbound-amqp`/`outbound-amqp`, `load-balancer-certificates` for internal HAProxy, `website` for legacy HAProxy)."
   value = merge({
     application_dashboard = "application-dashboard",
-  }, local.amqp_relations, local.db_relations)
+  }, local.amqp_relations, local.db_relations, local.haproxy_relations, local.tls_relations, local.ingress_relations)
 }
