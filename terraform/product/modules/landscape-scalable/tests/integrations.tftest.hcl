@@ -256,6 +256,10 @@ run "test_internal_haproxy_true" {
     landscape_server = {
       revision = 216
     }
+    http_ingress                    = {}
+    hostagent_messenger_ingress     = {}
+    ubuntu_installer_attach_ingress = {}
+    lb_certs                        = {}
   }
 
   override_module {
@@ -379,10 +383,7 @@ run "test_tls_certificates_integration" {
     landscape_server = {
       revision = 216
     }
-    tls_certificates_provider = {
-      app_name = "self-signed-certificates"
-      endpoint = "certificates"
-    }
+    lb_certs = {}
   }
 
   override_module {
@@ -404,8 +405,13 @@ run "test_tls_certificates_integration" {
   }
 
   assert {
+    condition     = length(juju_application.lb_certs) == 1
+    error_message = "lb_certs application should be deployed"
+  }
+
+  assert {
     condition     = length(juju_integration.landscape_server_tls_certificates) == 1
-    error_message = "TLS certificates integration should be created when provider is specified"
+    error_message = "TLS certificates integration should be created when lb_certs is specified"
   }
 }
 
@@ -416,10 +422,7 @@ run "test_tls_certificates_integration_skipped" {
     landscape_server = {
       revision = 216
     }
-    tls_certificates_provider = {
-      app_name = ""
-      endpoint = "certificates"
-    }
+    lb_certs = null
   }
 
   override_module {
@@ -441,7 +444,12 @@ run "test_tls_certificates_integration_skipped" {
   }
 
   assert {
+    condition     = length(juju_application.lb_certs) == 0
+    error_message = "lb_certs application should not be deployed when set to null"
+  }
+
+  assert {
     condition     = length(juju_integration.landscape_server_tls_certificates) == 0
-    error_message = "TLS certificates integration should not be created when app_name is empty"
+    error_message = "TLS certificates integration should not be created when lb_certs is null"
   }
 }

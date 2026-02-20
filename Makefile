@@ -2,8 +2,9 @@ include terraform/charm/Makefile
 include terraform/product/Makefile
 
 DIR_NAME := $(notdir $(shell pwd))
-BUNDLE_PATH ?= ./bundle-examples/internal-haproxy/internal-haproxy.bundle.yaml
-LBAAS_BUNDLE_PATH ?= ./bundle-examples/internal-haproxy/internal-haproxy.bundle.yaml
+LBAAS_DIR ?= ./bundle-examples/lbaas
+LBAAS_BUNDLE_PATH ?= $(LBAAS_DIR)/lbaas.bundle.yaml
+BUNDLE_PATH ?= ./bundle-examples/internal-haproxy.bundle.yaml
 PLATFORM ?= ubuntu@24.04:amd64
 MODEL_NAME ?= $(DIR_NAME)-build
 LBAAS_MODEL_NAME ?= lbaas
@@ -75,9 +76,8 @@ install-terraform:
 clean-lbaas:
 	-juju destroy-model --no-prompt $(LBAAS_MODEL_NAME) \
 		--force --no-wait --destroy-storage
-	-cd bundle-examples/internal-haproxy && \
-	rm -rf *.tfstate && \
-	cd ../..
+	-cd $(LBAAS_DIR) && \
+	rm -rf *.tfstate
 
 .PHONY: lbaas
 lbaas: clean-lbaas install-terraform deploy-lbaas
@@ -92,7 +92,8 @@ clean:
 	-rm -f landscape-server_$(CLEAN_PLATFORM).charm
 	-juju destroy-model --no-prompt $(MODEL_NAME) \
 		--force --no-wait --destroy-storage
-	-cd terraform/product/modules/landscape-scalable && rm -rf *.tfstate
+	-cd terraform/product/modules/landscape-scalable && \
+		rm -rf *.tfstate
 
 .PHONY: terraform-check-all
 terraform-check-all: install-terraform

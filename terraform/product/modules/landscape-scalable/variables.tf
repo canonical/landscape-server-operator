@@ -11,6 +11,7 @@ variable "landscape_server" {
     app_name = optional(string, "landscape-server")
     channel  = optional(string, "25.10/edge")
     config = optional(map(string), {
+      autoregistration               = "true"
       landscape_ppa                  = "ppa:landscape/self-hosted-25.10"
       min_install                    = "true"
       enable_hostagent_messenger     = "true"
@@ -20,7 +21,7 @@ variable "landscape_server" {
     resources   = optional(map(string), {})
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
-    units       = optional(number, 3)
+    units       = optional(number, 1)
   })
 
   default = {}

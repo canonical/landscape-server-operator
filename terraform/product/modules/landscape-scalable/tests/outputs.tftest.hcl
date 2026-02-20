@@ -170,6 +170,10 @@ run "validate_internal_haproxy_outputs" {
     landscape_server = {
       revision = 216
     }
+    http_ingress                    = {}
+    hostagent_messenger_ingress     = {}
+    ubuntu_installer_attach_ingress = {}
+    lb_certs                        = {}
   }
 
   override_module {

@@ -98,7 +98,7 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 resource "juju_offer" "haproxy_route" {
   model            = juju_model.lbaas_model.name
   application_name = juju_application.haproxy.name
-  endpoint         = "haproxy-route"
+  endpoints        = "haproxy-route"
 }
 
 data "juju_offer" "haproxy_route" {

@@ -1,4 +1,4 @@
-description: Landscape Scalable Dev with internal HAProxy
+description: Landscape Scalable Dev with internal HAProxy for LBaaS
 applications:
   postgresql:
     channel: 16/stable
