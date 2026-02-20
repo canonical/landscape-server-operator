@@ -11,6 +11,7 @@ LBAAS_MODEL_NAME ?= lbaas
 CLEAN_PLATFORM := $(subst :,-,$(PLATFORM))
 SKIP_BUILD ?= false
 SKIP_CLEAN ?= false
+SKIP_ADD_MODEL ?= false
 
 # Python testing and linting
 .PHONY: test
