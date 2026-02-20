@@ -1,5 +1,16 @@
 # © 2026 Canonical Ltd.
 
+resource "juju_machine" "landscape_server" {
+  count = var.landscape_server.units
+  model = var.model
+  base  = var.landscape_server.base
+  name  = "landscape-server-${count.index}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 module "landscape_server" {
   source      = "../../../charm"
   model       = var.model
@@ -9,9 +20,13 @@ module "landscape_server" {
   constraints = var.landscape_server.constraints
   revision    = var.landscape_server.revision
   base        = var.landscape_server.base
-  units       = var.landscape_server.units
+  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
+
+  depends_on = [juju_machine.landscape_server]
 }
 
+# Legacy external HAProxy (pre-26.04 only)
+# For 26.04+ with internal HAProxy, external LB would be in a separate model (LBaaS)
 module "haproxy" {
   source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm?ref=rev250"
   model       = var.model
@@ -22,6 +37,65 @@ module "haproxy" {
   revision    = var.haproxy.revision
   base        = var.haproxy.base
   units       = var.haproxy.units
+
+  count = var.haproxy != null && !local.has_internal_haproxy ? 1 : 0
+}
+
+resource "juju_application" "http_ingress" {
+  name        = var.http_ingress.app_name
+  model       = var.model
+  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
+  constraints = var.http_ingress.constraints
+  config      = var.http_ingress.config
+
+  charm {
+    name     = "ingress-configurator"
+    revision = var.http_ingress.revision
+    channel  = var.http_ingress.channel
+    base     = var.http_ingress.base
+  }
+
+  depends_on = [juju_machine.landscape_server]
+
+  count = var.http_ingress != null && local.has_internal_haproxy ? 1 : 0
+}
+
+resource "juju_application" "hostagent_messenger_ingress" {
+  name        = var.hostagent_messenger_ingress.app_name
+  model       = var.model
+  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
+  constraints = var.hostagent_messenger_ingress.constraints
+  config      = var.hostagent_messenger_ingress.config
+
+  charm {
+    name     = "ingress-configurator"
+    revision = var.hostagent_messenger_ingress.revision
+    channel  = var.hostagent_messenger_ingress.channel
+    base     = var.hostagent_messenger_ingress.base
+  }
+
+  depends_on = [juju_machine.landscape_server]
+
+  count = var.hostagent_messenger_ingress != null && local.has_internal_haproxy ? 1 : 0
+}
+
+resource "juju_application" "ubuntu_installer_attach_ingress" {
+  name        = var.ubuntu_installer_attach_ingress.app_name
+  model       = var.model
+  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
+  constraints = var.ubuntu_installer_attach_ingress.constraints
+  config      = var.ubuntu_installer_attach_ingress.config
+
+  charm {
+    name     = "ingress-configurator"
+    revision = var.ubuntu_installer_attach_ingress.revision
+    channel  = var.ubuntu_installer_attach_ingress.channel
+    base     = var.ubuntu_installer_attach_ingress.base
+  }
+
+  depends_on = [juju_machine.landscape_server]
+
+  count = var.ubuntu_installer_attach_ingress != null && local.has_internal_haproxy ? 1 : 0
 }
 
 module "postgresql" {
@@ -34,6 +108,8 @@ module "postgresql" {
   revision        = var.postgresql.revision
   base            = var.postgresql.base
   units           = var.postgresql.units
+
+  count = var.postgresql != null ? 1 : 0
 }
 
 # TODO: Replace with internal charm module if/when it's created
@@ -45,15 +121,37 @@ resource "juju_application" "rabbitmq_server" {
   config      = var.rabbitmq_server.config
 
   charm {
-    name     = var.rabbitmq_server.app_name
+    name     = "rabbitmq-server"
     revision = var.rabbitmq_server.revision
     channel  = var.rabbitmq_server.channel
     base     = var.rabbitmq_server.base
   }
+
+  count = var.rabbitmq_server != null ? 1 : 0
+}
+
+resource "juju_application" "lb_certs" {
+  name        = var.lb_certs.app_name
+  model       = var.model
+  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
+  constraints = var.lb_certs.constraints
+  config      = var.lb_certs.config
+
+  charm {
+    name     = "self-signed-certificates"
+    revision = var.lb_certs.revision
+    channel  = var.lb_certs.channel
+    base     = var.lb_certs.base
+  }
+
+  depends_on = [juju_machine.landscape_server]
+
+  count = var.lb_certs != null && local.has_internal_haproxy ? 1 : 0
 }
 
 locals {
   has_modern_amqp_relations = can(module.landscape_server.requires.inbound_amqp) && can(module.landscape_server.requires.outbound_amqp)
+  has_internal_haproxy      = can(module.landscape_server.requires.load_balancer_certificates)
 }
 
 resource "juju_integration" "landscape_server_inbound_amqp" {
@@ -65,12 +163,12 @@ resource "juju_integration" "landscape_server_inbound_amqp" {
   }
 
   application {
-    name = juju_application.rabbitmq_server.name
+    name = juju_application.rabbitmq_server[0].name
   }
 
   depends_on = [module.landscape_server, juju_application.rabbitmq_server]
 
-  count = local.has_modern_amqp_relations ? 1 : 0
+  count = var.rabbitmq_server != null && local.has_modern_amqp_relations ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_outbound_amqp" {
@@ -82,12 +180,12 @@ resource "juju_integration" "landscape_server_outbound_amqp" {
   }
 
   application {
-    name = juju_application.rabbitmq_server.name
+    name = juju_application.rabbitmq_server[0].name
   }
 
   depends_on = [module.landscape_server, juju_application.rabbitmq_server]
 
-  count = local.has_modern_amqp_relations ? 1 : 0
+  count = var.rabbitmq_server != null && local.has_modern_amqp_relations ? 1 : 0
 }
 
 # TODO: update when RMQ charm module exists
@@ -99,14 +197,15 @@ resource "juju_integration" "landscape_server_rabbitmq_server" {
   }
 
   application {
-    name = juju_application.rabbitmq_server.name
+    name = juju_application.rabbitmq_server[0].name
   }
 
   depends_on = [module.landscape_server, juju_application.rabbitmq_server]
 
-  count = local.has_modern_amqp_relations ? 0 : 1
+  count = var.rabbitmq_server != null && !local.has_modern_amqp_relations ? 1 : 0
 }
 
+# Legacy HAProxy integration (pre-26.04 internal haproxy)
 resource "juju_integration" "landscape_server_haproxy" {
   model = var.model
 
@@ -115,11 +214,85 @@ resource "juju_integration" "landscape_server_haproxy" {
   }
 
   application {
-    name = module.haproxy.app_name
+    name = module.haproxy[0].app_name
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
+  count = var.haproxy != null && !local.has_internal_haproxy ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_tls_certificates" {
+  model = var.model
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.load_balancer_certificates
+  }
+
+  application {
+    name     = juju_application.lb_certs[0].name
+    endpoint = "certificates"
+  }
+
+  depends_on = [module.landscape_server, juju_application.lb_certs]
+
+  count = var.lb_certs != null && local.has_internal_haproxy ? 1 : 0
+}
+
+# Ingress configurator integrations (optional, for LBaaS)
+resource "juju_integration" "landscape_server_http_ingress" {
+  model = var.model
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.http_ingress
+  }
+
+  application {
+    name     = juju_application.http_ingress[0].name
+    endpoint = "ingress"
+  }
+
+  depends_on = [module.landscape_server, juju_application.http_ingress]
+
+  count = var.http_ingress != null && local.has_internal_haproxy ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_hostagent_messenger_ingress" {
+  model = var.model
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.hostagent_messenger_ingress
+  }
+
+  application {
+    name     = juju_application.hostagent_messenger_ingress[0].name
+    endpoint = "ingress"
+  }
+
+  depends_on = [module.landscape_server, juju_application.hostagent_messenger_ingress]
+
+  count = var.hostagent_messenger_ingress != null && local.has_internal_haproxy ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_ubuntu_installer_attach_ingress" {
+  model = var.model
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.ubuntu_installer_attach_ingress
+  }
+
+  application {
+    name     = juju_application.ubuntu_installer_attach_ingress[0].name
+    endpoint = "ingress"
+  }
+
+  depends_on = [module.landscape_server, juju_application.ubuntu_installer_attach_ingress]
+
+  count = var.ubuntu_installer_attach_ingress != null && local.has_internal_haproxy ? 1 : 0
 }
 
 locals {
@@ -136,11 +309,11 @@ resource "juju_integration" "landscape_server_postgresql_legacy" {
   }
 
   application {
-    name     = module.postgresql.application_name
+    name     = module.postgresql[0].application_name
     endpoint = "db-admin"
   }
 
-  count = local.has_modern_pg_interface ? 0 : 1
+  count = var.postgresql != null && !local.has_modern_pg_interface ? 1 : 0
 
   depends_on = [module.landscape_server, module.postgresql]
 
@@ -155,12 +328,12 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
   }
 
   application {
-    name     = module.postgresql.application_name
-    endpoint = module.postgresql.provides.database
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
   }
 
   depends_on = [module.landscape_server, module.postgresql]
 
-  count = local.has_modern_pg_interface ? 1 : 0
+  count = var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
 
 }

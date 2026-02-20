@@ -11,8 +11,11 @@ resource "juju_application" "landscape_server" {
     base     = var.base
   }
 
+  expose {}
+
   config      = var.config
   constraints = var.constraints
-  units       = var.units
+  units       = var.machines == null ? var.units : null
+  machines    = var.machines
   trust       = true
 }
