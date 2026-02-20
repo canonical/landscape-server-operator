@@ -27,7 +27,6 @@ applications:
       enable_hostagent_messenger: True
       enable_ubuntu_installer_attach: True
       root_url: https://landscape.local/
-      redirect_https: none
     base: ubuntu@24.04
   lb-certs:
     charm: self-signed-certificates

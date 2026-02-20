@@ -78,11 +78,11 @@ clean-lbaas:
 	-juju destroy-model --no-prompt $(LBAAS_MODEL_NAME) \
 		--force --no-wait --destroy-storage
 	-cd $(LBAAS_DIR) && \
-	rm -rf *.tfstate
+		rm -rf *.tfstate
 
 .PHONY: lbaas
 lbaas: clean-lbaas install-terraform deploy-lbaas
-	cd bundle-examples/internal-haproxy && \
+	cd $(LBAAS_DIR) && \
 	terraform init -backend=false && \
 	terraform apply -auto-approve \
 		-var model_name=$(MODEL_NAME) \

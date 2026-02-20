@@ -14,6 +14,7 @@ variable "landscape_server" {
       autoregistration               = "true"
       landscape_ppa                  = "ppa:landscape/self-hosted-beta"
       min_install                    = "true"
+      root_url                       = "https://landscape.local/"
       enable_hostagent_messenger     = "true"
       enable_ubuntu_installer_attach = "true"
     })
