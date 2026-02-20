@@ -133,7 +133,7 @@ resource "juju_application" "rabbitmq_server" {
 resource "juju_application" "lb_certs" {
   name        = var.lb_certs.app_name
   model       = var.model
-  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
+  units       = var.lb_certs.units
   constraints = var.lb_certs.constraints
   config      = var.lb_certs.config
 
@@ -143,8 +143,6 @@ resource "juju_application" "lb_certs" {
     channel  = var.lb_certs.channel
     base     = var.lb_certs.base
   }
-
-  depends_on = [juju_machine.landscape_server]
 
   count = var.lb_certs != null && local.has_internal_haproxy ? 1 : 0
 }
