@@ -313,7 +313,7 @@ resource "juju_integration" "landscape_server_postgresql_legacy" {
 
   count = var.postgresql != null && !local.has_modern_pg_interface ? 1 : 0
 
-  depends_on = [module.landscape_server, module.postgresql]
+  depends_on = [module.landscape_server.juju_application.landscape_server, module.postgresql[0].juju_application.machine_postgresql]
 
 }
 
@@ -330,7 +330,7 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
     endpoint = module.postgresql[0].provides.database
   }
 
-  depends_on = [module.landscape_server, module.postgresql]
+  depends_on = [module.landscape_server.juju_application.landscape_server, module.postgresql[0].juju_application.machine_postgresql]
 
   count = var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
 
