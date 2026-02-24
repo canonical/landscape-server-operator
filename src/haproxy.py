@@ -551,7 +551,7 @@ def create_hostagent_messenger_service(
 
 def create_ubuntu_installer_attach_service(
     peer_ips: list[IPvAnyAddress],
-    service_ports: dict,
+    service_ports: ServicePorts,
     server_options: str = SERVER_OPTIONS,
 ) -> Service:
     servers = [

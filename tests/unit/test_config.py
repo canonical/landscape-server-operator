@@ -190,3 +190,17 @@ def test_port_collision_from_config_detected():
     )
 
     assert error_message in str(context)
+
+def test_valid_custom_ports():
+    defaults = get_config_defaults()
+
+    defaults["appserver_base_port"] = 50_000
+    defaults["pingserver_base_port"] = 50_100
+    defaults["message_server_base_port"] = 50_200
+    defaults["api_base_port"] = 50_300
+    defaults["package_upload_base_port"] = 50_400
+    defaults["hostagent_server_base_port"] = 50_500
+    defaults["ubuntu_installer_attach_base_port"] = 50_600
+    defaults["worker_counts"] = 100
+
+    LandscapeCharmConfiguration(**defaults)
