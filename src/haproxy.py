@@ -406,7 +406,7 @@ def create_http_service(
     peer_ips: list[IPvAnyAddress],
     leader_ip: IPvAnyAddress,
     worker_counts: int,
-    service_ports: "ServicePorts" = SERVICE_PORTS,
+    service_ports: ServicePorts,
     server_options: str = SERVER_OPTIONS,
 ) -> Service:
     (appservers, pingservers, message_servers, api_servers) = [
@@ -464,8 +464,8 @@ def create_https_service(
     peer_ips: list[IPvAnyAddress],
     leader_ip: IPvAnyAddress,
     worker_counts: int,
+    service_ports: ServicePorts,
     server_options: str = SERVER_OPTIONS,
-    service_ports: ServicePorts = SERVICE_PORTS,
 ) -> Service:
     """
     Create the Landscape HTTPS `services` configurations for HAProxy.
@@ -527,8 +527,8 @@ def create_https_service(
 
 def create_hostagent_messenger_service(
     peer_ips: list[IPvAnyAddress],
+    service_ports: dict,
     server_options: str = SERVER_OPTIONS,
-    service_ports: dict = SERVICE_PORTS,
 ) -> Service:
     servers = [
         Server(
@@ -551,8 +551,8 @@ def create_hostagent_messenger_service(
 
 def create_ubuntu_installer_attach_service(
     peer_ips: list[IPvAnyAddress],
+    service_ports: dict,
     server_options: str = SERVER_OPTIONS,
-    service_ports: dict = SERVICE_PORTS,
 ) -> Service:
     servers = [
         Server(

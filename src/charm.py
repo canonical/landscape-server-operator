@@ -505,6 +505,26 @@ class LandscapeServerCharm(CharmBase):
             service_conf_updates["api"]["root-url"] = root_url
             service_conf_updates["package-upload"] = {"root-url": root_url}
 
+        service_conf_updates["landscape"]["base_port"] = str(
+            self.charm_config.appserver_base_port
+        )
+        service_conf_updates["pingserver"]["base_port"] = str(
+            self.charm_config.pingserver_base_port
+        )
+        service_conf_updates["message-server"]["base_port"] = str(
+            self.charm_config.message_server_base_port
+        )
+        service_conf_updates["api"]["base_port"] = str(self.charm_config.api_base_port)
+        service_conf_updates.setdefault("package-upload", {})["base_port"] = str(
+            self.charm_config.package_upload_base_port
+        )
+        service_conf_updates["hostagent-message-server"] = {
+            "base_port": str(self.charm_config.hostagent_server_base_port)
+        }
+        service_conf_updates["ubuntu-installer-attach"] = {
+            "base_port": str(self.charm_config.ubuntu_installer_attach_base_port)
+        }
+
         update_service_conf(service_conf_updates)
 
         db_kargs = {}
@@ -1171,6 +1191,18 @@ class LandscapeServerCharm(CharmBase):
             )
             return
 
+        service_ports = {
+            "appserver": self.charm_config.appserver_base_port,
+            "pingserver": self.charm_config.pingserver_base_port,
+            "message-server": self.charm_config.message_server_base_port,
+            "api": self.charm_config.api_base_port,
+            "package-upload": self.charm_config.package_upload_base_port,
+            "hostagent-messenger": self.charm_config.hostagent_server_base_port,
+            "ubuntu-installer-attach": (
+                self.charm_config.ubuntu_installer_attach_base_port
+            ),
+        }
+
         try:
             rendered = haproxy.render_config(
                 all_ips=peer_ips.all_ips,
@@ -1180,6 +1212,7 @@ class LandscapeServerCharm(CharmBase):
                 enable_hostagent_messenger=self.charm_config.enable_hostagent_messenger,
                 enable_ubuntu_installer_attach=self._stored.enable_ubuntu_installer_attach,
                 max_connections=self.charm_config.max_global_haproxy_connections,
+                service_ports=service_ports,
             )
 
         except haproxy.HAProxyError as e:

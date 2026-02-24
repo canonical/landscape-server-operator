@@ -64,6 +64,14 @@ def test_defaults():
     assert not config.enable_ubuntu_installer_attach
     assert config.max_global_haproxy_connections == 4096
 
+    assert config.appserver_base_port == 8080
+    assert config.pingserver_base_port == 8070
+    assert config.message_server_base_port == 8090
+    assert config.api_base_port == 9080
+    assert config.package_upload_base_port == 9100
+    assert config.hostagent_server_base_port == 50052
+    assert config.ubuntu_installer_attach_base_port == 53354
+
 
 @pytest.mark.parametrize(
     "openid_parameter",
@@ -150,3 +158,35 @@ def test_oidc_minimum_fields(
             LandscapeCharmConfiguration(**defaults)
     else:
         LandscapeCharmConfiguration(**defaults)
+
+
+def test_port_collision_from_workers_detected():
+    defaults = get_config_defaults()
+    defaults["worker_counts"] = 11
+
+    with pytest.raises(ValidationError) as context:
+        LandscapeCharmConfiguration(**defaults)
+
+    error_message = (
+        "Configured service base ports and worker counts lead to overuse of the "
+        "following ports"
+    )
+
+    assert error_message in str(context)
+
+
+def test_port_collision_from_config_detected():
+    defaults = get_config_defaults()
+    defaults["worker_counts"] = 1
+    defaults["appserver_base_port"] = 9999
+    defaults["api_base_port"] = 9999
+
+    with pytest.raises(ValidationError) as context:
+        LandscapeCharmConfiguration(**defaults)
+
+    error_message = (
+        "Configured service base ports and worker counts lead to overuse of the "
+        "following ports"
+    )
+
+    assert error_message in str(context)

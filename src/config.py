@@ -2,6 +2,7 @@
 Configuration for the Landscape charm.
 """
 
+from collections import Counter
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,13 @@ class LandscapeCharmConfiguration(BaseModel):
     enable_hostagent_messenger: bool
     enable_ubuntu_installer_attach: bool
     max_global_haproxy_connections: int
+    appserver_base_port: int
+    pingserver_base_port: int
+    message_server_base_port: int
+    api_base_port: int
+    package_upload_base_port: int
+    hostagent_server_base_port: int
+    ubuntu_installer_attach_base_port: int
 
     @root_validator(skip_on_failure=True)
     def openid_oidc_exclusive(cls, values):
@@ -121,6 +129,35 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"When using OIDC, must provide all of {required_configs}. "
                 f"Got {fields}."
             )
+        return values
+
+    @root_validator(skip_on_failure=False)
+    def haproxy_backend_port_validation(cls, values):
+        base_ports_with_workers = (
+            "appserver_base_port",
+            "pingserver_base_port",
+            "message_server_base_port",
+            "api_base_port",
+        )
+        base_ports_without_workers = (
+            "package_upload_base_port",
+            "hostagent_server_base_port",
+            "ubuntu_installer_attach_base_port",
+        )
+        worker_counts = values["worker_counts"]
+        ports_used = []
+        for service in base_ports_with_workers:
+            ports_used += list(range(values[service], values[service] + worker_counts))
+        ports_used += [values[service] for service in base_ports_without_workers]
+        overused_ports = [
+            port for port, count in Counter(ports_used).items() if count > 1
+        ]
+        if overused_ports:
+            raise ValueError(
+                "Configured service base ports and worker counts lead to overuse of "
+                f"the following ports: {', '.join(map(str, overused_ports))}"
+            )
+
         return values
 
 

@@ -235,3 +235,38 @@ options:
       Maximum number of concurrent connections HAProxy will accept globally across all
       frontends and backends. This sets the 'maxconn' value in the global section of
       the HAProxy configuration.
+  appserver_base_port:
+    type: int
+    default: 8080
+    description: |
+      Base port for appserver service workers to use on each unit.
+  pingserver_base_port:
+    type: int
+    default: 8070
+    description: |
+      Base port for pingserver service workers to use on each unit.
+  message_server_base_port:
+    type: int
+    default: 8090
+    description: |
+      Base port for message-server service workers to use on each unit.
+  api_base_port:
+    type: int
+    default: 9080
+    description: |
+      Base port for api service workers to use on each unit.
+  package_upload_base_port:
+    type: int
+    default: 9100
+    description: |
+      Base port for package-upload service workers to use on each unit.
+  hostagent_server_base_port:
+    type: int
+    default: 50052
+    description: |
+      Port for hostagent-message-server service worker to use on each unit.
+  ubuntu_installer_attach_base_port:
+    type: int
+    default: 53354
+    description: |
+      Port for ubuntu-installer-attach service worker to use on each unit.

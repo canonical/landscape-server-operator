@@ -274,8 +274,11 @@ class TestCreateHttpService:
         peer_ips = [IPv4Address("192.0.2.1")]
         leader_ip = IPv4Address("192.0.2.1")
         worker_counts = 2
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_http_service(peer_ips, leader_ip, worker_counts)
+        service = haproxy.create_http_service(
+            peer_ips, leader_ip, worker_counts, service_ports
+        )
 
         assert service.frontend.frontend_name == "landscape-http"
         assert service.frontend.frontend_port == 80
@@ -290,8 +293,11 @@ class TestCreateHttpService:
         peer_ips = [IPv4Address("192.0.2.1"), IPv4Address("192.0.2.2")]
         leader_ip = IPv4Address("192.0.2.1")
         worker_counts = 1
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_http_service(peer_ips, leader_ip, worker_counts)
+        service = haproxy.create_http_service(
+            peer_ips, leader_ip, worker_counts, service_ports
+        )
 
         appserver_backend = next(
             b for b in service.backends if "appserver" in b.backend_name
@@ -302,8 +308,11 @@ class TestCreateHttpService:
         peer_ips = [IPv4Address("192.0.2.1"), IPv4Address("192.0.2.2")]
         leader_ip = IPv4Address("192.0.2.1")
         worker_counts = 1
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_http_service(peer_ips, leader_ip, worker_counts)
+        service = haproxy.create_http_service(
+            peer_ips, leader_ip, worker_counts, service_ports
+        )
 
         upload_backend = next(
             b for b in service.backends if "package-upload" in b.backend_name
@@ -317,8 +326,11 @@ class TestCreateHttpsService:
         peer_ips = [IPv4Address("192.0.2.1")]
         leader_ip = IPv4Address("192.0.2.1")
         worker_counts = 2
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_https_service(peer_ips, leader_ip, worker_counts)
+        service = haproxy.create_https_service(
+            peer_ips, leader_ip, worker_counts, service_ports
+        )
 
         assert service.frontend.frontend_name == "landscape-https"
         assert service.frontend.frontend_port == 443
@@ -328,8 +340,11 @@ class TestCreateHttpsService:
         peer_ips = [IPv4Address("192.0.2.1"), IPv4Address("192.0.2.2")]
         leader_ip = IPv4Address("192.0.2.1")
         worker_counts = 1
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_https_service(peer_ips, leader_ip, worker_counts)
+        service = haproxy.create_https_service(
+            peer_ips, leader_ip, worker_counts, service_ports
+        )
 
         hashids_backend = next(
             b for b in service.backends if "hashid" in b.backend_name
@@ -341,8 +356,11 @@ class TestCreateHttpsService:
         peer_ips = [IPv4Address("192.0.2.1"), IPv4Address("192.0.2.2")]
         leader_ip = IPv4Address("192.0.2.1")
         worker_counts = 1
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_https_service(peer_ips, leader_ip, worker_counts)
+        service = haproxy.create_https_service(
+            peer_ips, leader_ip, worker_counts, service_ports
+        )
 
         upload_backend = next(
             b for b in service.backends if "package-upload" in b.backend_name
@@ -354,8 +372,9 @@ class TestCreateHttpsService:
 class TestCreateHostagentMessengerService:
     def test_create_hostagent_messenger_service(self):
         peer_ips = [IPv4Address("192.0.2.1"), IPv4Address("192.0.2.2")]
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_hostagent_messenger_service(peer_ips)
+        service = haproxy.create_hostagent_messenger_service(peer_ips, service_ports)
 
         assert (
             service.frontend.frontend_name == haproxy.FrontendName.HOSTAGENT_MESSENGER
@@ -372,8 +391,11 @@ class TestCreateHostagentMessengerService:
 class TestCreateUbuntuInstallerAttachService:
     def test_create_ubuntu_installer_attach_service(self):
         peer_ips = [IPv4Address("192.0.2.1")]
+        service_ports = haproxy.SERVICE_PORTS
 
-        service = haproxy.create_ubuntu_installer_attach_service(peer_ips)
+        service = haproxy.create_ubuntu_installer_attach_service(
+            peer_ips, service_ports
+        )
 
         assert (
             service.frontend.frontend_name
