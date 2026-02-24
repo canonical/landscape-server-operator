@@ -243,9 +243,9 @@ run "internal_haproxy_relations" {
 
   variables {
     model_uuid = uuid()
-    channel  = "26.04/beta"
-    revision = 216
-    base     = "ubuntu@24.04"
+    channel    = "26.04/beta"
+    revision   = 216
+    base       = "ubuntu@24.04"
   }
 
   assert {
@@ -279,9 +279,9 @@ run "legacy_haproxy_relations" {
 
   variables {
     model_uuid = uuid()
-    channel  = "25.10/edge"
-    revision = 215
-    base     = "ubuntu@24.04"
+    channel    = "25.10/edge"
+    revision   = 215
+    base       = "ubuntu@24.04"
   }
 
   assert {
@@ -305,7 +305,7 @@ run "internal_haproxy_null_revision" {
 
   variables {
     model_uuid = uuid()
-    revision = null
+    revision   = null
   }
 
   assert {
