@@ -31,7 +31,7 @@ variable "constraints" {
 }
 
 variable "model_uuid" {
-  description = "UUID of the Juju model."
+  description = "UUID of a Juju model."
   type        = string
 }
 

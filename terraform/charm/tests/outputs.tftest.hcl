@@ -242,7 +242,7 @@ run "internal_haproxy_relations" {
   command = plan
 
   variables {
-    model    = "test-model"
+    model_uuid = uuid()
     channel  = "26.04/beta"
     revision = 216
     base     = "ubuntu@24.04"
@@ -278,7 +278,7 @@ run "legacy_haproxy_relations" {
   command = plan
 
   variables {
-    model    = "test-model"
+    model_uuid = uuid()
     channel  = "25.10/edge"
     revision = 215
     base     = "ubuntu@24.04"
@@ -304,7 +304,7 @@ run "internal_haproxy_null_revision" {
   command = plan
 
   variables {
-    model    = "test-model"
+    model_uuid = uuid()
     revision = null
   }
 

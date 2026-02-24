@@ -1,10 +1,10 @@
 # © 2026 Canonical Ltd.
 
 resource "juju_machine" "landscape_server" {
-  count = var.landscape_server.units
-  model = var.model
-  base  = var.landscape_server.base
-  name  = "landscape-server-${count.index}"
+  count      = var.landscape_server.units
+  model_uuid = var.model_uuid
+  base       = var.landscape_server.base
+  name       = "landscape-server-${count.index}"
 
   lifecycle {
     create_before_destroy = true
@@ -43,7 +43,7 @@ module "haproxy" {
 
 resource "juju_application" "http_ingress" {
   name        = var.http_ingress.app_name
-  model       = var.model
+  model_uuid  = var.model_uuid
   machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
   constraints = var.http_ingress.constraints
   config      = var.http_ingress.config
@@ -62,7 +62,7 @@ resource "juju_application" "http_ingress" {
 
 resource "juju_application" "hostagent_messenger_ingress" {
   name        = var.hostagent_messenger_ingress.app_name
-  model       = var.model
+  model_uuid  = var.model_uuid
   machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
   constraints = var.hostagent_messenger_ingress.constraints
   config      = var.hostagent_messenger_ingress.config
@@ -81,7 +81,7 @@ resource "juju_application" "hostagent_messenger_ingress" {
 
 resource "juju_application" "ubuntu_installer_attach_ingress" {
   name        = var.ubuntu_installer_attach_ingress.app_name
-  model       = var.model
+  model_uuid  = var.model_uuid
   machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
   constraints = var.ubuntu_installer_attach_ingress.constraints
   config      = var.ubuntu_installer_attach_ingress.config
@@ -108,7 +108,7 @@ module "postgresql" {
   revision    = var.postgresql.revision
   base        = var.postgresql.base
   units       = var.postgresql.units
-  
+
   count = var.postgresql != null ? 1 : 0
 }
 
@@ -132,7 +132,7 @@ resource "juju_application" "rabbitmq_server" {
 
 resource "juju_application" "lb_certs" {
   name        = var.lb_certs.app_name
-  model       = var.model
+  model_uuid  = var.model_uuid
   units       = var.lb_certs.units
   constraints = var.lb_certs.constraints
   config      = var.lb_certs.config
@@ -221,7 +221,7 @@ resource "juju_integration" "landscape_server_haproxy" {
 }
 
 resource "juju_integration" "landscape_server_tls_certificates" {
-  model = var.model
+  model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
@@ -240,7 +240,7 @@ resource "juju_integration" "landscape_server_tls_certificates" {
 
 # Ingress configurator integrations (optional, for LBaaS)
 resource "juju_integration" "landscape_server_http_ingress" {
-  model = var.model
+  model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
@@ -258,7 +258,7 @@ resource "juju_integration" "landscape_server_http_ingress" {
 }
 
 resource "juju_integration" "landscape_server_hostagent_messenger_ingress" {
-  model = var.model
+  model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
@@ -276,7 +276,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_ingress" {
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_ingress" {
-  model = var.model
+  model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
