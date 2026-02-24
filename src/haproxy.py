@@ -527,7 +527,7 @@ def create_https_service(
 
 def create_hostagent_messenger_service(
     peer_ips: list[IPvAnyAddress],
-    service_ports: dict,
+    service_ports: ServicePorts,
     server_options: str = SERVER_OPTIONS,
 ) -> Service:
     servers = [

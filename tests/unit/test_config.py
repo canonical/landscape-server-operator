@@ -191,6 +191,7 @@ def test_port_collision_from_config_detected():
 
     assert error_message in str(context)
 
+
 def test_valid_custom_ports():
     defaults = get_config_defaults()
 
