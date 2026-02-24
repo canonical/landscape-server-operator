@@ -259,7 +259,7 @@ options:
     type: int
     default: 9100
     description: |
-      Base port for package-upload service workers to use on each unit.
+      Base port for package-upload service workers to use on the leader unit.
   hostagent_server_base_port:
     type: int
     default: 50052
