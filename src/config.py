@@ -131,7 +131,7 @@ class LandscapeCharmConfiguration(BaseModel):
             )
         return values
 
-    @root_validator(skip_on_failure=False)
+    @root_validator(skip_on_failure=True)
     def haproxy_backend_port_validation(cls, values):
         base_ports_with_workers = (
             "appserver_base_port",
