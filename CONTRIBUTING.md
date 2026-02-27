@@ -2,7 +2,7 @@
 
 ## Development setup
 
-This project uses [pipx](https://github.com/pypa/pipx) and [poetry](https://python-poetry.org/) for dependency management. Make sure you have both installed:
+This project uses [pipx](https://github.com/pypa/pipx), [poetry](https://python-poetry.org/), and [jq](https://jqlang.org/). Install them:
 
 ```sh
 sudo apt install -y pipx jq
