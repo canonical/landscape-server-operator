@@ -68,15 +68,6 @@ deploy-lbaas:
 check-jq:
 	@command -v jq >/dev/null 2>&1 || { echo "Error: jq is not installed. Install it with: sudo apt-get install -y jq"; exit 1; }
 
-.PHONY: install-jq
-install-jq:
-	@if command -v jq >/dev/null 2>&1; then \
-		echo "jq is already installed, skipping install..."; \
-	 else \
-		echo "Installing jq..."; \
-		sudo apt-get install -y jq; \
-	fi
-
 .PHONY: check-terraform
 check-terraform:
 	@command -v terraform >/dev/null 2>&1 || { echo "Error: terraform is not installed. Install it with: snap install terraform --classic"; exit 1; }
