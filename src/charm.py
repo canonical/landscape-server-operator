@@ -1673,6 +1673,25 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Upgrading packages")
         event.log("Upgrading Landscape packages...")
 
+        landscape_ppa = self.charm_config.landscape_ppa
+        add_apt_repository_env = os.environ.copy()
+        for proxy_var, proxy_var_value in [
+            ("http_proxy", self.charm_config.http_proxy),
+            ("https_proxy", self.charm_config.https_proxy),
+        ]:
+            juju_proxy_var = f"JUJU_CHARM_{proxy_var.upper()}"
+            if proxy_var_value:
+                add_apt_repository_env[proxy_var] = proxy_var_value
+            elif juju_proxy_var in add_apt_repository_env:
+                add_apt_repository_env[proxy_var] = add_apt_repository_env[
+                    juju_proxy_var
+                ]
+        if self.charm_config.no_proxy:
+            add_apt_repository_env["no_proxy"] = self.charm_config.no_proxy
+        check_call(
+            ["add-apt-repository", "-y", landscape_ppa], env=add_apt_repository_env
+        )
+
         apt.update()
 
         for package in LANDSCAPE_PACKAGES:
