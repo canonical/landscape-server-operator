@@ -254,6 +254,12 @@ def test_legacy_db_relation(juju: jubilant.Juju, bundle: None):
 
 
 def test_all_services_up(juju: jubilant.Juju, bundle: None):
+    """
+    All expected Landscape systemd services are active on every unit.
+
+    Uses `wait_for_service` rather than a one-shot check because Juju
+    reporting active does not guarantee the services have finished starting.
+    """
     juju.wait(jubilant.all_active, timeout=300)
 
     status = juju.status()

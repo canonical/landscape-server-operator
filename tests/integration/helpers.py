@@ -150,12 +150,8 @@ def wait_for_service(
     """
     Poll until a systemd service is active on the given unit.
 
-    Juju status becoming active does not guarantee that all systemd services
-    have finished starting. This helper retries the check with a timeout to
-    avoid false negatives from that race condition.
-
-    Raises `AssertionError` if the service has not become active within
-    `timeout` seconds.
+    Juju reporting active does not guarantee all systemd services have finished
+    starting, so this retries until `timeout` seconds have elapsed.
     """
     deadline = time.monotonic() + timeout
     last_exc: Exception | None = None
@@ -165,7 +161,10 @@ def wait_for_service(
             return
         except Exception as e:
             last_exc = e
-            time.sleep(delay)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(delay, remaining))
     raise AssertionError(
         f"Service {service!r} never became active on {unit!r}"
     ) from last_exc
