@@ -66,11 +66,11 @@ deploy-lbaas:
 
 .PHONY: check-jq
 check-jq:
-	@command -v jq >/dev/null 2>&1 || { echo "Error: jq is not installed. Install it with: sudo apt-get install -y jq"; exit 1; }
+	@command -v jq >/dev/null 2>&1 || { echo "Error: jq is not installed. See https://jqlang.org/download/"; exit 1; }
 
 .PHONY: check-terraform
 check-terraform:
-	@command -v terraform >/dev/null 2>&1 || { echo "Error: terraform is not installed. Install it with: snap install terraform --classic"; exit 1; }
+	@command -v terraform >/dev/null 2>&1 || { echo "Error: terraform is not installed. See https://developer.hashicorp.com/terraform/install"; exit 1; }
 
 .PHONY: install-terraform
 install-terraform:
