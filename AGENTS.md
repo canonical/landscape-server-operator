@@ -14,20 +14,15 @@ Key source files:
 
 ## Setup
 
-Dependencies are managed with [Poetry](https://python-poetry.org/).
-
-```sh
-sudo apt install -y pipx
-pipx install poetry
-poetry install --with dev
-```
+The project and its dependencies are managed with [uv](https://docs.astral.sh/uv/).
 
 ## Common commands
 
 | Task                                       | Command                                                                                                                                   |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Unit tests                                 | `make test`                                                                                                                               |
-| Unit tests (single)                        | `poetry run pytest tests/unit/test_charm.py::TestCharm::test_install`                                                                     |
+| Unit tests (single)                        | `uv run pytest tests/unit/test_charm.py::TestCharm::test_install`                                                                         |
+| Integration tests (single)                 | `LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL=1 uv run pytest tests/integration/test_bundle.py::test_all_services_up`                              |
 | Coverage                                   | `make coverage`                                                                                                                           |
 | Integration tests (against existing model) | `LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL=1 make integration-test`                                                                             |
 | Integration tests (deploy fresh model)     | `make integration-test`                                                                                                                   |
