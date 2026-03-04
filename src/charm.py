@@ -1658,7 +1658,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if self.charm_config.no_proxy:
             env["no_proxy"] = self.charm_config.no_proxy
             logger.info(
-                f"add-apt-repository no_proxy variable set to : " f"{env['no_proxy']}"
+                f"add-apt-repository no_proxy variable set to: {env['no_proxy']}"
             )
 
         return env
