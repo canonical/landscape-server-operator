@@ -1388,18 +1388,73 @@ class TestCharm(unittest.TestCase):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
         prev_status = self.harness.charm.unit.status
+        ppa = self.harness.model.config.get("landscape_ppa")
 
-        with patch("charm.apt", spec_set=apt) as apt_mock, patch("charm.check_call"):
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
             pkg_mock = Mock()
             apt_mock.DebianPackage.from_apt_cache.return_value = pkg_mock
             self.harness.charm._upgrade(event)
 
+        check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
         self.assertGreaterEqual(event.log.call_count, 5)
         self.assertEqual(
             apt_mock.DebianPackage.from_apt_cache.call_count, len(LANDSCAPE_PACKAGES)
         )
         self.assertEqual(pkg_mock.ensure.call_count, len(LANDSCAPE_PACKAGES))
         self.assertEqual(self.harness.charm.unit.status, prev_status)
+
+    def test_action_upgrade_uses_configured_ppa(self):
+        event = Mock(spec_set=ActionEvent)
+        self.harness.charm._stored.running = False
+        self.harness.charm.charm_config = Mock(
+            landscape_ppa="ppa:landscape/self-hosted-beta",
+            http_proxy=None,
+            https_proxy=None,
+            no_proxy=None,
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
+            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
+            self.harness.charm._upgrade(event)
+
+        check_call_mock.assert_any_call(
+            ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"], env=ANY
+        )
+
+    def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
+        event = Mock(spec_set=ActionEvent)
+        self.harness.charm._stored.running = False
+        self.harness.charm.charm_config = Mock(
+            landscape_ppa="ppa:landscape/self-hosted-beta",
+            http_proxy="http://proxy.example.com:3128",
+            https_proxy="https://proxy.example.com:3128",
+            no_proxy="localhost,127.0.0.1",
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.os.environ", {}),
+        ):
+            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
+            self.harness.charm._upgrade(event)
+
+        add_apt_call = next(
+            c
+            for c in check_call_mock.call_args_list
+            if c.args[0]
+            == ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"]
+        )
+        env = add_apt_call.kwargs["env"]
+        self.assertEqual(env["http_proxy"], "http://proxy.example.com:3128")
+        self.assertEqual(env["https_proxy"], "https://proxy.example.com:3128")
+        self.assertEqual(env["no_proxy"], "localhost,127.0.0.1")
 
     def test_action_upgrade_running(self):
         """
@@ -1430,6 +1485,21 @@ class TestCharm(unittest.TestCase):
         apt_mock.DebianPackage.from_apt_cache.assert_called_once_with(
             "landscape-server"
         )
+        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
+    def test_action_upgrade_add_apt_repository_CalledProcessError(self):
+        event = Mock(spec_set=ActionEvent)
+        self.harness.charm._stored.running = False
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
+            check_call_mock.side_effect = CalledProcessError(1, "add-apt-repository")
+            self.harness.charm._upgrade(event)
+
+        event.fail.assert_called_once()
+        apt_mock.update.assert_not_called()
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_migrate_schema(self):

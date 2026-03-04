@@ -676,36 +676,7 @@ class LandscapeServerCharm(CharmBase):
             # let's make sure to use the http(s) proxy settings from the charm or at
             # least any juju_proxy setting, add the classic http(s)_proxy to the env
             # that will be used only for add-apt-repository call
-            add_apt_repository_env = os.environ.copy()
-            for proxy_var, proxy_var_value in [
-                ("http_proxy", self.charm_config.http_proxy),
-                ("https_proxy", self.charm_config.https_proxy),
-            ]:
-                juju_proxy_var = f"JUJU_CHARM_{proxy_var.upper()}"
-
-                # if the charm has a proxy conf configured, override juju_http(s)
-                # configuration
-                if proxy_var_value:
-                    add_apt_repository_env[proxy_var] = proxy_var_value
-                elif juju_proxy_var in add_apt_repository_env:
-                    add_apt_repository_env[proxy_var] = add_apt_repository_env[
-                        juju_proxy_var
-                    ]
-
-                if proxy_var in add_apt_repository_env:
-                    logger.info(
-                        f"add-apt-repository {proxy_var} variable set to : "
-                        f"{add_apt_repository_env[proxy_var]}"
-                    )
-
-            # juju_no_proxy is not perfectly compatible with Shell environment
-            # let's handle only the no_proxy from the charm's configuration
-            if self.charm_config.no_proxy:
-                add_apt_repository_env["no_proxy"] = self.charm_config.no_proxy
-                logger.info(
-                    f"add-apt-repository no_proxy variable set to : "
-                    f"{add_apt_repository_env['no_proxy']}"
-                )
+            add_apt_repository_env = self._build_add_apt_repository_env()
 
             check_call(
                 ["add-apt-repository", "-y", landscape_ppa], env=add_apt_repository_env
@@ -1661,6 +1632,37 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = ActiveStatus("Unit is ready")
             self._update_ready_status()
 
+    def _build_add_apt_repository_env(self) -> dict:
+        env = os.environ.copy()
+        for proxy_var, proxy_var_value in [
+            ("http_proxy", self.charm_config.http_proxy),
+            ("https_proxy", self.charm_config.https_proxy),
+        ]:
+            juju_proxy_var = f"JUJU_CHARM_{proxy_var.upper()}"
+
+            # if the charm has a proxy conf configured, override juju_http(s)
+            # configuration
+            if proxy_var_value:
+                env[proxy_var] = proxy_var_value
+            elif juju_proxy_var in env:
+                env[proxy_var] = env[juju_proxy_var]
+
+            if proxy_var in env:
+                logger.info(
+                    f"add-apt-repository {proxy_var} variable set to : "
+                    f"{env[proxy_var]}"
+                )
+
+        # juju_no_proxy is not perfectly compatible with Shell environment
+        # let's handle only the no_proxy from the charm's configuration
+        if self.charm_config.no_proxy:
+            env["no_proxy"] = self.charm_config.no_proxy
+            logger.info(
+                f"add-apt-repository no_proxy variable set to: {env['no_proxy']}"
+            )
+
+        return env
+
     def _upgrade(self, event: ActionEvent) -> None:
         if self._stored.running:
             event.fail(
@@ -1672,6 +1674,22 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         prev_status = self.unit.status
         self.unit.status = MaintenanceStatus("Upgrading packages")
         event.log("Upgrading Landscape packages...")
+
+        landscape_ppa = self.charm_config.landscape_ppa
+        try:
+            check_call(
+                ["add-apt-repository", "-y", landscape_ppa],
+                env=self._build_add_apt_repository_env(),
+            )
+        except CalledProcessError as e:
+            logger.error(
+                "Failed to add APT repository %s during upgrade: %s",
+                landscape_ppa,
+                e,
+            )
+            event.fail(f"Failed to add APT repository {landscape_ppa}")
+            self.unit.status = BlockedStatus("Failed to upgrade packages")
+            return
 
         apt.update()
 

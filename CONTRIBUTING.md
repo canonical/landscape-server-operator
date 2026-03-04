@@ -2,17 +2,12 @@
 
 ## Development setup
 
-This project uses [pipx](https://github.com/pypa/pipx) and [poetry](https://python-poetry.org/) for dependency management. Make sure you have both installed:
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management. Install it from the [official instructions](https://docs.astral.sh/uv/getting-started/installation/).
+
+Dependencies are installed automatically when you run any `uv run` or `make` command. To pre-install them explicitly:
 
 ```sh
-sudo apt install -y pipx
-pipx install poetry
-```
-
-Then, install the project dependencies:
-
-```sh
-poetry install --with dev
+uv sync --group dev
 ```
 
 ### Run unit tests
@@ -24,7 +19,7 @@ make test
 Or run specific test(s):
 
 ```sh
-poetry run pytest tests/unit/test_charm.py::TestCharm::test_install
+uv run pytest tests/unit/test_charm.py::TestCharm::test_install
 ```
 
 Run with coverage:
@@ -88,7 +83,7 @@ make fmt
 
 ### Build the charm
 
-When developing the charm, you can use the [`poetry run ccc pack`](https://github.com/canonical/charmcraftcache) command to build the charm locally.
+When developing the charm, you can use the [`uv run ccc pack`](https://github.com/canonical/charmcraftcache) command to build the charm locally.
 
 > [!NOTE]
 > Make sure you add this repository (<https://github.com/canonical/landscape-server-operator>) as a remote to your fork, otherwise `ccc` will fail.
