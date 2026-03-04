@@ -899,3 +899,46 @@ def test_haproxy_installed_and_configured(juju: jubilant.Juju, bundle: None):
             juju.ssh(unit_name, f"systemctl is-active {haproxy.HAPROXY_SERVICE}")
         except Exception as e:
             pytest.fail(f"HAProxy service not active on {unit_name}: {e}")
+
+
+def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
+    """
+    The upgrade action must add the PPA from the `landscape_ppa` config to apt
+    sources before upgrading, so switching PPAs (ex. upgrade from self-hosted-24.04 to
+    self-hosted-beta) works correctly.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    landscape_ppa = juju.config("landscape-server").get(
+        "landscape_ppa", "ppa:landscape/self-hosted-beta"
+    )
+    ppa_slug = landscape_ppa.removeprefix("ppa:")
+    old_ppa = "ppa:landscape/self-hosted-24.04"
+
+    if landscape_ppa == old_ppa:
+        pytest.skip(
+            "landscape_ppa is already self-hosted-24.04; nothing to swap, skipping."
+        )
+
+    unit_name = "landscape-server/0"
+
+    try:
+        juju.ssh(
+            unit_name,
+            f"sudo add-apt-repository -y {old_ppa} && "
+            f"sudo add-apt-repository -y --remove {landscape_ppa}",
+        )
+        try:
+            juju.ssh(unit_name, f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/")
+            pytest.fail(f"Expected '{ppa_slug}' to be absent before upgrade")
+        except Exception:
+            pass
+
+        juju.run(unit_name, "pause")
+        juju.run(unit_name, "upgrade")
+
+        juju.ssh(unit_name, f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/")
+    finally:
+        juju.ssh(unit_name, f"sudo add-apt-repository -y {landscape_ppa}")
+        juju.run(unit_name, "resume")
+        juju.wait(jubilant.all_active, timeout=300)

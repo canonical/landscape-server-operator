@@ -26,16 +26,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-
-      - name: Install Poetry
-        run: |
-          pipx install poetry
-          poetry --version
-
-      - name: Install dependencies
-        run: poetry install --with dev
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Run tests
         run: make test
