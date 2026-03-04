@@ -145,7 +145,7 @@ def wait_for_service(
     unit: str,
     service: str,
     timeout: int = 60,
-    delay: float = 5.0,
+    check_interval: float = 5.0,
 ) -> None:
     """
     Poll until a systemd service is active on the given unit.
@@ -154,19 +154,19 @@ def wait_for_service(
     starting, so this retries until `timeout` seconds have elapsed.
     """
     deadline = time.monotonic() + timeout
-    last_exc: Exception | None = None
+    last_exc: jubilant.CLIError | None = None
     while time.monotonic() < deadline:
         try:
             juju.ssh(unit, f"systemctl is-active {service}.service")
             return
-        except Exception as e:
+        except jubilant.CLIError as e:
             last_exc = e
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
-            time.sleep(min(delay, remaining))
+            time.sleep(min(check_interval, remaining))
     raise AssertionError(
-        f"Service {service!r} never became active on {unit!r}"
+        f"Service '{service}' never became active on '{unit}'"
     ) from last_exc
 
 
