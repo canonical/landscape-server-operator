@@ -1487,6 +1487,21 @@ class TestCharm(unittest.TestCase):
         )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
+    def test_action_upgrade_add_apt_repository_CalledProcessError(self):
+        event = Mock(spec_set=ActionEvent)
+        self.harness.charm._stored.running = False
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
+            check_call_mock.side_effect = CalledProcessError(1, "add-apt-repository")
+            self.harness.charm._upgrade(event)
+
+        event.fail.assert_called_once()
+        apt_mock.update.assert_not_called()
+        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
     def test_action_migrate_schema(self):
         event = Mock(spec_set=ActionEvent)
 

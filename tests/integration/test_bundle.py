@@ -914,6 +914,12 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     )
     ppa_slug = landscape_ppa.removeprefix("ppa:")
     old_ppa = "ppa:landscape/self-hosted-24.04"
+
+    if landscape_ppa == old_ppa:
+        pytest.skip(
+            "landscape_ppa is already self-hosted-24.04; nothing to swap, skipping."
+        )
+
     unit_name = "landscape-server/0"
 
     try:
