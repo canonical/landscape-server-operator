@@ -1,3 +1,5 @@
+import time
+
 import jubilant
 import requests
 from requests.adapters import HTTPAdapter
@@ -136,6 +138,37 @@ def restore_db_relations(juju: jubilant.Juju, expected: set[str]) -> None:
             juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
 
     juju.wait(jubilant.all_active, timeout=300)
+
+
+def wait_for_service(
+    juju: jubilant.Juju,
+    unit: str,
+    service: str,
+    timeout: int = 60,
+    delay: float = 5.0,
+) -> None:
+    """
+    Poll until a systemd service is active on the given unit.
+
+    Juju status becoming active does not guarantee that all systemd services
+    have finished starting. This helper retries the check with a timeout to
+    avoid false negatives from that race condition.
+
+    Raises `AssertionError` if the service has not become active within
+    `timeout` seconds.
+    """
+    deadline = time.monotonic() + timeout
+    last_exc: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            juju.ssh(unit, f"systemctl is-active {service}.service")
+            return
+        except Exception as e:
+            last_exc = e
+            time.sleep(delay)
+    raise AssertionError(
+        f"Service {service!r} never became active on {unit!r}"
+    ) from last_exc
 
 
 def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:

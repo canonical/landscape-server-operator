@@ -22,6 +22,7 @@ from tests.integration.helpers import (
     has_tls_certs_provider,
     restore_db_relations,
     supports_legacy_pg,
+    wait_for_service,
 )
 
 
@@ -262,26 +263,14 @@ def test_all_services_up(juju: jubilant.Juju, bundle: None):
 
     for name, unit_status in units.items():
         for service in DEFAULT_SERVICES:
-            try:
-                juju.ssh(name, f"systemctl is-active {service}.service")
-            except Exception as e:
-                pytest.fail(f"Failed to run command on unit: {e}")
+            wait_for_service(juju, name, service)
 
         if enable_ubuntu_installer:
-            try:
-                juju.ssh(
-                    name,
-                    f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
-                )
-            except Exception as e:
-                pytest.fail(f"Failed to run command on unit: {e}")
+            wait_for_service(juju, name, LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
         if unit_status.leader:
             for service in LEADER_SERVICES:
-                try:
-                    juju.ssh(name, f"systemctl is-active {service}.service")
-                except Exception as e:
-                    pytest.fail(f"Failed to run command on unit: {e}")
+                wait_for_service(juju, name, service)
 
 
 def test_ubuntu_installer_attach_service(juju: jubilant.Juju, bundle: None):
