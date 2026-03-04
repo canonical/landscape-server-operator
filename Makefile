@@ -16,34 +16,34 @@ SKIP_ADD_MODEL ?= false
 # Python testing and linting
 .PHONY: test
 test:
-	poetry run pytest --tb native tests/unit
+	uv run pytest --tb native tests/unit
 
 .PHONY: integration-test
 integration-test:
-	poetry run pytest -v --tb native tests/integration
+	uv run --group integration pytest -v --tb native tests/integration
 
 .PHONY: coverage
 coverage:
-	poetry run coverage run --branch --source=src -m pytest -v --tb native tests/unit
-	poetry run coverage report -m
+	uv run coverage run --branch --source=src -m pytest -v --tb native tests/unit
+	uv run coverage report -m
 
 .PHONY: lint
 lint:
-	poetry run flake8 src tests
-	poetry run isort --check-only src tests
-	poetry run black --check src tests
-	poetry run ruff check src tests
+	uv run flake8 src tests
+	uv run isort --check-only src tests
+	uv run black --check src tests
+	uv run ruff check src tests
 
 .PHONY: fmt
 fmt:
-	poetry run isort src tests
-	poetry run black src tests
-	poetry run ruff check --fix src tests
+	uv run isort src tests
+	uv run black src tests
+	uv run ruff check --fix src tests
 
 # Charm building and deployment
 .PHONY: build
 build:
-	poetry run ccc pack --platform $(PLATFORM)
+	uv run ccc pack --platform $(PLATFORM)
 
 
 .PHONY: add-model
