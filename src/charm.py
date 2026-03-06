@@ -1008,15 +1008,17 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call(call, env=get_modified_env_vars())
-            self._bootstrap_account()
-            self._set_autoregistration()
-            return True
         except CalledProcessError as e:
             logger.error(
                 "Landscape Server schema update failed with return code %d",
                 e.returncode,
             )
             self.unit.status = BlockedStatus("Failed to update database schema")
+            return False
+
+        self._bootstrap_account()
+        self._set_autoregistration()
+        return True
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
@@ -1592,6 +1594,13 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if "DuplicateAccountError" in result.stderr:
                 logger.error("Cannot bootstrap b/c account is already there!")
                 self._stored.account_bootstrapped = True
+            elif "no pg_hba.conf entry" in result.stderr:
+                # Patroni regenerates pg_hba.conf asynchronously after the
+                # landscape role is created by the schema script. Raise so
+                # Juju retries the hook once Patroni has reloaded.
+                raise CalledProcessError(
+                    result.returncode, args, result.stdout, result.stderr
+                )
             else:
                 logger.error(result.stderr)
         else:

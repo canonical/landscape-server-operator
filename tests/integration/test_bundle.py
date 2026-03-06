@@ -227,6 +227,42 @@ def test_modern_database_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     restore_db_relations(juju, initial_relations)
 
 
+def test_bootstrap_account_created_with_modern_database(
+    juju: jubilant.Juju, bundle: None
+):
+    """
+    When admin_email/name/password are configured, the bootstrap-account script
+    must succeed even though Patroni regenerates pg_hba.conf asynchronously after
+    the landscape role is created by landscape-schema --bootstrap.
+    """
+    if not has_modern_pg(juju):
+        pytest.skip("Modern database relation not active")
+
+    admin_email = juju.config("landscape-server").get("admin_email")
+    if not admin_email:
+        pytest.skip("admin_email not configured")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    conf = juju.ssh(
+        "landscape-server/leader",
+        "sudo awk -F' = ' '/^\\[stores\\]/{f=1} /^\\[/{if(!/^\\[stores\\]/)f=0} "
+        "f && /^host/{h=$2} f && /^password/{pw=$2} "
+        "f && /^user/{u=$2} f && /^main/{m=$2} "
+        "END{print h,pw,u,m}' /etc/landscape/service.conf",
+    ).split()
+    host, port = conf[0].split(":")
+    password, user, dbname = conf[1], conf[2], conf[3]
+    result = juju.ssh(
+        "landscape-server/leader",
+        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
+        " -tAc 'SELECT email FROM person;'",
+    )
+    assert (
+        admin_email in result
+    ), f"Admin {admin_email} not found in person table after bootstrap. "
+
+
 def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
     Test the legacy `db` interface.

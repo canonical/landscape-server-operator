@@ -30,6 +30,7 @@ from ops.testing import (
 )
 
 from charm import (
+    BOOTSTRAP_ACCOUNT_SCRIPT,
     DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
@@ -1937,15 +1938,13 @@ class TestMultiplePPAs:
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
 
-# TODO fix from broken commit.
-@unittest.skip("Broken in `de29548e2b09c71db3a55f606ab318b5ea25550d`")
 class TestBootstrapAccount(unittest.TestCase):
     def setUp(self):
         self.harness = Harness(LandscapeServerCharm)
         self.addCleanup(self.harness.cleanup)
 
         self.harness.model.get_binding = Mock(
-            return_value=Mock(bind_address="123.123.123.123")
+            return_value=Mock(network=Mock(bind_address="123.123.123.123"))
         )
         self.harness.add_relation("replicas", "landscape-server")
         self.harness.set_leader()
@@ -1955,16 +1954,22 @@ class TestBootstrapAccount(unittest.TestCase):
         grp_mock = patch("charm.group_exists").start()
         grp_mock.return_value = Mock(spec_set=struct_group, gr_gid=1000)
 
-        self.process_mock = patch("subprocess.run").start()
+        self.process_mock = patch("charm.subprocess.run").start()
         self.log_mock = patch("charm.logger.error").start()
         self.log_info_mock = patch("charm.logger.info").start()
 
-        env_mock = patch("os.environ").start()
-        env_mock.copy.return_value = {}
+        patch("os.environ.copy", return_value={}).start()
 
         self.addCleanup(patch.stopall)
 
         self.harness.begin()
+
+    def _bootstrap_calls(self):
+        return [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and c.args[0][0] == BOOTSTRAP_ACCOUNT_SCRIPT
+        ]
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
@@ -1974,8 +1979,10 @@ class TestBootstrapAccount(unittest.TestCase):
                 "admin_name": "Hello Ubuntu",
             }
         )
-        self.assertIn("password required", self.log_mock.call_args.args[0])
-        self.process_mock.assert_not_called()
+        self.log_mock.assert_any_call(
+            "Admin email, name, and password required for bootstrap account"
+        )
+        self.assertEqual(self._bootstrap_calls(), [])
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_password_redacted(self, _):
@@ -1992,6 +1999,18 @@ class TestBootstrapAccount(unittest.TestCase):
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
+    def test_bootstrap_account_doesnt_run_with_missing_rooturl(self, _):
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
+        self.log_mock.assert_any_call("Bootstrap account waiting on default root url..")
+        self.assertEqual(self._bootstrap_calls(), [])
+
+    @patch("charm.update_service_conf")
     def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
         self.harness.charm._stored.leader_ip = "10.0.0.1"
         self.harness.update_config(
@@ -2001,9 +2020,28 @@ class TestBootstrapAccount(unittest.TestCase):
                 "admin_password": "password",
             }
         )
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
         self.assertIn(
             "https://10.0.0.1",
-            self.process_mock.call_args.args[0],
+            calls[0].args[0],
+        )
+
+    @patch("charm.update_service_conf")
+    def test_bootstrap_account_default_root_url_is_used(self, _):
+        self.harness.charm._stored.default_root_url = "https://hello.lxd"
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertIn(
+            self.harness.charm._stored.default_root_url,
+            calls[0].args[0],
         )
 
     @patch("charm.update_service_conf")
@@ -2019,15 +2057,14 @@ class TestBootstrapAccount(unittest.TestCase):
                 "root_url": config_root_url,
             }
         )
-        self.assertIn(config_root_url, self.process_mock.call_args.args[0])
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertIn(config_root_url, calls[0].args[0])
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_runs_once_with_correct_args(self, _):
-        """
-        Test that bootstrap account runs with correct args and that it can't
-        run again after a successful run
-        """
-        self.process_mock.return_value.returncode = 0  # Success
+    def test_bootstrap_account_runs_once_and_not_again_on_success(self, _):
+        """bootstrap-account runs once on success and does not run again."""
+        self.process_mock.return_value.returncode = 0
         admin_email = "hello@ubuntu.com"
         admin_name = "Hello Ubuntu"
         admin_password = "password"
@@ -2039,6 +2076,8 @@ class TestBootstrapAccount(unittest.TestCase):
             "root_url": root_url,
         }
         self.harness.update_config(config)
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
         self.assertEqual(
             [
                 "/opt/canonical/landscape/bootstrap-account",
@@ -2051,33 +2090,27 @@ class TestBootstrapAccount(unittest.TestCase):
                 "--root_url",
                 root_url,
             ],
-            self.process_mock.call_args.args[0],
+            calls[0].args[0],
         )
         self.harness.update_config(config)
-        self.process_mock.assert_called_once()
+        self.assertEqual(len(self._bootstrap_calls()), 1)
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_runs_twice_if_error(self, _):
-        """
-        If there's an error ensure that bootstrap account runs again and not
-        a third time if successful
-        """
-        self.process_mock.return_value.returncode = 1  # Error here
-        admin_email = "hello@ubuntu.com"
-        admin_name = "Hello Ubuntu"
-        admin_password = "password"
-        root_url = "https://www.landscape.com"
+    def test_bootstrap_account_retries_after_generic_error(self, _):
+        """After a generic error, bootstrap runs again on the next config-changed."""
+        self.process_mock.return_value.returncode = 1
+        self.process_mock.return_value.stderr = "some transient error"
         config = {
-            "admin_email": admin_email,
-            "admin_name": admin_name,
-            "admin_password": admin_password,
-            "root_url": root_url,
+            "admin_email": "hello@ubuntu.com",
+            "admin_name": "Hello Ubuntu",
+            "admin_password": "password",
+            "root_url": "https://www.landscape.com",
         }
         self.harness.update_config(config)
         self.process_mock.return_value.returncode = 0
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
-        self.assertEqual(self.process_mock.call_count, 2)
+        self.assertEqual(len(self._bootstrap_calls()), 2)
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_cannot_run_if_already_bootstrapped(
@@ -2102,7 +2135,7 @@ class TestBootstrapAccount(unittest.TestCase):
         self.harness.update_config(config)
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
-        self.process_mock.assert_called_once()
+        self.assertEqual(len(self._bootstrap_calls()), 1)
 
     @patch("subprocess.run")
     def test_hash_id_databases(self, run_mock):
