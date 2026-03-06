@@ -18,6 +18,7 @@ from database import (
     fetch_postgres_relation_data,
     get_postgres_owner_role_from_version,
     grant_role,
+    PgHbaNotReadyError,
     PostgresRoles,
 )
 
@@ -744,14 +745,14 @@ class TestBootstrapAccount:
         )
 
     def test_pg_hba_error_raises(self):
-        """pg_hba.conf race raises CalledProcessError so Juju retries the hook."""
+        """pg_hba.conf race raises PgHbaNotReadyError so Juju retries the hook."""
         ctx = Context(LandscapeServerCharm)
         state_in = self._state()
         pg_hba = Mock(returncode=1, stdout="", stderr="no pg_hba.conf entry for host")
 
         with patch("charm.subprocess.run", return_value=pg_hba):
             with ctx(ctx.on.start(), state_in) as manager:
-                with pytest.raises(CalledProcessError):
+                with pytest.raises(PgHbaNotReadyError):
                     manager.charm._bootstrap_account()
 
     def test_pg_hba_error_does_not_mark_bootstrapped(self):
@@ -761,7 +762,7 @@ class TestBootstrapAccount:
 
         with patch("charm.subprocess.run", return_value=pg_hba):
             with ctx(ctx.on.start(), state_in) as manager:
-                with pytest.raises(CalledProcessError):
+                with pytest.raises(PgHbaNotReadyError):
                     manager.charm._bootstrap_account()
                 assert manager.charm._stored.account_bootstrapped is False
 
@@ -807,7 +808,7 @@ class TestBootstrapAccount:
                 run_mock.assert_not_called()
 
     def test_migrate_schema_bootstrap_propagates_pg_hba_raise(self):
-        """_migrate_schema_bootstrap does not swallow the CalledProcessError,
+        """_migrate_schema_bootstrap does not swallow PgHbaNotReadyError,
         so it propagates to the event handler and fails the hook."""
         ctx = Context(LandscapeServerCharm)
         state_in = self._state()
@@ -817,11 +818,11 @@ class TestBootstrapAccount:
             patch.object(
                 LandscapeServerCharm,
                 "_bootstrap_account",
-                side_effect=CalledProcessError(1, "bootstrap-account"),
+                side_effect=PgHbaNotReadyError("no pg_hba.conf entry"),
             ),
         ):
             with ctx(ctx.on.start(), state_in) as manager:
-                with pytest.raises(CalledProcessError):
+                with pytest.raises(PgHbaNotReadyError):
                     manager.charm._migrate_schema_bootstrap()
 
     def test_migrate_schema_bootstrap_blocks_on_schema_failure(self):
@@ -862,7 +863,7 @@ class TestBootstrapAccount:
                             "db": False,
                             "inbound-amqp": False,
                             "outbound-amqp": False,
-                            "haproxy": False,
+                            "load-balancer-certificates": False,
                         },
                         "account_bootstrapped": False,
                     },
@@ -904,4 +905,4 @@ class TestBootstrapAccount:
             with pytest.raises(UncaughtCharmError) as exc_info:
                 ctx.run(ctx.on.relation_changed(relation), state_in)
 
-        assert isinstance(exc_info.value.__cause__, CalledProcessError)
+        assert isinstance(exc_info.value.__cause__, PgHbaNotReadyError)

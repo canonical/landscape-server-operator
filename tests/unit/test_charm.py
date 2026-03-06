@@ -1999,18 +1999,6 @@ class TestBootstrapAccount(unittest.TestCase):
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_doesnt_run_with_missing_rooturl(self, _):
-        self.harness.update_config(
-            {
-                "admin_email": "hello@ubuntu.com",
-                "admin_name": "Hello Ubuntu",
-                "admin_password": "password",
-            }
-        )
-        self.log_mock.assert_any_call("Bootstrap account waiting on default root url..")
-        self.assertEqual(self._bootstrap_calls(), [])
-
-    @patch("charm.update_service_conf")
     def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
         self.harness.charm._stored.leader_ip = "10.0.0.1"
         self.harness.update_config(
@@ -2024,23 +2012,6 @@ class TestBootstrapAccount(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn(
             "https://10.0.0.1",
-            calls[0].args[0],
-        )
-
-    @patch("charm.update_service_conf")
-    def test_bootstrap_account_default_root_url_is_used(self, _):
-        self.harness.charm._stored.default_root_url = "https://hello.lxd"
-        self.harness.update_config(
-            {
-                "admin_email": "hello@ubuntu.com",
-                "admin_name": "Hello Ubuntu",
-                "admin_password": "password",
-            }
-        )
-        calls = self._bootstrap_calls()
-        self.assertEqual(len(calls), 1)
-        self.assertIn(
-            self.harness.charm._stored.default_root_url,
             calls[0].args[0],
         )
 

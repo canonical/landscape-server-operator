@@ -70,6 +70,7 @@ from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
     grant_role,
+    PgHbaNotReadyError,
 )
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
@@ -101,6 +102,7 @@ BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
+
 
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
@@ -1598,9 +1600,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 # Patroni regenerates pg_hba.conf asynchronously after the
                 # landscape role is created by the schema script. Raise so
                 # Juju retries the hook once Patroni has reloaded.
-                raise CalledProcessError(
-                    result.returncode, args, result.stdout, result.stderr
-                )
+                raise PgHbaNotReadyError(result.stderr)
             else:
                 logger.error(result.stderr)
         else:
