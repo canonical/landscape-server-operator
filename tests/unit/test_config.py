@@ -172,7 +172,7 @@ def test_port_collision_from_workers_detected():
         "following ports"
     )
 
-    assert error_message in str(context)
+    assert error_message in str(context.value)
 
 
 def test_port_collision_from_config_detected():
@@ -189,7 +189,7 @@ def test_port_collision_from_config_detected():
         "following ports"
     )
 
-    assert error_message in str(context)
+    assert error_message in str(context.value)
 
 
 def test_valid_custom_ports():

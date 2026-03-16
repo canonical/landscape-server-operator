@@ -230,12 +230,11 @@ def replicas_networks_fixture():
 
 @pytest.fixture(name="lb_certs_state")
 def lb_certs_state_fixture(
-    certificates_integration,
     replicas,
     replicas_networks,
 ) -> dict:
     return {
-        "relations": [certificates_integration, replicas],
+        "relations": [replicas],
         "networks": [replicas_networks],
     }
 

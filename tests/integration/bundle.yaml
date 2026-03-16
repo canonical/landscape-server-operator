@@ -29,36 +29,27 @@ applications:
       enable_ubuntu_installer_attach: true
       root_url: https://landscape.local/
       redirect_https: none
-  hostagent-messenger-ingress:
-    charm: ingress-configurator
-    channel: latest/edge
+  haproxy:
+    charm: ch:haproxy
+    channel: 2.8/edge
+    num_units: 1
     options:
-      external-grpc-port: 6554
-      hostname: landscape.local
-      backend-protocol: https
-  http-ingress:
-    charm: ingress-configurator
-    channel: latest/edge
-    options:
-      paths: /
-      hostname: landscape.local
-      header-rewrite-expressions: "X-Forwarded-Proto:https"
-      allow-http: true
-  ubuntu-installer-attach-ingress:
-    charm: ingress-configurator
-    channel: latest/edge
-    options:
-      external-grpc-port: 50051
-      hostname: landscape.local
-      backend-protocol: https
-  lb-certs:
-    charm: self-signed-certificates
-    channel: stable
+      external-hostname: landscape.local
+      enable-hsts: "false"
+  self-signed-certificates:
+    charm: ch:self-signed-certificates
+    channel: 1/stable
+    num_units: 1
 relations:
   - [landscape-server:inbound-amqp, rabbitmq-server]
   - [landscape-server:outbound-amqp, rabbitmq-server]
   - [landscape-server:database, postgresql:database]
-  - [landscape-server:load-balancer-certificates, lb-certs:certificates]
-  - [landscape-server:hostagent-messenger-ingress, hostagent-messenger-ingress:ingress]
-  - [landscape-server:ubuntu-installer-attach-ingress, ubuntu-installer-attach-ingress:ingress]
-  - [landscape-server:http-ingress, http-ingress:ingress]
+  - [haproxy:certificates, self-signed-certificates:certificates]
+  - [haproxy:receive-ca-certs, self-signed-certificates:send-ca-cert]
+  - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:pingserver-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:message-server-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:api-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]

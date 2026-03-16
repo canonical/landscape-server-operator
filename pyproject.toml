@@ -8,6 +8,8 @@ dependencies = [
   "cosl==1.4.0",
   "jinja2==3.1.6",
   "ops==2.23.1",
+  "pydantic>=2",
+  "urllib3==2.6.3",
 ]
 
 [dependency-groups]
@@ -19,10 +21,8 @@ dev = [
   "grpcio==1.78.0",
   "isort==7.0.0",
   "ops[testing]==2.23.1",
-  "pydantic==1.10.26",
   "pytest==9.0.2",
   "ruff==0.14.11",
-  "urllib3==2.6.3",
 ]
 integration = [
   "grpcio==1.78.0",

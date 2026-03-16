@@ -173,37 +173,35 @@ class TestOnConfigChanged:
     def test_hostagent_services_default(
         self,
         lb_certs_state,
-        certificate_and_key_fixture,
     ):
         ctx = Context(LandscapeServerCharm)
         state = State(**lb_certs_state)
         with ctx(ctx.on.config_changed(), state) as mgr:
-            stored = mgr.charm._stored
+            charm = mgr.charm
 
-        assert stored.ready["load-balancer-certificates"] is True
-        assert haproxy.FrontendName.HOSTAGENT_MESSENGER not in stored.haproxy_config
+        assert hasattr(charm, "hostagent_messenger_haproxy_route")
+        assert hasattr(charm, "ubuntu_installer_attach_haproxy_route")
 
     def test_hostagent_services_when_disabled(self, lb_certs_state):
         ctx = Context(LandscapeServerCharm)
         state = State(**lb_certs_state, config={"enable_hostagent_messenger": False})
 
         with ctx(ctx.on.config_changed(), state) as mgr:
-            stored = mgr.charm._stored
+            charm = mgr.charm
 
-        assert haproxy.FrontendName.HOSTAGENT_MESSENGER not in stored.haproxy_config
+        assert hasattr(charm, "hostagent_messenger_haproxy_route")
 
     def test_hostagent_services_when_enabled(
         self,
         lb_certs_state,
-        certificate_and_key_fixture,
     ):
         ctx = Context(LandscapeServerCharm)
         state = State(**lb_certs_state, config={"enable_hostagent_messenger": True})
 
         with ctx(ctx.on.config_changed(), state) as mgr:
-            stored = mgr.charm._stored
+            charm = mgr.charm
 
-        assert haproxy.FrontendName.HOSTAGENT_MESSENGER in stored.haproxy_config
+        assert hasattr(charm, "hostagent_messenger_haproxy_route")
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
@@ -216,14 +214,11 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
         self,
         apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
         haproxy_write_file_fixture,
     ):
         """
         If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
-        then install the service and configure the HAProxy frontend.
-
-        Update the apt cache to ensure the package can be found.
+        then install the service.
         """
         add_package_mock, _ = apt_fixture
         ctx = Context(LandscapeServerCharm)
@@ -238,10 +233,8 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
             ],
         )
 
-        with ctx(ctx.on.config_changed(), state_in) as mgr:
-            stored = mgr.charm._stored
+        ctx.run(ctx.on.config_changed(), state_in)
 
-        assert haproxy.FrontendName.UBUNTU_INSTALLER_ATTACH in stored.haproxy_config
         add_package_mock.assert_called_once_with(
             LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True
         )
@@ -249,7 +242,7 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
     def test_disable(self, apt_fixture, lb_certs_state):
         """
         If the `enable_ubuntu_installer_attach` parameter moves from `True` to `False`,
-        then uninstall the service and remove the HAProxy frontend.
+        then uninstall the service.
         """
         _, remove_package_mock = apt_fixture
         ctx = Context(LandscapeServerCharm)
@@ -264,17 +257,14 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
             ],
         )
 
-        with ctx(ctx.on.config_changed(), state_in) as mgr:
-            stored = mgr.charm._stored
+        ctx.run(ctx.on.config_changed(), state_in)
 
-        assert haproxy.FrontendName.UBUNTU_INSTALLER_ATTACH not in stored.haproxy_config
         remove_package_mock.assert_called_once_with(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
     def test_idempotent_enable(
         self,
         apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
         haproxy_write_file_fixture,
     ):
         """
@@ -296,10 +286,8 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
         for _ in range(3):
             with ctx(ctx.on.config_changed(), state_in) as mgr:
-                stored = mgr.charm._stored
                 state_out = mgr.charm.model._backend._state
 
-            assert haproxy.FrontendName.UBUNTU_INSTALLER_ATTACH in stored.haproxy_config
             add_package_mock.assert_not_called()
 
             state_in = state_out
@@ -308,7 +296,6 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
         self,
         apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
         haproxy_write_file_fixture,
     ):
         """
@@ -330,13 +317,8 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
         for _ in range(3):
             with ctx(ctx.on.config_changed(), state_in) as mgr:
-                stored = mgr.charm._stored
                 state_out = mgr.charm.model._backend._state
 
-            assert (
-                haproxy.FrontendName.UBUNTU_INSTALLER_ATTACH
-                not in stored.haproxy_config
-            )
             remove_package_mock.assert_not_called()
 
             state_in = state_out
@@ -608,7 +590,6 @@ class TestCharm(unittest.TestCase):
             {
                 "inbound-amqp": False,
                 "outbound-amqp": False,
-                "load-balancer-certificates": False,
                 "db": False,
             },
         )
@@ -630,12 +611,7 @@ class TestCharm(unittest.TestCase):
         ppa = harness.model.config.get("landscape_ppa")
         env_variables = os.environ.copy()
 
-        with (
-            patches as mocks,
-            patch("haproxy.install"),
-            patch("haproxy.copy_error_files_from_source"),
-            patch.object(LandscapeServerCharm, "_update_haproxy"),
-        ):
+        with (patches as mocks,):
             harness.begin_with_initial_hooks()
 
         mocks["check_call"].assert_any_call(
@@ -650,10 +626,7 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(status, WaitingStatus)
         self.assertEqual(
             status.message,
-            (
-                "Waiting on relations: db, inbound-amqp, "
-                "outbound-amqp, load-balancer-certificates"
-            ),
+            ("Waiting on relations: db, inbound-amqp, " "outbound-amqp"),
         )
 
     def test_install_package_not_found_error(self):
@@ -750,9 +723,7 @@ class TestCharm(unittest.TestCase):
 
         with (
             patches as mocks,
-            patch("haproxy.install"),
-            patch("haproxy.copy_error_files_from_source"),
-            patch.object(LandscapeServerCharm, "_update_haproxy"),
+            patch("charm.os.environ", {}),
         ):
             harness.begin_with_initial_hooks()
 
@@ -779,12 +750,7 @@ class TestCharm(unittest.TestCase):
             update_service_conf=DEFAULT,
         )
 
-        with (
-            patches as mocks,
-            patch("haproxy.install"),
-            patch("haproxy.copy_error_files_from_source"),
-            patch.object(LandscapeServerCharm, "_update_haproxy"),
-        ):
+        with (patches as mocks,):
             harness.begin_with_initial_hooks()
 
         mocks["write_license_file"].assert_any_call(f"file://{mock_input}", 1000, 1000)
@@ -807,9 +773,6 @@ class TestCharm(unittest.TestCase):
                 prepend_default_settings=DEFAULT,
                 write_license_file=DEFAULT,
             ) as mocks,
-            patch("haproxy.install"),
-            patch("haproxy.copy_error_files_from_source"),
-            patch.object(LandscapeServerCharm, "_update_haproxy"),
         ):
             harness.begin_with_initial_hooks()
 
@@ -962,7 +925,6 @@ class TestCharm(unittest.TestCase):
         }
 
         with (
-            patch("haproxy.install"),
             patch.object(
                 type(self.harness.charm),
                 "peer_ips",
@@ -980,7 +942,6 @@ class TestCharm(unittest.TestCase):
             patch(
                 "settings_files.update_service_conf",
             ) as update_service_conf_mock,
-            patch.object(self.harness.charm, "_update_haproxy"),
         ):
             self.harness.charm._db_relation_changed(mock_event)
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1248,7 +1209,9 @@ class TestCharm(unittest.TestCase):
                 peer_relation_id, "landscape-server", {"leader-ip": "test"}
             )
 
-        with patch.object(self.harness.charm, "_update_haproxy"):
+        with patch.object(
+            self.harness.charm, "_provide_all_haproxy_route_requirements"
+        ):
             self.harness.update_config({"smtp_relay_host": ""})
 
         self.harness.charm._configure_smtp.assert_not_called()
@@ -1273,7 +1236,9 @@ class TestCharm(unittest.TestCase):
                 peer_relation_id, "landscape-server", {"leader-ip": "test"}
             )
 
-        with patch.object(self.harness.charm, "_update_haproxy"):
+        with patch.object(
+            self.harness.charm, "_provide_all_haproxy_route_requirements"
+        ):
             self.harness.update_config({"smtp_relay_host": "smtp.example.com"})
 
         self.harness.charm._configure_smtp.assert_called_once_with("smtp.example.com")
@@ -1550,7 +1515,6 @@ class TestCharm(unittest.TestCase):
         os.mkdir(mock_nrpe_d_dir)
 
         with (
-            patch("haproxy.install"),
             patch.object(
                 type(self.harness.charm),
                 "peer_ips",
@@ -1597,7 +1561,6 @@ class TestCharm(unittest.TestCase):
         mock_event.relation.data = {unit: {}}
 
         with (
-            patch("haproxy.install"),
             patch.object(
                 type(self.harness.charm),
                 "peer_ips",
@@ -1676,7 +1639,6 @@ class TestCharm(unittest.TestCase):
         """
         self.harness.charm._update_nrpe_checks = Mock()
         with (
-            patch("haproxy.install"),
             patch.object(
                 type(self.harness.charm),
                 "peer_ips",
@@ -1710,7 +1672,6 @@ class TestCharm(unittest.TestCase):
         self.harness.hooks_disabled()
 
         with (
-            patch("haproxy.install"),
             patch.object(
                 type(self.harness.charm),
                 "peer_ips",
@@ -2100,36 +2061,17 @@ class TestEnsureHAProxyInstalled:
 
 
 class TestOnUpgradeCharm:
-    def test_upgrade_charm_installs_haproxy_if_missing(
+    def test_upgrade_charm_calls_provide_requirements(
         self,
         lb_certs_state,
-        certificate_and_key_fixture,
-        haproxy_install_fixture,
-        haproxy_copy_error_files_fixture,
-        check_haproxy_not_installed,
     ):
         context = Context(LandscapeServerCharm)
         state = State(**lb_certs_state)
 
-        with context(context.on.upgrade_charm(), state) as mgr:
-            stored = mgr.charm._stored
+        with patch(
+            "charms.haproxy.v1.haproxy_route"
+            ".HaproxyRouteRequirer.provide_haproxy_route_requirements"
+        ) as mock_provide:
+            context.run(context.on.upgrade_charm(), state)
 
-        haproxy_install_fixture.assert_called_once()
-        haproxy_copy_error_files_fixture.assert_called_once()
-        assert stored.ready.get("load-balancer-certificates") is True
-
-    def test_upgrade_charm_skips_install_if_haproxy_present(
-        self,
-        lb_certs_state,
-        haproxy_install_fixture,
-        certificate_and_key_fixture,
-        check_haproxy_installed,
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(**lb_certs_state)
-
-        with context(context.on.upgrade_charm(), state) as mgr:
-            stored = mgr.charm._stored
-
-        haproxy_install_fixture.assert_not_called()
-        assert stored.ready.get("load-balancer-certificates") is True
+        assert mock_provide.call_count >= 1

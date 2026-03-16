@@ -6,7 +6,6 @@ NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 """
 
 import json
-import time
 from urllib.parse import urlparse
 
 import jubilant
@@ -19,7 +18,6 @@ from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
     has_modern_pg,
-    has_tls_certs_provider,
     restore_db_relations,
     supports_legacy_pg,
     wait_for_service,
@@ -375,133 +373,16 @@ def test_non_leader_unit_redirects_leader_only_services(
             )
 
 
-def test_get_certificates_action_without_tls_relation(
-    juju: jubilant.Juju, bundle: None
-):
-    status = juju.status()
-    juju.wait(jubilant.all_active, timeout=300)
-
-    has_tls_cert_relation = has_tls_certs_provider(juju)
-    original_cert_provider = None
-
-    if has_tls_cert_relation:
-        cert_provider = None
-        for app_name, app_status in status.apps.items():
-            if app_name == "landscape-server":
-                continue
-            for rels in app_status.relations.values():
-                if any(rel.interface == "tls-certificates" for rel in rels):
-                    cert_provider = app_name
-                    break
-
-            if cert_provider:
-                break  # We're allowed to have one
-
-        assert cert_provider is not None
-        original_cert_provider = cert_provider
-
-        juju.remove_relation(
-            "landscape-server:load-balancer-certificates",
-            f"{cert_provider}:certificates",
-            force=True,
-        )
-        juju.wait(lambda status: not has_tls_certs_provider(juju), timeout=120)
-
-    with pytest.raises(jubilant.TaskError) as e:
-        juju.run("landscape-server/0", "get-certificates")
-
-    assert "No assigned TLS certificate found for this unit" in e.value.task.message
-    assert e.value.task.status == "failed"
-
-    if original_cert_provider:
-        juju.integrate(
-            "landscape-server:load-balancer-certificates",
-            f"{original_cert_provider}:certificates",
-        )
-        juju.wait(lambda status: has_tls_certs_provider(juju), timeout=120)
-
-
-def test_get_certificates_action_with_tls_relation(juju: jubilant.Juju, bundle: None):
-    juju.wait(jubilant.all_active, timeout=300)
-
-    if not has_tls_certs_provider(juju):
-        pytest.skip("No TLS certificate relation found in bundle")
-
-    juju.wait(jubilant.all_active, timeout=300)
-
-    status = juju.status()
-    leader_unit = None
-    for unit_name, unit_status in status.apps["landscape-server"].units.items():
-        if unit_status.leader:
-            leader_unit = unit_name
-            break
-
-    assert leader_unit is not None
-
-    max_attempts = 12
-    result = None
-    for attempt in range(max_attempts):
-        try:
-            result = juju.run(leader_unit, "get-certificates")
-            if result.status == "completed":
-                break
-        except Exception:
-            if attempt < max_attempts - 1:
-                time.sleep(5)
-                status = juju.status()
-                for unit_name, unit_status in status.apps[
-                    "landscape-server"
-                ].units.items():
-                    if unit_status.leader:
-                        leader_unit = unit_name
-                        break
-            else:
-                raise
-
-    assert result is not None
-    assert result.status == "completed"
-    assert "certificate" in result.results
-    assert "ca" in result.results
-    assert "chain" in result.results
-
-
-def test_get_certificates_action_on_non_leader_unit(juju: jubilant.Juju, bundle: None):
-    status = juju.status()
-    juju.wait(jubilant.all_active, timeout=300)
-
-    if not has_tls_certs_provider(juju):
-        pytest.skip("No TLS certificate relation found in bundle")
-
-    status = juju.status()
-    non_leader_units = [
-        unit_name
-        for unit_name, unit_status in status.apps["landscape-server"].units.items()
-        if not unit_status.leader
-    ]
-
-    if not non_leader_units:
-        pytest.skip("No non-leader units found")
-
-    juju.wait(jubilant.all_active, timeout=300)
-
-    result = juju.run(non_leader_units[0], "get-certificates")
-
-    assert result.status == "completed"
-    assert "certificate" in result.results
-    assert "ca" in result.results
-    assert "chain" in result.results
-
-
-def test_http_ingress_enabled(juju: jubilant.Juju, bundle: None):
+def test_appserver_haproxy_route_enabled(juju: jubilant.Juju, bundle: None):
     """
-    Verify that http-ingress is present and publishes correct data.
+    Verify that appserver-haproxy-route is present and publishes correct data.
     """
     juju.wait(jubilant.all_active, timeout=300)
     status = juju.status()
     app_status = status.apps["landscape-server"]
 
-    if "http-ingress" not in app_status.relations:
-        pytest.skip("http-ingress relation not present in bundle")
+    if "appserver-haproxy-route" not in app_status.relations:
+        pytest.skip("appserver-haproxy-route relation not present in bundle")
 
     leader_unit_name = None
     for name, unit_status in app_status.units.items():
@@ -531,26 +412,23 @@ def test_http_ingress_enabled(juju: jubilant.Juju, bundle: None):
 
         return {k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()}
 
-    http_data = get_relation_data("http-ingress")
+    appserver_data = get_relation_data("appserver-haproxy-route")
 
-    assert (
-        http_data.get("port") == "80"
-    ), f"Expected port 80, got {http_data.get('port')}"
-    assert http_data.get("name") == "landscape-server"
+    assert appserver_data.get("name") == "landscape-server"
 
 
-def test_grpc_ingress_config_enabled(juju: jubilant.Juju, bundle: None):
+def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, bundle: None):
     """
-    Verify that when ingress configs are enabled, the charm creates the ingress
+    Verify that when haproxy-route configs are enabled, the charm creates the
     relations and publishes the correct data to the relation databags.
     """
     status = juju.status()
     app_status = status.apps["landscape-server"]
     if (
-        "hostagent-messenger-ingress" not in app_status.relations
-        or "ubuntu-installer-attach-ingress" not in app_status.relations
+        "hostagent-messenger-haproxy-route" not in app_status.relations
+        or "ubuntu-installer-attach-haproxy-route" not in app_status.relations
     ):
-        pytest.skip("gRPC ingress not integrated, skipping...")
+        pytest.skip("gRPC haproxy-route not integrated, skipping...")
 
     juju.wait(jubilant.all_active, timeout=300)
     config = juju.config("landscape-server")
@@ -568,8 +446,8 @@ def test_grpc_ingress_config_enabled(juju: jubilant.Juju, bundle: None):
         juju.wait(jubilant.all_active, timeout=300)
         status = juju.status()
         app_status = status.apps["landscape-server"]
-        assert "hostagent-messenger-ingress" in app_status.relations
-        assert "ubuntu-installer-attach-ingress" in app_status.relations
+        assert "hostagent-messenger-haproxy-route" in app_status.relations
+        assert "ubuntu-installer-attach-haproxy-route" in app_status.relations
 
         leader_unit_name = None
         for name, unit_status in app_status.units.items():
@@ -601,14 +479,14 @@ def test_grpc_ingress_config_enabled(juju: jubilant.Juju, bundle: None):
                 k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()
             }
 
-        hostagent_data = get_relation_data("hostagent-messenger-ingress")
+        hostagent_data = get_relation_data("hostagent-messenger-haproxy-route")
 
         assert (
             hostagent_data.get("port") == "6554"
         ), f"Expected port 6554, got {hostagent_data.get('port')}"
         assert hostagent_data.get("name") == "landscape-server"
 
-        installer_data = get_relation_data("ubuntu-installer-attach-ingress")
+        installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
 
         assert (
             installer_data.get("port") == "50051"
@@ -761,8 +639,8 @@ def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juj
     main_status = juju.status()
     app_status = main_status.apps["landscape-server"]
 
-    if "hostagent-messenger-ingress" not in app_status.relations:
-        pytest.skip("hostagent-messenger-ingress not configured")
+    if "hostagent-messenger-haproxy-route" not in app_status.relations:
+        pytest.skip("hostagent-messenger-haproxy-route not configured")
 
     haproxy_app = lbaas_status.apps["haproxy"]
     if "receive-ca-certs" not in haproxy_app.relations:
@@ -812,8 +690,8 @@ def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant
     main_status = juju.status()
     app_status = main_status.apps["landscape-server"]
 
-    if "ubuntu-installer-attach-ingress" not in app_status.relations:
-        pytest.skip("ubuntu-installer-attach-ingress not configured")
+    if "ubuntu-installer-attach-haproxy-route" not in app_status.relations:
+        pytest.skip("ubuntu-installer-attach-haproxy-route not configured")
 
     haproxy_app = lbaas_status.apps["haproxy"]
     if "receive-ca-certs" not in haproxy_app.relations:
