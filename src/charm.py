@@ -58,7 +58,7 @@ from ops.model import (
     Relation,
     WaitingStatus,
 )
-from pydantic import BaseModel, IPvAnyAddress, ValidationError
+from pydantic import ValidationError
 import yaml
 
 from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration, RedirectHTTPS
@@ -67,7 +67,6 @@ from database import (
     fetch_postgres_relation_data,
     grant_role,
 )
-import haproxy
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
     AMQP_USERNAME,
@@ -173,11 +172,6 @@ def get_args_with_secrets_removed(args, arg_names):
             if idx < len(args):
                 args[idx] = "REDACTED"
     return args
-
-
-class PeerIPs(BaseModel):
-    all_ips: list[IPvAnyAddress]
-    leader_ip: IPvAnyAddress
 
 
 class LandscapeServerCharm(CharmBase):
@@ -347,27 +341,6 @@ class LandscapeServerCharm(CharmBase):
                 getattr(self.on, f"{relation_name}_relation_changed"),
                 self._on_haproxy_route_relation_joined,
             )
-
-    @property
-    def peer_ips(self) -> PeerIPs | None:
-        unit_ip = self.unit_ip
-        if not unit_ip:
-            return None
-
-        all_ips = [unit_ip]
-        leader_ip = unit_ip
-
-        if replicas := self.model.get_relation("replicas"):
-            leader_ip = replicas.data[self.app].get("leader-ip", unit_ip)
-
-            for unit in replicas.units:
-                # NOTE: Replicas does not contain this unit
-                if peer_unit_address := replicas.data[unit].get("private-address"):
-                    all_ips.append(peer_unit_address)
-
-        peer_ips = PeerIPs(all_ips=all_ips, leader_ip=leader_ip)
-
-        return peer_ips
 
     @property
     def unit_ip(self) -> str | None:
