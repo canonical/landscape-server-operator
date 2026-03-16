@@ -18,6 +18,7 @@ import os
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
+from urllib.parse import urlparse
 
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
@@ -57,16 +58,16 @@ from ops.model import (
     Relation,
     WaitingStatus,
 )
-import haproxy
 from pydantic import BaseModel, IPvAnyAddress, ValidationError
 import yaml
-from urllib3 import urlparse
-from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration
+
+from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration, RedirectHTTPS
 from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
     grant_role,
 )
+import haproxy
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
     AMQP_USERNAME,
@@ -1045,9 +1046,7 @@ class LandscapeServerCharm(CharmBase):
         api_ports = [cfg.api_base_port + i for i in range(w)]
 
         forwarded_proto_https = [("X-Forwarded-Proto", "https")]
-        redirect_directive = haproxy.get_redirect_directive(cfg.redirect_https)
-        if redirect_directive:
-            forwarded_proto_https.append(("Redirect-To-Https", redirect_directive))
+        allow_http = cfg.redirect_https == RedirectHTTPS.NONE
         hostname = None
         if self.charm_config.root_url:
             parsed = urlparse(self.charm_config.root_url)
@@ -1062,6 +1061,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1072,6 +1072,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/ping",
             header_rewrite_expressions=forwarded_proto_https,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1082,6 +1083,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/message-system",
             header_rewrite_expressions=forwarded_proto_https,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1092,6 +1094,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/api",
             header_rewrite_expressions=forwarded_proto_https,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1102,6 +1105,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/upload",
             header_rewrite_expressions=forwarded_proto_https,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
