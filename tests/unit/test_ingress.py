@@ -15,4 +15,4 @@ def test_haproxy_route_requirers_always_initialized(apt_fixture):
     with context(context.on.config_changed(), state) as mgr:
         charm = mgr.charm
 
-    assert hasattr(charm, "http_haproxy_route")
+    assert hasattr(charm, "appserver_haproxy_route")

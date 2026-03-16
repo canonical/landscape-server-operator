@@ -1917,38 +1917,7 @@ class TestGetModifiedEnvVars(unittest.TestCase):
         self.assertIn("/usr/lib/python3", modified)
 
 
-@pytest.fixture(name="check_haproxy_installed")
-def check_haproxy_installed_fixture(monkeypatch: pytest.MonkeyPatch) -> Mock:
-    check_mock = Mock(return_value=Mock(name="haproxy"))
-    monkeypatch.setattr("charm.apt.DebianPackage.from_installed_package", check_mock)
-    return check_mock
 
-
-@pytest.fixture(name="check_haproxy_not_installed")
-def check_haproxy_not_installed_fixture(monkeypatch: pytest.MonkeyPatch) -> Mock:
-    check_mock = Mock(side_effect=PackageNotFoundError("haproxy"))
-    monkeypatch.setattr("charm.apt.DebianPackage.from_installed_package", check_mock)
-    return check_mock
-
-
-class TestIsHAProxyInstalled:
-    def test_returns_true_when_installed(self, check_haproxy_installed):
-        context = Context(LandscapeServerCharm)
-        state = State()
-
-        with context(context.on.config_changed(), state) as mgr:
-            result = mgr.charm._is_haproxy_installed()
-
-        assert result is True
-
-    def test_returns_false_when_not_installed(self, check_haproxy_not_installed):
-        context = Context(LandscapeServerCharm)
-        state = State()
-
-        with context(context.on.config_changed(), state) as mgr:
-            result = mgr.charm._is_haproxy_installed()
-
-        assert result is False
 
 
 class TestEnsureHAProxyInstalled:
@@ -2066,7 +2035,16 @@ class TestOnUpgradeCharm:
         lb_certs_state,
     ):
         context = Context(LandscapeServerCharm)
-        state = State(**lb_certs_state)
+        relations = lb_certs_state.get("relations", [])
+        for endpoint in (
+            "appserver-haproxy-route",
+            "pingserver-haproxy-route",
+            "message-server-haproxy-route",
+            "api-haproxy-route",
+            "package-upload-haproxy-route",
+        ):
+            relations = list(relations) + [scenario.Relation(endpoint=endpoint)]
+        state = State(**{**lb_certs_state, "relations": relations})
 
         with patch(
             "charms.haproxy.v1.haproxy_route"

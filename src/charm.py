@@ -1046,7 +1046,8 @@ class LandscapeServerCharm(CharmBase):
         api_ports = [cfg.api_base_port + i for i in range(w)]
 
         forwarded_proto_https = [("X-Forwarded-Proto", "https")]
-        allow_http = cfg.redirect_https == RedirectHTTPS.NONE
+        allow_http_all = cfg.redirect_https == RedirectHTTPS.NONE
+        allow_http_ping = allow_http_all or cfg.redirect_https == RedirectHTTPS.DEFAULT
         hostname = None
         if self.charm_config.root_url:
             parsed = urlparse(self.charm_config.root_url)
@@ -1061,7 +1062,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_all,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1072,7 +1073,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/ping",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_ping,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1083,7 +1084,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/message-system",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_all,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1094,7 +1095,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/api",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_all,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1105,7 +1106,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/upload",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_all,
             unit_address=unit_ip,
             hostname=hostname,
         )
