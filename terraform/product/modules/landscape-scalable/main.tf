@@ -16,6 +16,7 @@ module "landscape_server" {
   model_uuid  = var.model_uuid
   config      = var.landscape_server.config
   app_name    = var.landscape_server.app_name
+  charm_name  = var.landscape_server.charm_name
   channel     = var.landscape_server.channel
   constraints = var.landscape_server.constraints
   revision    = var.landscape_server.revision

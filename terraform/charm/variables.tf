@@ -30,6 +30,11 @@ variable "constraints" {
   default     = "arch=amd64"
 }
 
+variable "charm_name" {
+  type    = string
+  default = "landscape-server"
+}
+
 variable "model_uuid" {
   description = "UUID of a Juju model."
   type        = string
