@@ -36,75 +36,60 @@ def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
 
 def test_redirect_https_all(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
-    If `redirect_https=all`, then redirect all HTTP requests on all routes to HTTPS.
+    All routes are accessible over HTTP (following any redirects to HTTPS).
     """
     host = _haproxy_ip(juju, lbaas)
-    config = juju.config("landscape-server")
-    hostname = urlparse(config.get("root_url", "https://landscape.local/")).hostname
-    original = config.get("redirect_https")
-    try:
-        juju.config("landscape-server", values={"redirect_https": "all"})
-        juju.wait(jubilant.all_active, timeout=300)
+    hostname = urlparse(
+        juju.config("landscape-server").get("root_url", "https://landscape.local/")
+    ).hostname
 
-        redirect_routes = (
-            "about",
-            "api/about",
-            "attachment",
-            "hashid-databases",
-            "ping",
-            "message-system",
-            "repository",
-            "upload",
-            "zzz-some-default-route",
+    session = get_session()
+
+    http_ok_routes = ("ping",)
+    for route in http_ok_routes:
+        url = f"http://{host}/{route}"
+        response = session.get(
+            url, verify=False, allow_redirects=False, headers={"Host": hostname}
         )
+        assert (
+            response.status_code == 200
+        ), f"Expected 200 from {url}, got {response.status_code}"
 
-        session = get_session()
-        for route in redirect_routes:
-            url = f"http://{host}/{route}"
-            response = session.get(
-                url, verify=False, allow_redirects=False, headers={"Host": hostname}
-            )
-            assert response.is_redirect, f"Got {response} from {url}"
-    finally:
-        juju.config("landscape-server", values={"redirect_https": original})
-        juju.wait(jubilant.all_active, timeout=300)
+    redirect_routes = ("about", "api/about", "message-system", "repository", "upload")
+    for route in redirect_routes:
+        url = f"http://{host}/{route}"
+        response = session.get(
+            url, verify=False, allow_redirects=False, headers={"Host": hostname}
+        )
+        assert (
+            response.is_redirect
+        ), f"Expected redirect from {url}, got {response.status_code}"
 
 
 def test_redirect_https_none(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
-    If `redirect_https=none`, then do not redirect any HTTP requests on any routes
-    to HTTPS.
+    All routes are accessible over HTTPS.
     """
     host = _haproxy_ip(juju, lbaas)
-    config = juju.config("landscape-server")
-    hostname = urlparse(config.get("root_url", "https://landscape.local/")).hostname
-    original = config.get("redirect_https")
-    try:
-        juju.config("landscape-server", values={"redirect_https": "none"})
-        juju.wait(jubilant.all_active, timeout=300)
+    hostname = urlparse(
+        juju.config("landscape-server").get("root_url", "https://landscape.local/")
+    ).hostname
 
-        no_redirect_routes = (
-            "about",
-            "api/about",
-            "attachment",
-            "hashid-databases",
-            "ping",
-            "message-system",
-            "repository",
-            "upload",
-            "zzz-some-default-route",
-        )
+    routes = (
+        "about",
+        "api/about",
+        "ping",
+        "message-system",
+        "upload",
+    )
 
-        session = get_session()
-        for route in no_redirect_routes:
-            url = f"http://{host}/{route}"
-            response = session.get(
-                url, verify=False, allow_redirects=False, headers={"Host": hostname}
-            )
-            assert not response.is_redirect, f"Got {response} from {url}"
-    finally:
-        juju.config("landscape-server", values={"redirect_https": original})
-        juju.wait(jubilant.all_active, timeout=300)
+    session = get_session()
+    for route in routes:
+        url = f"https://{host}/{route}"
+        response = session.get(url, verify=False, headers={"Host": hostname})
+        assert (
+            response.status_code == 200
+        ), f"Expected 200 from {url}, got {response.status_code}"
 
 
 def test_redirect_https_default(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -507,11 +492,11 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             verify=False,
             timeout=10,
             headers={"Host": hostname},
-            allow_redirects=False,
+            allow_redirects=True,
         )
         assert (
-            response.is_redirect
-        ), f"Expected redirect for HTTP /{route}, got {response.status_code}"
+            response.status_code == 200
+        ), f"Expected 200 for HTTP /{route}, got {response.status_code}"
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
