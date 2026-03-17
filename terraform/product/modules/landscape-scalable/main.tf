@@ -7,7 +7,7 @@ resource "juju_machine" "landscape_server" {
   name       = "landscape-server-${count.index}"
 
   lifecycle {
-    create_before_destroy = true
+    ignore_changes        = [constraints]
   }
 }
 
