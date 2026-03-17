@@ -31,8 +31,9 @@ variable "constraints" {
 }
 
 variable "charm_name" {
-  type    = string
-  default = "landscape-server"
+  type        = string
+  default     = "landscape-server"
+  description = "Name of the Landscape Server charm on Charmhub."
 }
 
 variable "model_uuid" {
