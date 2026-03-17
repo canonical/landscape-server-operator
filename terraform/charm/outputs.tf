@@ -21,8 +21,8 @@ output "provides" {
 
 locals {
   # Needed since the relations changed to support the hostagent services
-  legacy_amqp_rel_channels = ["latest/stable", "latest/beta", "latest/edge", "24.04/edge"]
-  amqp_rels_updated_rev    = 142
+  legacy_amqp_rel_channels = ["latest/stable", "latest/beta", "24.04/edge"]
+  amqp_rels_updated_rev    = 1
   has_modern_amqp_rels     = !contains(local.legacy_amqp_rel_channels, var.channel) && (var.revision != null ? var.revision >= local.amqp_rels_updated_rev : true)
   amqp_relations           = local.has_modern_amqp_rels ? { inbound_amqp = "inbound-amqp", outbound_amqp = "outbound-amqp" } : { amqp = "amqp" }
 
