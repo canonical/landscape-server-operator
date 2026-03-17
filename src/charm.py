@@ -1080,18 +1080,20 @@ class LandscapeServerCharm(CharmBase):
             unit_address=unit_ip,
             hostname=hostname,
         )
-        if self.unit.is_leader():
-            self.package_upload_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-package-upload-{model_uuid}",
-                ports=[cfg.package_upload_base_port],
-                paths=["/upload"],
-                protocol="http",
-                check_path="/upload",
-                header_rewrite_expressions=forwarded_proto_https,
-                allow_http=allow_http_all,
-                unit_address=unit_ip,
-                hostname=hostname,
-            )
+        self.package_upload_haproxy_route.provide_haproxy_route_requirements(
+            service=f"landscape-package-upload-{model_uuid}",
+            ports=[cfg.package_upload_base_port],
+            paths=["/upload"],
+            protocol="http",
+            check_path="/upload",
+            check_interval=2000,
+            check_rise=2,
+            check_fall=3,
+            header_rewrite_expressions=forwarded_proto_https,
+            allow_http=allow_http_all,
+            unit_address=unit_ip,
+            hostname=hostname,
+        )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
                 service=f"landscape-hostagent-messenger-{model_uuid}",

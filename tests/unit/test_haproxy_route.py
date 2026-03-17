@@ -152,17 +152,21 @@ class TestLeaderRoutes:
         assert "/repository" not in paths
         assert "/hash-id-databases" not in paths
 
-    def test_leader_publishes_package_upload_route(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(leader=True, **replicas_network_state)
-        mock = _run_provide(context, state)
-        assert any("package-upload" in s for s in _services_called(mock))
-
-    def test_non_leader_skips_package_upload_route(self, replicas_network_state):
+    def test_all_units_publish_package_upload_route(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(leader=False, **replicas_network_state)
         mock = _run_provide(context, state)
-        assert not any("package-upload" in s for s in _services_called(mock))
+        assert any("package-upload" in s for s in _services_called(mock))
+
+    def test_package_upload_has_health_checks(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "package-upload")
+        assert calls
+        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_rise") == 2
+        assert calls[0].kwargs.get("check_fall") == 3
 
 
 class TestHostname:
