@@ -1021,23 +1021,28 @@ class LandscapeServerCharm(CharmBase):
         forwarded_proto_https = [("X-Forwarded-Proto", "https")]
         allow_http_all = cfg.redirect_https == RedirectHTTPS.NONE
         allow_http_ping = allow_http_all or cfg.redirect_https == RedirectHTTPS.DEFAULT
-        hostname = None
+
+        hostname = leader_ip
         if self.charm_config.root_url:
             parsed = urlparse(self.charm_config.root_url)
-            if parsed.hostname:
-                hostname = parsed.hostname
-            else:
-                hostname = leader_ip
+            if name := parsed.hostname:
+                hostname = name
+
+        appserver_paths = ["/"]
+        if self.unit.is_leader():
+            appserver_paths = ["/", "/repository", "/hash-id-databases"]
 
         self.appserver_haproxy_route.provide_haproxy_route_requirements(
             service="landscape-appserver",
             ports=appserver_ports,
+            paths=appserver_paths,
             protocol="http",
             check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_all,
             unit_address=unit_ip,
             hostname=hostname,
+            deny_paths=["/metrics"],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
             service="landscape-pingserver",
@@ -1072,32 +1077,35 @@ class LandscapeServerCharm(CharmBase):
             unit_address=unit_ip,
             hostname=hostname,
         )
-        self.package_upload_haproxy_route.provide_haproxy_route_requirements(
-            service="landscape-package-upload",
-            ports=[cfg.package_upload_base_port],
-            paths=["/upload"],
-            protocol="http",
-            check_path="/upload",
-            header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_all,
-            unit_address=unit_ip,
-            hostname=hostname,
-        )
+        if self.unit.is_leader():
+            self.package_upload_haproxy_route.provide_haproxy_route_requirements(
+                service="landscape-package-upload",
+                ports=[cfg.package_upload_base_port],
+                paths=["/upload"],
+                protocol="http",
+                check_path="/upload",
+                header_rewrite_expressions=forwarded_proto_https,
+                allow_http=allow_http_all,
+                unit_address=unit_ip,
+                hostname=hostname,
+            )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
                 service="landscape-hostagent-messenger",
                 ports=[cfg.hostagent_server_base_port],
-                protocol="http",
+                protocol="https",
                 unit_address=unit_ip,
                 hostname=hostname,
+                external_grpc_port=6554,
             )
         if cfg.enable_ubuntu_installer_attach:
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
                 service="landscape-ubuntu-installer-attach",
                 ports=[cfg.ubuntu_installer_attach_base_port],
-                protocol="http",
+                protocol="https",
                 unit_address=unit_ip,
                 hostname=hostname,
+                external_grpc_port=50051,
             )
 
     def _nrpe_external_master_relation_joined(self, event: RelationJoinedEvent) -> None:
