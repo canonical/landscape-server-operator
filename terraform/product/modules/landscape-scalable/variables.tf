@@ -101,20 +101,3 @@ variable "rabbitmq_server" {
   default  = {}
   nullable = true
 }
-
-variable "lb_certs" {
-  description = "Configuration for the self-signed-certificates charm (for internal HAProxy TLS). Set to null to skip deployment."
-  type = object({
-    app_name    = optional(string, "lb-certs")
-    channel     = optional(string, "1/stable")
-    config      = optional(map(string), {})
-    constraints = optional(string, "arch=amd64")
-    resources   = optional(map(string), {})
-    revision    = optional(number)
-    base        = optional(string, "ubuntu@24.04")
-    units       = optional(number, 1)
-  })
-
-  default  = {}
-  nullable = true
-}
