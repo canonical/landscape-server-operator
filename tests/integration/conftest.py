@@ -113,13 +113,19 @@ def lbaas(juju: jubilant.Juju):
     Set up external HAProxy in a separate model for LBaaS testing.
 
     This fixture can either:
+    - Return the existing juju model if USE_HOST_JUJU_MODEL is True (haproxy already local)
     - Use an existing lbaas model (if USE_HOST_LBAAS_MODEL is True)
     - Create a temporary model and deploy haproxy + self-signed-certificates
 
     Environment variables:
+    - LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL: Return local model directly (haproxy co-deployed)
     - LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL: Set to use existing lbaas deployment
     - LBAAS_MODEL_NAME: Name of the lbaas model (default: "lbaas")
     """
+    if USE_HOST_JUJU_MODEL:
+        yield juju
+        return
+
     status = juju.status()
     app_status = status.apps.get("landscape-server")
 
@@ -172,7 +178,7 @@ def lbaas(juju: jubilant.Juju):
             )
             lbaas_juju.wait(jubilant.all_active, timeout=300)
 
-            lbaas_juju.offer(endpoint="haproxy:haproxy-route")
+            lbaas_juju.offer("haproxy", endpoint="haproxy-route")
 
             offer_app_name = "lbaas-haproxy"
             juju.consume(f"admin/{lbaas_model}.haproxy", offer_app_name)

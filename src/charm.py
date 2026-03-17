@@ -512,6 +512,7 @@ class LandscapeServerCharm(CharmBase):
             self._stored.cookie_encryption_key = cookie_encryption_key
 
         self._update_ready_status(restart_services=True)
+        self._provide_all_haproxy_route_requirements()
 
     def _get_secret_token(self) -> str | None:
         """
@@ -1032,8 +1033,10 @@ class LandscapeServerCharm(CharmBase):
         if self.unit.is_leader():
             appserver_paths = ["/", "/repository", "/hash-id-databases"]
 
+        model_uuid = self.model.uuid
+
         self.appserver_haproxy_route.provide_haproxy_route_requirements(
-            service="landscape-appserver",
+            service=f"landscape-appserver-{model_uuid}",
             ports=appserver_ports,
             paths=appserver_paths,
             protocol="http",
@@ -1045,7 +1048,7 @@ class LandscapeServerCharm(CharmBase):
             deny_paths=["/metrics"],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
-            service="landscape-pingserver",
+            service=f"landscape-pingserver-{model_uuid}",
             ports=pingserver_ports,
             paths=["/ping"],
             protocol="http",
@@ -1056,7 +1059,7 @@ class LandscapeServerCharm(CharmBase):
             hostname=hostname,
         )
         self.message_server_haproxy_route.provide_haproxy_route_requirements(
-            service="landscape-message-server",
+            service=f"landscape-message-server-{model_uuid}",
             ports=message_server_ports,
             paths=["/message-system", "/attachment"],
             protocol="http",
@@ -1067,7 +1070,7 @@ class LandscapeServerCharm(CharmBase):
             hostname=hostname,
         )
         self.api_haproxy_route.provide_haproxy_route_requirements(
-            service="landscape-api",
+            service=f"landscape-api-{model_uuid}",
             ports=api_ports,
             paths=["/api"],
             protocol="http",
@@ -1079,7 +1082,7 @@ class LandscapeServerCharm(CharmBase):
         )
         if self.unit.is_leader():
             self.package_upload_haproxy_route.provide_haproxy_route_requirements(
-                service="landscape-package-upload",
+                service=f"landscape-package-upload-{model_uuid}",
                 ports=[cfg.package_upload_base_port],
                 paths=["/upload"],
                 protocol="http",
@@ -1091,7 +1094,7 @@ class LandscapeServerCharm(CharmBase):
             )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
-                service="landscape-hostagent-messenger",
+                service=f"landscape-hostagent-messenger-{model_uuid}",
                 ports=[cfg.hostagent_server_base_port],
                 protocol="https",
                 unit_address=unit_ip,
@@ -1100,7 +1103,7 @@ class LandscapeServerCharm(CharmBase):
             )
         if cfg.enable_ubuntu_installer_attach:
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
-                service="landscape-ubuntu-installer-attach",
+                service=f"landscape-ubuntu-installer-attach-{model_uuid}",
                 ports=[cfg.ubuntu_installer_attach_base_port],
                 protocol="https",
                 unit_address=unit_ip,
