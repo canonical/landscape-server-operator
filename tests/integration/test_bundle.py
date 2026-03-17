@@ -446,14 +446,16 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         assert (
             hostagent_data.get("external_grpc_port") == "6554"
-        ), f"Expected external_grpc_port 6554, got {hostagent_data.get('external_grpc_port')}"
+        ), "Expected external_grpc_port 6554, "
+        f"got {hostagent_data.get('external_grpc_port')}"
         assert hostagent_data.get("service") == "landscape-hostagent-messenger"
 
         installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
 
         assert (
             installer_data.get("external_grpc_port") == "50051"
-        ), f"Expected external_grpc_port 50051, got {installer_data.get('external_grpc_port')}"
+        ), "Expected external_grpc_port 50051, "
+        f"got {installer_data.get('external_grpc_port')}"
         assert installer_data.get("service") == "landscape-ubuntu-installer-attach"
     finally:
         juju.config(
