@@ -74,7 +74,7 @@ resource "juju_application" "rabbitmq_server" {
 }
 
 locals {
-  has_modern_amqp_relations = can(module.landscape_server.requires.inbound_amqp) && can(module.landscape_server.requires.outbound_amqp)
+  has_modern_amqp_relations = try(module.landscape_server.requires.inbound_amqp, null) != null && try(module.landscape_server.requires.outbound_amqp, null) != null
 }
 
 resource "juju_integration" "landscape_server_inbound_amqp" {
