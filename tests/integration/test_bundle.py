@@ -456,7 +456,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
             hostagent_data.get("external_grpc_port") == "6554"
         ), "Expected external_grpc_port 6554, "
         f"got {hostagent_data.get('external_grpc_port')}"
-        assert hostagent_data.get("service", "").startswith("landscape-hostagent-messenger-")
+        assert hostagent_data.get("service", "").startswith(
+            "landscape-hostagent-messenger-"
+        )
 
         installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
 
@@ -464,7 +466,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
             installer_data.get("external_grpc_port") == "50051"
         ), "Expected external_grpc_port 50051, "
         f"got {installer_data.get('external_grpc_port')}"
-        assert installer_data.get("service", "").startswith("landscape-ubuntu-installer-attach-")
+        assert installer_data.get("service", "").startswith(
+            "landscape-ubuntu-installer-attach-"
+        )
     finally:
         juju.config(
             "landscape-server",
@@ -505,9 +509,9 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=False,
         )
-        assert response.is_redirect, (
-            f"Expected redirect for HTTP /{route}, got {response.status_code}"
-        )
+        assert (
+            response.is_redirect
+        ), f"Expected redirect for HTTP /{route}, got {response.status_code}"
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
