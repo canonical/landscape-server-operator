@@ -349,7 +349,7 @@ resource "juju_application" "pgbouncer" {
     base     = var.pgbouncer.base
   }
 
-  count = var.pgbouncer != null ? 1 : 0
+  count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_pgbouncer" {
@@ -385,5 +385,5 @@ resource "juju_integration" "pgbouncer_postgresql" {
 
   depends_on = [juju_application.pgbouncer, module.postgresql]
 
-  count = var.pgbouncer != null && var.postgresql != null ? 1 : 0
+  count = var.pgbouncer != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
 }
