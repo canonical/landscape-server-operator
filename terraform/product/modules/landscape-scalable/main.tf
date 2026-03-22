@@ -148,8 +148,8 @@ resource "juju_application" "lb_certs" {
 }
 
 locals {
-  has_modern_amqp_relations = can(module.landscape_server.requires.inbound_amqp) && can(module.landscape_server.requires.outbound_amqp)
-  has_internal_haproxy      = can(module.landscape_server.requires.load_balancer_certificates)
+  has_modern_amqp_relations = try(module.landscape_server.requires.inbound_amqp, null) != null && try(module.landscape_server.requires.outbound_amqp, null) != null
+  has_internal_haproxy      = try(module.landscape_server.requires.load_balancer_certificates, null) != null
 }
 
 resource "juju_integration" "landscape_server_inbound_amqp" {
@@ -294,7 +294,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_ingress" {
 }
 
 locals {
-  has_modern_pg_interface = can(module.landscape_server.requires.database)
+  has_modern_pg_interface = try(module.landscape_server.requires.database, null) != null
 }
 
 
