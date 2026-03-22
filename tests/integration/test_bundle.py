@@ -19,6 +19,7 @@ from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
     has_modern_pg,
+    has_pgbouncer,
     has_tls_certs_provider,
     restore_db_relations,
     supports_legacy_pg,
@@ -251,6 +252,26 @@ def test_legacy_db_relation(juju: jubilant.Juju, bundle: None):
     assert "db" in relations
 
     restore_db_relations(juju, initial_relations)
+
+
+def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
+    """
+    If PgBouncer is deployed, landscape-server connects to it via the `database`
+    endpoint rather than directly to PostgreSQL.
+    """
+    if not has_pgbouncer(juju):
+        pytest.skip("PgBouncer not present in this model, skipping...")
+
+    pg_relations = set(juju.status().apps["pgbouncer"].relations)
+    assert "database" in pg_relations, "pgbouncer should have a `database` relation"
+    assert (
+        "backend-database" in pg_relations
+    ), "pgbouncer should have a `backend-database` relation to PostgreSQL"
+
+    ls_relations = set(juju.status().apps["landscape-server"].relations)
+    assert (
+        "database" in ls_relations
+    ), "landscape-server should be related via the `database` endpoint"
 
 
 def test_all_services_up(juju: jubilant.Juju, bundle: None):
