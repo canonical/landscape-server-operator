@@ -205,6 +205,22 @@ class TestOnConfigChanged:
 
         assert haproxy.FrontendName.HOSTAGENT_MESSENGER in stored.haproxy_config
 
+    def test_deployment_mode_override_called(
+        self,
+        monkeypatch,
+        mock_write_deployment_mode_systemd_override,
+    ):
+        calls = []
+        monkeypatch.setattr(
+            "charm.write_deployment_mode_systemd_override",
+            lambda mode: calls.append(mode),
+        )
+        monkeypatch.setattr("charm.configure_for_deployment_mode", lambda mode: None)
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"deployment_mode": "prod"})
+        ctx.run(ctx.on.config_changed(), state)
+        assert calls == ["prod"]
+
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
     """
