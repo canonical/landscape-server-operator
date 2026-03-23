@@ -44,7 +44,7 @@ from charms.operator_libs_linux.v1.systemd import (
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppRequirer,
 )
-from ops import main
+from ops import main, Port
 from ops.charm import (
     ActionEvent,
     CharmBase,
@@ -470,6 +470,8 @@ class LandscapeServerCharm(CharmBase):
             logger.exception(e)
             return
 
+        self._set_ports()
+
         # Update additional configuration
         update_service_conf(
             {"global": {"deployment-mode": self.charm_config.deployment_mode}}
@@ -581,6 +583,24 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_haproxy()
         self._update_ready_status(restart_services=True)
+
+    def _set_ports(self):
+        worker_counts = self.charm_config.worker_counts
+        ports = [
+            Port("tcp", self.charm_config.package_upload_base_port),
+            Port("tcp", self.charm_config.hostagent_server_base_port),
+            Port("tcp", self.charm_config.ubuntu_installer_attach_base_port),
+        ]
+
+        for i in range(worker_counts):
+            ports += [
+                Port("tcp", self.charm_config.pingserver_base_port + i),
+                Port("tcp", self.charm_config.appserver_base_port + i),
+                Port("tcp", self.charm_config.message_server_base_port + i),
+                Port("tcp", self.charm_config.api_base_port + i),
+            ]
+
+        self.unit.set_ports(*ports)
 
     def _get_secret_token(self) -> str | None:
         """

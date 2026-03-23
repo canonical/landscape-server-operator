@@ -25,6 +25,7 @@ from ops.testing import (
     Relation,
     State,
     StoredState,
+    TCPPort,
 )
 import pytest
 from scenario.errors import UncaughtCharmError
@@ -204,6 +205,28 @@ class TestOnConfigChanged:
             stored = mgr.charm._stored
 
         assert haproxy.FrontendName.HOSTAGENT_MESSENGER in stored.haproxy_config
+
+    def test_ports_open(self):
+        ctx = Context(LandscapeServerCharm)
+        state_in = State()
+        # default ports with two workers
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9100, protocol="tcp"),
+            TCPPort(port=50052, protocol="tcp"),
+            TCPPort(port=53354, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
