@@ -152,6 +152,19 @@ resource "juju_integration" "package_upload_haproxy_route" {
   }
 }
 
+resource "juju_integration" "repository_haproxy_route" {
+  model = data.juju_model.landscape_model.name
+
+  application {
+    offer_url = data.juju_offer.haproxy_route.url
+  }
+
+  application {
+    name     = "landscape-server"
+    endpoint = "repository-haproxy-route"
+  }
+}
+
 resource "juju_integration" "hostagent_messenger_haproxy_route" {
   model = data.juju_model.landscape_model.name
 
@@ -195,6 +208,7 @@ resource "juju_integration" "appserver_haproxy_route" {
     juju_integration.message_server_haproxy_route,
     juju_integration.api_haproxy_route,
     juju_integration.package_upload_haproxy_route,
+    juju_integration.repository_haproxy_route,
     juju_integration.hostagent_messenger_haproxy_route,
     juju_integration.ubuntu_installer_attach_haproxy_route,
   ]

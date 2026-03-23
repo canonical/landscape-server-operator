@@ -157,7 +157,7 @@ options:
     type: string
     default:
     description: |
-      Password used by database admin to perform schema checks and 
+      Password used by database admin to perform schema checks and
       migrations. If not set, postgres charm value, followed by
       db_landscape_password is used.
   deployment_mode:
@@ -203,14 +203,13 @@ options:
     description: |
       Bypassed Landscape administrator registration approval for clients that
       register using the registration password.
-  redirect_https:
-    type: string
-    default: default
+  allow_http:
+    type: boolean
+    default: true
     description: |
-      Redirect HTTP requests to HTTPS. May be one of {default|all|none}. The 'default'
-      option will redirect all HTTP traffic except for /ping and /repository. If an
-      invalid value is provided, the charm will remain in the maintenance status
-      until a valid value is given.
+      When true (the default), allow plain HTTP access to all routes. When false,
+      HTTP requests are redirected to HTTPS except for /ping and /repository, which
+      always allow plain HTTP.
   enable_hostagent_messenger:
     type: boolean
     default: false

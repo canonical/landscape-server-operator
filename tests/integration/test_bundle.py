@@ -34,61 +34,80 @@ def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
     pytest.skip("No haproxy app found in local or lbaas model")
 
 
-def test_redirect_https_all(juju: jubilant.Juju, lbaas: jubilant.Juju):
+def test_allow_http_true_routes_not_redirected(
+    juju: jubilant.Juju, lbaas: jubilant.Juju
+):
     """
-    All routes are accessible over HTTP (following any redirects to HTTPS).
-    """
-    host = _haproxy_ip(juju, lbaas)
-    hostname = urlparse(
-        juju.config("landscape-server").get("root_url", "https://landscape.local/")
-    ).hostname
-
-    session = get_session()
-
-    http_ok_routes = ("ping",)
-    for route in http_ok_routes:
-        url = f"http://{host}/{route}"
-        response = session.get(
-            url, verify=False, allow_redirects=False, headers={"Host": hostname}
-        )
-        assert (
-            response.status_code == 200
-        ), f"Expected 200 from {url}, got {response.status_code}"
-
-    redirect_routes = ("api/about", "message-system", "repository", "upload")
-    for route in redirect_routes:
-        url = f"http://{host}/{route}"
-        response = session.get(
-            url, verify=False, allow_redirects=False, headers={"Host": hostname}
-        )
-        assert (
-            response.is_redirect
-        ), f"Expected redirect from {url}, got {response.status_code}"
-
-
-def test_redirect_https_none(juju: jubilant.Juju, lbaas: jubilant.Juju):
-    """
-    All routes are accessible over HTTPS.
+    When allow_http=true, all routes are accessible over HTTP without redirect.
     """
     host = _haproxy_ip(juju, lbaas)
     hostname = urlparse(
         juju.config("landscape-server").get("root_url", "https://landscape.local/")
     ).hostname
 
-    routes = (
-        "api/about",
-        "ping",
-        "message-system",
-        "upload",
-    )
+    original = juju.config("landscape-server").get("allow_http")
+    try:
+        juju.config("landscape-server", values={"allow_http": "true"})
+        juju.wait(jubilant.all_active, timeout=300)
+        lbaas.wait(jubilant.all_active, timeout=300)
 
-    session = get_session()
-    for route in routes:
-        url = f"https://{host}/{route}"
-        response = session.get(url, verify=False, headers={"Host": hostname})
-        assert (
-            response.status_code == 200
-        ), f"Expected 200 from {url}, got {response.status_code}"
+        session = get_session()
+        for route in ("ping", "api/about", "message-system", "upload"):
+            url = f"http://{host}/{route}"
+            response = session.get(
+                url, verify=False, allow_redirects=False, headers={"Host": hostname}
+            )
+            assert (
+                not response.is_redirect
+            ), f"Expected no redirect from {url}, got {response.status_code}"
+    finally:
+        juju.config("landscape-server", values={"allow_http": str(original).lower()})
+        juju.wait(jubilant.all_active, timeout=300)
+        lbaas.wait(jubilant.all_active, timeout=300)
+
+
+def test_allow_http_false_routes_redirect_to_https(
+    juju: jubilant.Juju, lbaas: jubilant.Juju
+):
+    """
+    When allow_http=false, HTTP requests are redirected to HTTPS except for
+    /ping and /repository which always allow plain HTTP.
+    """
+    host = _haproxy_ip(juju, lbaas)
+    hostname = urlparse(
+        juju.config("landscape-server").get("root_url", f"https://{host}/")
+    ).hostname
+    original = juju.config("landscape-server").get("allow_http")
+    try:
+        juju.config("landscape-server", values={"allow_http": "false"})
+        juju.wait(jubilant.all_active, timeout=600)
+        lbaas.wait(jubilant.all_active, timeout=300)
+
+        session = get_session()
+        for route in ("ping",):
+            url = f"http://{host}/{route}"
+            response = session.get(
+                url, verify=False, allow_redirects=False, headers={"Host": hostname}
+            )
+            assert not response.is_redirect, f"Got {response.status_code} from {url}"
+
+        for route in (
+            "api/about",
+            "attachment",
+            "hashid-databases",
+            "message-system",
+            "upload",
+            "zzz-some-default-route",
+        ):
+            url = f"http://{host}/{route}"
+            response = session.get(
+                url, verify=False, allow_redirects=False, headers={"Host": hostname}
+            )
+            assert response.is_redirect, f"Got {response.status_code} from {url}"
+    finally:
+        juju.config("landscape-server", values={"allow_http": str(original).lower()})
+        juju.wait(jubilant.all_active, timeout=300)
+        lbaas.wait(jubilant.all_active, timeout=300)
 
 
 def test_redirect_https_default(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -96,44 +115,7 @@ def test_redirect_https_default(juju: jubilant.Juju, lbaas: jubilant.Juju):
     If `redirect_https=default`, then redirect all HTTP requests except for those to the
     /repository and /ping routes to HTTPS.
     """
-    host = _haproxy_ip(juju, lbaas)
-    hostname = urlparse(
-        juju.config("landscape-server").get("root_url", f"https://{host}/")
-    ).hostname
-    original = juju.config("landscape-server").get("redirect_https")
-    try:
-        juju.config("landscape-server", values={"redirect_https": "default"})
-        juju.wait(jubilant.all_active, timeout=600)
-        lbaas.wait(jubilant.all_active, timeout=300)
-
-        no_redirect_routes = (
-            "ping",
-            # NOTE: Requires setup to work.
-            # "repository",
-        )
-
-        session = get_session()
-        for route in no_redirect_routes:
-            url = f"http://{host}/{route}"
-            response = session.get(url, verify=False, allow_redirects=False, headers={"Host": hostname})
-            assert not response.is_redirect, f"Got {response.status_code} from {url}"
-
-        redirect_routes = (
-            "api/about",
-            "attachment",
-            "hashid-databases",
-            "message-system",
-            "upload",
-            "zzz-some-default-route",
-        )
-        for route in redirect_routes:
-            url = f"http://{host}/{route}"
-            response = session.get(url, verify=False, allow_redirects=False, headers={"Host": hostname})
-            assert response.is_redirect, f"Got {response.status_code} from {url}"
-    finally:
-        juju.config("landscape-server", values={"redirect_https": original})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+    pytest.skip("redirect_https config replaced by allow_http")
 
 
 def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -142,9 +124,9 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
     host = _haproxy_ip(juju, lbaas)
 
-    original = juju.config("landscape-server").get("redirect_https")
+    original = juju.config("landscape-server").get("allow_http")
     try:
-        juju.config("landscape-server", values={"redirect_https": "all"})
+        juju.config("landscape-server", values={"allow_http": "false"})
         juju.wait(jubilant.all_active, timeout=300)
         lbaas.wait(jubilant.all_active, timeout=300)
 
@@ -158,7 +140,7 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
                 f"got {response.status_code}"
             )
     finally:
-        juju.config("landscape-server", values={"redirect_https": original})
+        juju.config("landscape-server", values={"allow_http": str(original).lower()})
         juju.wait(jubilant.all_active, timeout=300)
         lbaas.wait(jubilant.all_active, timeout=300)
 
@@ -675,7 +657,7 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
             "landscape_ppa is already self-hosted-24.04; nothing to swap, skipping."
         )
 
-    unit_name = "landscape-server/0"
+    unit_name = next(iter(juju.status().apps["landscape-server"].units))
 
     try:
         juju.ssh(

@@ -44,6 +44,9 @@ requires:
   ubuntu-installer-attach-haproxy-route:
     interface: haproxy-route
     limit: 1
+  repository-haproxy-route:
+    interface: haproxy-route
+    limit: 1
 
 provides:
   data:

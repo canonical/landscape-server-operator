@@ -43,6 +43,7 @@ locals {
     message_server_haproxy_route          = "message-server-haproxy-route"
     api_haproxy_route                     = "api-haproxy-route"
     package_upload_haproxy_route          = "package-upload-haproxy-route"
+    repository_haproxy_route              = "repository-haproxy-route"
     hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
   }

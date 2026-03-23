@@ -61,7 +61,7 @@ from ops.model import (
 from pydantic import ValidationError
 import yaml
 
-from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration, RedirectHTTPS
+from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration
 from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
@@ -317,6 +317,9 @@ class LandscapeServerCharm(CharmBase):
         self.package_upload_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="package-upload-haproxy-route"
         )
+        self.repository_haproxy_route = HaproxyRouteRequirer(
+            self, relation_name="repository-haproxy-route"
+        )
         self.hostagent_messenger_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="hostagent-messenger-haproxy-route"
         )
@@ -332,6 +335,7 @@ class LandscapeServerCharm(CharmBase):
             "package_upload_haproxy_route",
             "hostagent_messenger_haproxy_route",
             "ubuntu_installer_attach_haproxy_route",
+            "repository_haproxy_route",
         ):
             self.framework.observe(
                 getattr(self.on, f"{relation_name}_relation_joined"),
@@ -1012,16 +1016,17 @@ class LandscapeServerCharm(CharmBase):
             return
 
         cfg = self.charm_config
-        w = cfg.worker_counts
+        workers = cfg.worker_counts
 
-        appserver_ports = [cfg.appserver_base_port + i for i in range(w)]
-        pingserver_ports = [cfg.pingserver_base_port + i for i in range(w)]
-        message_server_ports = [cfg.message_server_base_port + i for i in range(w)]
-        api_ports = [cfg.api_base_port + i for i in range(w)]
+        appserver_ports = [cfg.appserver_base_port + i for i in range(workers)]
+        pingserver_ports = [cfg.pingserver_base_port + i for i in range(workers)]
+        message_server_ports = [
+            cfg.message_server_base_port + i for i in range(workers)
+        ]
+        api_ports = [cfg.api_base_port + i for i in range(workers)]
 
         forwarded_proto_https = [("X-Forwarded-Proto", "https")]
-        allow_http_all = cfg.redirect_https == RedirectHTTPS.NONE
-        allow_http_ping = allow_http_all or cfg.redirect_https == RedirectHTTPS.DEFAULT
+        allow_http = cfg.allow_http
 
         hostname = leader_ip
         if self.charm_config.root_url:
@@ -1029,9 +1034,7 @@ class LandscapeServerCharm(CharmBase):
             if name := parsed.hostname:
                 hostname = name
 
-        appserver_paths = ["/"]
-        if self.unit.is_leader():
-            appserver_paths = ["/", "/repository", "/hash-id-databases"]
+        appserver_paths = ["/", "/hash-id-databases"]
 
         model_uuid = self.model.uuid
 
@@ -1042,7 +1045,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_all,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=["/metrics"],
@@ -1054,7 +1057,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/ping",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_ping,
+            allow_http=True,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1065,7 +1068,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/message-system",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_all,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1076,7 +1079,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/api",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_all,
+            allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
         )
@@ -1090,7 +1093,18 @@ class LandscapeServerCharm(CharmBase):
             check_rise=2,
             check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_all,
+            allow_http=allow_http,
+            unit_address=unit_ip,
+            hostname=hostname,
+        )
+        self.repository_haproxy_route.provide_haproxy_route_requirements(
+            service=f"landscape-repository-{model_uuid}",
+            ports=appserver_ports,
+            paths=["/repository"],
+            protocol="http",
+            check_path="/",
+            header_rewrite_expressions=forwarded_proto_https,
+            allow_http=True,
             unit_address=unit_ip,
             hostname=hostname,
         )

@@ -104,68 +104,55 @@ class TestCalledOnEvents:
 
 
 class TestAllowHttp:
-    """allow_http flag on each route reflects the redirect_https config."""
+    """allow_http flag on each route reflects the allow_http config."""
 
-    def test_redirect_none_all_routes_allow_http(self, replicas_network_state):
+    def test_allow_http_true_all_routes_allow_http(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
-        state = State(config={"redirect_https": "none"}, **replicas_network_state)
+        state = State(config={"allow_http": True}, **replicas_network_state)
         mock = _run_provide(context, state)
         assert mock.called
         for c in mock.call_args_list:
+            service = c.kwargs.get("service", "")
+            if "pingserver" in service or "repository" in service:
+                continue
             assert (
                 c.kwargs.get("allow_http") is True
-            ), f"Expected allow_http=True for {c.kwargs.get('service')}"
+            ), f"Expected allow_http=True for {service}"
 
-    def test_redirect_all_no_route_allows_http(self, replicas_network_state):
+    def test_allow_http_false_only_ping_and_repository_allow_http(
+        self, replicas_network_state
+    ):
         context = Context(LandscapeServerCharm)
-        state = State(config={"redirect_https": "all"}, **replicas_network_state)
-        mock = _run_provide(context, state)
-        assert mock.called
-        for c in mock.call_args_list:
-            assert not c.kwargs.get(
-                "allow_http"
-            ), f"Expected allow_http=False for {c.kwargs.get('service')}"
-
-    def test_redirect_default_only_pingserver_allows_http(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(config={"redirect_https": "default"}, **replicas_network_state)
+        state = State(config={"allow_http": False}, **replicas_network_state)
         mock = _run_provide(context, state)
         assert mock.called
         for c in mock.call_args_list:
             service = c.kwargs.get("service", "")
             allow_http = c.kwargs.get("allow_http", False)
-            if "pingserver" in service:
-                assert allow_http, "Expected allow_http=True for pingserver"
+            if "pingserver" in service or "repository" in service:
+                assert allow_http, f"Expected allow_http=True for {service}"
             else:
                 assert not allow_http, f"Expected allow_http=False for {service}"
 
 
 class TestLeaderRoutes:
-    """Leader and non-leader units publish different route configurations."""
+    """All units publish the same route configurations."""
 
-    def test_leader_appserver_includes_repository_and_hashid_paths(
-        self, replicas_network_state
-    ):
+    def test_appserver_includes_hashid_paths(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(leader=True, **replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "appserver")
         assert calls
         paths = calls[0].kwargs["paths"]
-        assert "/repository" in paths
         assert "/hash-id-databases" in paths
+        assert "/repository" not in paths
 
-    def test_non_leader_appserver_excludes_repository_and_hashid_paths(
-        self, replicas_network_state
-    ):
+    def test_repository_route_published_by_all_units(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(leader=False, **replicas_network_state)
         mock = _run_provide(context, state)
-        calls = _calls_for(mock, "appserver")
-        assert calls
-        paths = calls[0].kwargs["paths"]
-        assert "/repository" not in paths
-        assert "/hash-id-databases" not in paths
+        assert any("repository" in s for s in _services_called(mock))
 
     def test_all_units_publish_package_upload_route(self, replicas_network_state):
         context = Context(LandscapeServerCharm)

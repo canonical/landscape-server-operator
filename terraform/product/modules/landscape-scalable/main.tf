@@ -228,6 +228,23 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route" {
   count = var.haproxy_route_offer_url != null ? 1 : 0
 }
 
+resource "juju_integration" "landscape_server_repository_haproxy_route" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "repository-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null ? 1 : 0
+}
+
 resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route" {
   model_uuid = var.model_uuid
 
