@@ -124,21 +124,18 @@ def lbaas(juju: jubilant.Juju):
     - LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL: Set to use existing lbaas deployment
     - LBAAS_MODEL_NAME: Name of the lbaas model (default: "lbaas")
     """
-    if USE_HOST_JUJU_MODEL:
+    if (
+        USE_HOST_JUJU_MODEL
+        and not USE_HOST_LBAAS_MODEL
+        and "haproxy" in juju.status().apps
+    ):
         yield juju
         return
 
     status = juju.status()
     app_status = status.apps.get("landscape-server")
 
-    if not app_status or any(
-        x not in app_status.relations
-        for x in [
-            "appserver-haproxy-route",
-            "ubuntu-installer-attach-haproxy-route",
-            "hostagent-messenger-haproxy-route",
-        ]
-    ):
+    if not app_status or not has_haproxy_route_provider(juju, "landscape-server"):
         pytest.skip("HAProxy route not configured, skipping...")
 
     if USE_HOST_LBAAS_MODEL:

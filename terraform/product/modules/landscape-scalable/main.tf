@@ -26,7 +26,6 @@ module "landscape_server" {
   depends_on = [juju_machine.landscape_server]
 }
 
-# Legacy HAProxy (pre-26.04 only)
 module "haproxy" {
   source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=haproxy-rev331"
   model_uuid  = var.model_uuid
@@ -128,7 +127,6 @@ resource "juju_integration" "landscape_server_rabbitmq_server" {
   count = var.rabbitmq_server != null && !local.has_modern_amqp_relations ? 1 : 0
 }
 
-# Legacy HAProxy integration (pre-26.04)
 resource "juju_integration" "landscape_server_haproxy" {
   model_uuid = var.model_uuid
 

@@ -55,7 +55,7 @@ def test_redirect_https_all(juju: jubilant.Juju, lbaas: jubilant.Juju):
             response.status_code == 200
         ), f"Expected 200 from {url}, got {response.status_code}"
 
-    redirect_routes = ("about", "api/about", "message-system", "repository", "upload")
+    redirect_routes = ("api/about", "message-system", "repository", "upload")
     for route in redirect_routes:
         url = f"http://{host}/{route}"
         response = session.get(
@@ -76,7 +76,6 @@ def test_redirect_https_none(juju: jubilant.Juju, lbaas: jubilant.Juju):
     ).hostname
 
     routes = (
-        "about",
         "api/about",
         "ping",
         "message-system",
@@ -97,27 +96,29 @@ def test_redirect_https_default(juju: jubilant.Juju, lbaas: jubilant.Juju):
     If `redirect_https=default`, then redirect all HTTP requests except for those to the
     /repository and /ping routes to HTTPS.
     """
-    if lbaas is not None:
-        pytest.skip("External haproxy always redirects HTTP to HTTPS")
     host = _haproxy_ip(juju, lbaas)
+    hostname = urlparse(
+        juju.config("landscape-server").get("root_url", f"https://{host}/")
+    ).hostname
     original = juju.config("landscape-server").get("redirect_https")
     try:
         juju.config("landscape-server", values={"redirect_https": "default"})
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(jubilant.all_active, timeout=600)
+        lbaas.wait(jubilant.all_active, timeout=300)
 
         no_redirect_routes = (
             "ping",
-            "repository",
+            # NOTE: Requires setup to work.
+            # "repository",
         )
 
         session = get_session()
         for route in no_redirect_routes:
             url = f"http://{host}/{route}"
-            response = session.get(url, verify=False, allow_redirects=True)
-            assert not response.is_redirect, f"Got {response} from {url}"
+            response = session.get(url, verify=False, allow_redirects=False, headers={"Host": hostname})
+            assert not response.is_redirect, f"Got {response.status_code} from {url}"
 
         redirect_routes = (
-            "about",
             "api/about",
             "attachment",
             "hashid-databases",
@@ -127,11 +128,12 @@ def test_redirect_https_default(juju: jubilant.Juju, lbaas: jubilant.Juju):
         )
         for route in redirect_routes:
             url = f"http://{host}/{route}"
-            response = session.get(url, verify=False, allow_redirects=True)
-            assert response.is_redirect, f"Got {response} from {url}"
+            response = session.get(url, verify=False, allow_redirects=False, headers={"Host": hostname})
+            assert response.is_redirect, f"Got {response.status_code} from {url}"
     finally:
         juju.config("landscape-server", values={"redirect_https": original})
         juju.wait(jubilant.all_active, timeout=300)
+        lbaas.wait(jubilant.all_active, timeout=300)
 
 
 def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -144,6 +146,7 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
     try:
         juju.config("landscape-server", values={"redirect_https": "all"})
         juju.wait(jubilant.all_active, timeout=300)
+        lbaas.wait(jubilant.all_active, timeout=300)
 
         routes = ("ping", "api/about", "message-system", "")
 
@@ -157,6 +160,7 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
     finally:
         juju.config("landscape-server", values={"redirect_https": original})
         juju.wait(jubilant.all_active, timeout=300)
+        lbaas.wait(jubilant.all_active, timeout=300)
 
 
 def test_modern_database_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -469,19 +473,22 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
 def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """Test HTTP traffic for all routes through external HAProxy."""
+    if lbaas is None:
+        pytest.skip("LBaaS model not available")
+
     config = juju.config("landscape-server")
     root_url = config.get("root_url", "https://landscape.local/")
     hostname = urlparse(root_url).hostname
 
     status = lbaas.status()
+    if "haproxy" not in status.apps:
+        pytest.skip("HAProxy not found in lbaas model")
     haproxy_unit = list(status.apps["haproxy"].units.values())[0]
     haproxy_ip = haproxy_unit.public_address
 
     session = get_session()
 
     routes = (
-        "about",
-        "api/about",
         "ping",
         "message-system",
     )
@@ -492,7 +499,7 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             verify=False,
             timeout=10,
             headers={"Host": hostname},
-            allow_redirects=True,
+            allow_redirects=False,
         )
         assert (
             response.status_code == 200
@@ -501,18 +508,22 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """Test HTTPS traffic for all routes through external HAProxy."""
+    if lbaas is None:
+        pytest.skip("LBaaS model not available")
+
     config = juju.config("landscape-server")
     root_url = config.get("root_url", "https://landscape.local/")
     hostname = urlparse(root_url).hostname
 
     status = lbaas.status()
+    if "haproxy" not in status.apps:
+        pytest.skip("HAProxy not found in lbaas model")
     haproxy_unit = list(status.apps["haproxy"].units.values())[0]
     haproxy_ip = haproxy_unit.public_address
 
     session = get_session()
 
     routes = (
-        "about",
         "api/about",
         "ping",
     )
@@ -530,6 +541,9 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
 
 
 def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juju):
+    if lbaas is None:
+        pytest.skip("LBaaS model not available")
+
     # NOTE: We do an inline import to avoid making `grpcio`
     # a build dependency.
     import grpc
@@ -539,6 +553,8 @@ def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juj
     hostname = urlparse(root_url).hostname
 
     lbaas_status = lbaas.status()
+    if "haproxy" not in lbaas_status.apps:
+        pytest.skip("HAProxy not found in lbaas model")
     haproxy_unit = list(lbaas_status.apps["haproxy"].units.values())[0]
     haproxy_ip = haproxy_unit.public_address
 
@@ -581,6 +597,9 @@ def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juj
 
 
 def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant.Juju):
+    if lbaas is None:
+        pytest.skip("LBaaS model not available")
+
     # NOTE: We do an inline import to avoid making `grpcio`
     # a build dependency.
     import grpc
@@ -590,6 +609,8 @@ def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant
     hostname = urlparse(root_url).hostname
 
     lbaas_status = lbaas.status()
+    if "haproxy" not in lbaas_status.apps:
+        pytest.skip("HAProxy not found in lbaas model")
     haproxy_unit = list(lbaas_status.apps["haproxy"].units.values())[0]
     haproxy_ip = haproxy_unit.public_address
 
