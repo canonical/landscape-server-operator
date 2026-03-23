@@ -56,6 +56,21 @@ class SecretTokenMissing(Exception):
     pass
 
 
+SYSTEMD_OVERRIDE_DIR = "/etc/systemd/system/landscape-server.service.d"
+SYSTEMD_OVERRIDE_FILE = os.path.join(SYSTEMD_OVERRIDE_DIR, "deployment-mode.conf")
+
+
+def write_deployment_mode_systemd_override(mode: str) -> None:
+    """
+    Writes a systemd drop-in to override LANDSCAPE_SYSTEM__DEPLOYMENT_MODE
+    for all landscape-server services, since the package hardcodes 'standalone'.
+    """
+    os.makedirs(SYSTEMD_OVERRIDE_DIR, exist_ok=True)
+    with open(SYSTEMD_OVERRIDE_FILE, "w") as f:
+        f.write("[Service]\n")
+        f.write(f"Environment=LANDSCAPE_SYSTEM__DEPLOYMENT_MODE={mode}\n")
+
+
 def configure_for_deployment_mode(mode: str) -> None:
     """
     Places files where Landscape expects to find them for different deployment
