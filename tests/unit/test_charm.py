@@ -211,7 +211,34 @@ class TestOnConfigChanged:
         lb_certs_state,
     ):
         ctx = Context(LandscapeServerCharm)
-        state_in = State(
+        initial_state = State(
+            **lb_certs_state,
+            config={"enable_hostagent_messenger": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port in state_in.opened_ports
+
+        state_in.config.update({"enable_hostagent_messenger": False})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
+
+    def test_hostagent_services_enable_opens_port(
+        self,
+        lb_certs_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
             **lb_certs_state,
             config={"enable_hostagent_messenger": False},
             stored_states=[
@@ -223,26 +250,11 @@ class TestOnConfigChanged:
         )
         expected_port = TCPPort(port=50052, protocol="tcp")
 
-        state_out = ctx.run(ctx.on.config_changed(), state_in)
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
 
-        assert expected_port not in state_out.opened_ports
+        assert expected_port not in state_in.opened_ports
 
-    def test_hostagent_services_enable_opens_port(
-        self,
-        lb_certs_state,
-    ):
-        ctx = Context(LandscapeServerCharm)
-        state_in = State(
-            **lb_certs_state,
-            config={"enable_hostagent_messenger": True},
-            stored_states=[
-                StoredState(
-                    owner_path="LandscapeServerCharm",
-                    content={"enable_hostagent_messenger": False},
-                )
-            ],
-        )
-        expected_port = TCPPort(port=50052, protocol="tcp")
+        state_in.config.update({"enable_hostagent_messenger": True})
 
         state_out = ctx.run(ctx.on.config_changed(), state_in)
 
@@ -359,19 +371,26 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
         self,
         apt_fixture,
         lb_certs_state,
+        certificate_and_key_fixture,
     ):
         ctx = Context(LandscapeServerCharm)
-        state_in = State(
+        initial_state = State(
             **lb_certs_state,
-            config={"enable_ubuntu_installer_attach": True},
+            config={"enable_ubuntu_installer_attach": False},
             stored_states=[
                 StoredState(
                     owner_path="LandscapeServerCharm",
-                    content={"enable_ubuntu_installer_attach": False},
+                    content={"enable_ubuntu_installer_attach": True},
                 )
             ],
         )
         expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port not in state_in.opened_ports
+
+        state_in.config.update({"enable_ubuntu_installer_attach": True})
 
         state_out = ctx.run(ctx.on.config_changed(), state_in)
 
@@ -403,20 +422,28 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
     def test_disable_closes_port(
         self,
+        apt_fixture,
         lb_certs_state,
+        certificate_and_key_fixture,
     ):
         ctx = Context(LandscapeServerCharm)
-        state_in = State(
+        initial_state = State(
             **lb_certs_state,
-            config={"enable_ubuntu_installer_attach": False},
+            config={"enable_ubuntu_installer_attach": True},
             stored_states=[
                 StoredState(
                     owner_path="LandscapeServerCharm",
-                    content={"enable_ubuntu_installer_attach": True},
+                    content={"enable_ubuntu_installer_attach": False},
                 )
             ],
         )
         expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port in state_in.opened_ports
+
+        state_in.config.update({"enable_ubuntu_installer_attach": False})
 
         state_out = ctx.run(ctx.on.config_changed(), state_in)
 
