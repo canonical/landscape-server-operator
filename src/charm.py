@@ -587,6 +587,8 @@ class LandscapeServerCharm(CharmBase):
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
         ports = []
+        deployment_mode = self.charm_config.deployment_mode
+        is_standalone = deployment_mode == "standalone"
 
         for i in range(worker_counts):
             ports += [
@@ -596,10 +598,8 @@ class LandscapeServerCharm(CharmBase):
                 Port("tcp", self.charm_config.api_base_port + i),
             ]
 
-        if self.unit.is_leader():
-            print("is leader")
+        if self.unit.is_leader() and is_standalone:
             ports.append(Port("tcp", self.charm_config.package_upload_base_port))
-            print("added pkg upload")
 
         if self.charm_config.enable_hostagent_messenger:
             ports.append(Port("tcp", self.charm_config.hostagent_server_base_port))
@@ -1428,6 +1428,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     service_pause(service)
                 except SystemdError as e:
                     logger.warn(str(e))
+
+        self._set_ports()
 
         self._update_haproxy()
         self._update_ready_status(restart_services=True)

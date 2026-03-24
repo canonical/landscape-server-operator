@@ -262,9 +262,9 @@ class TestOnConfigChanged:
 
     def test_ports_open(self):
         ctx = Context(LandscapeServerCharm)
+        relation = PeerRelation("replicas", peers_data={})
 
         # default config, non-leader unit
-        relation = PeerRelation("replicas", peers_data={})
         state_in = State(relations=[relation], config={}, leader=False)
         expected_ports = {
             TCPPort(port=8070, protocol="tcp"),
@@ -282,7 +282,6 @@ class TestOnConfigChanged:
         assert state_out.opened_ports == expected_ports
 
         # default config, leader unit
-        relation = PeerRelation("replicas", peers_data={})
         state_in = State(relations=[relation], config={}, leader=True)
         expected_ports = {
             TCPPort(port=8070, protocol="tcp"),
@@ -325,6 +324,30 @@ class TestOnConfigChanged:
         state_out = ctx.run(ctx.on.config_changed(), state_in)
 
         assert state_out.opened_ports == expected_ports
+
+    def test_port_on_leader_change(
+        self,
+        lb_certs_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        relation = PeerRelation("replicas", peers_data={})
+        expected_port = TCPPort(port=9100, protocol="tcp")
+        leader_state = State(relations=[relation], config={}, leader=True)
+
+        state_out = ctx.run(ctx.on.leader_elected(), leader_state)
+
+        assert expected_port in state_out.opened_ports
+
+        non_leader_state = State(relations=[relation], leader=False)
+
+        event = ctx.on.relation_changed(relation)
+        state_out = ctx.run(event, non_leader_state)
+
+        assert expected_port not in state_out.opened_ports
+
+        state_out = ctx.run(event, leader_state)
+
+        assert expected_port in state_out.opened_ports
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
