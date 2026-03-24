@@ -32,8 +32,8 @@ locals {
   db_relations                  = local.has_modern_postgres_interface ? { database = "database", db = "db" } : { db = "db" }
 
   # Legacy HAProxy (pre-26.04): if revision is old enough, expose website endpoint
-  internal_haproxy_rev    = 216
-  legacy_haproxy_channels = ["latest/stable", "latest/beta", "latest/edge", "24.04/edge", "25.10/edge"]
+  internal_haproxy_rev    = 1
+  legacy_haproxy_channels = ["latest/stable", "latest/beta", "24.04/edge", "25.10/edge"]
   has_legacy_haproxy      = var.revision != null ? var.revision < local.internal_haproxy_rev : contains(local.legacy_haproxy_channels, var.channel)
   haproxy_relations       = local.has_legacy_haproxy ? { website = "website" } : {}
 
