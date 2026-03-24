@@ -74,8 +74,10 @@ _DEPLOYMENT_MODE_OVERRIDE_CONF = "deployment-mode.conf"
 
 def write_deployment_mode_systemd_override(mode: str) -> None:
     """
-    Writes a systemd drop-in per service to override LANDSCAPE_SYSTEM__DEPLOYMENT_MODE,
-    since the package hardcodes 'standalone' in each unit file.
+    Writes a systemd drop-in per service to override LANDSCAPE_SYSTEM__DEPLOYMENT_MODE.
+
+    Necessary because the package hardcodes 'standalone' in each unit file's
+    Environment= directive.
     """
     for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
         override_dir = f"/etc/systemd/system/{service}.d"
@@ -88,8 +90,8 @@ def write_deployment_mode_systemd_override(mode: str) -> None:
 
 def configure_for_deployment_mode(mode: str) -> None:
     """
-    Places files where Landscape expects to find them for different deployment
-    modes.
+    Creates filesystem symlinks so Landscape can locate config files for the given
+    deployment mode.
     """
     if mode == "standalone":
         return

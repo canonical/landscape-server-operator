@@ -208,7 +208,6 @@ class TestOnConfigChanged:
     def test_deployment_mode_override_called(
         self,
         monkeypatch,
-        mock_write_deployment_mode_systemd_override,
     ):
         calls = []
         monkeypatch.setattr(

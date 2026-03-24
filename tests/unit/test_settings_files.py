@@ -8,6 +8,8 @@ from unittest import TestCase
 from unittest.mock import patch
 from urllib.error import URLError
 
+import pytest
+
 from settings_files import (
     _DEPLOYMENT_MODE_OVERRIDE_CONF,
     _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE,
@@ -56,26 +58,31 @@ class CapturingStringIO(StringIO):
         return super().close(*args, **kwargs)
 
 
+@pytest.fixture()
+def redirect_systemd_paths(monkeypatch, tmp_path):
+    real_makedirs = os.makedirs
+
+    def fake_makedirs(path, exist_ok=False):
+        real_makedirs(
+            path.replace("/etc/systemd/system", str(tmp_path)), exist_ok=exist_ok
+        )
+
+    monkeypatch.setattr("settings_files.os.makedirs", fake_makedirs)
+    real_open = open
+
+    def fake_open(path, mode="r", **kwargs):
+        return real_open(
+            path.replace("/etc/systemd/system", str(tmp_path)), mode, **kwargs
+        )
+
+    monkeypatch.setattr("builtins.open", fake_open)
+
+
+@pytest.mark.usefixtures("redirect_systemd_paths")
 class TestWriteDeploymentModeSystemdOverride:
 
     def test_writes_drop_in_for_each_service(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
-        real_makedirs = os.makedirs
-
-        def fake_makedirs(path, exist_ok=False):
-            real_makedirs(
-                path.replace("/etc/systemd/system", str(tmp_path)), exist_ok=True
-            )
-
-        monkeypatch.setattr("settings_files.os.makedirs", fake_makedirs)
-        real_open = open
-
-        def fake_open(path, mode="r", **kwargs):
-            return real_open(
-                path.replace("/etc/systemd/system", str(tmp_path)), mode, **kwargs
-            )
-
-        monkeypatch.setattr("builtins.open", fake_open)
 
         write_deployment_mode_systemd_override("prod")
 
@@ -85,22 +92,6 @@ class TestWriteDeploymentModeSystemdOverride:
 
     def test_drop_in_content(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
-        real_makedirs = os.makedirs
-
-        def fake_makedirs(path, exist_ok=False):
-            real_makedirs(
-                path.replace("/etc/systemd/system", str(tmp_path)), exist_ok=True
-            )
-
-        monkeypatch.setattr("settings_files.os.makedirs", fake_makedirs)
-        real_open = open
-
-        def fake_open(path, mode="r", **kwargs):
-            return real_open(
-                path.replace("/etc/systemd/system", str(tmp_path)), mode, **kwargs
-            )
-
-        monkeypatch.setattr("builtins.open", fake_open)
 
         write_deployment_mode_systemd_override("prod")
 
@@ -114,22 +105,6 @@ class TestWriteDeploymentModeSystemdOverride:
     def test_calls_daemon_reload(self, monkeypatch, tmp_path):
         called = []
         monkeypatch.setattr("settings_files.daemon_reload", lambda: called.append(True))
-        real_makedirs = os.makedirs
-
-        def fake_makedirs(path, exist_ok=False):
-            real_makedirs(
-                path.replace("/etc/systemd/system", str(tmp_path)), exist_ok=True
-            )
-
-        monkeypatch.setattr("settings_files.os.makedirs", fake_makedirs)
-        real_open = open
-
-        def fake_open(path, mode="r", **kwargs):
-            return real_open(
-                path.replace("/etc/systemd/system", str(tmp_path)), mode, **kwargs
-            )
-
-        monkeypatch.setattr("builtins.open", fake_open)
 
         write_deployment_mode_systemd_override("prod")
 
