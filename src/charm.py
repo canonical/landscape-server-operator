@@ -1390,7 +1390,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 try:
                     service_resume(service)
                 except SystemdError as e:
-                    logger.warn(str(e))
+                    logger.warning(str(e))
         else:
             # Disable leader services on this unit. Requests will be directed to the
             # leader anyways.
@@ -1398,7 +1398,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 try:
                     service_pause(service)
                 except SystemdError as e:
-                    logger.warn(str(e))
+                    logger.warning(str(e))
 
         self._update_haproxy()
         self._update_ready_status(restart_services=True)
