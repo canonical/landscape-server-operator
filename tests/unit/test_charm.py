@@ -1323,18 +1323,6 @@ class TestCharm(unittest.TestCase):
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
-    def test_action_get_service_conf(self):
-        event = Mock(spec_set=ActionEvent)
-        conf = {"stores": {"host": "localhost:5432", "user": "landscape"}}
-
-        with patch("charm.read_service_conf", return_value=conf):
-            self.harness.charm._on_get_service_conf_action(event)
-
-        event.set_results.assert_called_once()
-        result = event.set_results.call_args[0][0]
-        self.assertIn("config", result)
-        self.assertEqual(json.loads(result["config"]), conf)
-
     def test_action_pause(self):
         with patch("charm.check_call") as check_call_mock:
             self.harness.charm._pause(Mock())
@@ -2145,3 +2133,15 @@ class TestOnUpgradeCharm:
 
         haproxy_install_fixture.assert_not_called()
         assert stored.ready.get("load-balancer-certificates") is True
+
+
+def test_action_get_service_conf(monkeypatch):
+    conf = {"stores": {"host": "localhost:5432", "user": "landscape"}}
+    monkeypatch.setattr("charm.read_service_conf", lambda: conf)
+
+    ctx = Context(LandscapeServerCharm)
+    ctx.run(ctx.on.action("get-service-conf"), State())
+
+    assert ctx.action_results is not None
+    assert "config" in ctx.action_results
+    assert json.loads(ctx.action_results["config"]) == conf
