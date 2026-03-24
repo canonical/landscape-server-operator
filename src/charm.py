@@ -14,6 +14,7 @@ develop a new k8s charm using the Operator Framework:
 
 from dataclasses import asdict
 from functools import cached_property
+import json
 import os
 import subprocess
 from subprocess import CalledProcessError, check_call
@@ -85,6 +86,7 @@ from settings_files import (
     get_postgres_roles,
     merge_service_conf,
     prepend_default_settings,
+    read_service_conf,
     update_db_conf,
     update_default_settings,
     update_service_conf,
@@ -290,6 +292,9 @@ class LandscapeServerCharm(CharmBase):
         )
         self.framework.observe(
             self.on.get_certificates_action, self._on_get_certificates_action
+        )
+        self.framework.observe(
+            self.on.get_service_conf_action, self._on_get_service_conf_action
         )
 
         # State
@@ -1208,6 +1213,9 @@ class LandscapeServerCharm(CharmBase):
         self._stored.haproxy_config = rendered
 
         self._update_ready_status()
+
+    def _on_get_service_conf_action(self, event: ActionEvent) -> None:
+        event.set_results({"config": json.dumps(read_service_conf())})
 
     def _on_get_certificates_action(self, event: ActionEvent) -> None:
         cert_attrs = self._get_certificate_request_attributes()

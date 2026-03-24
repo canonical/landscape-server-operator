@@ -1323,6 +1323,18 @@ class TestCharm(unittest.TestCase):
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
+    def test_action_get_service_conf(self):
+        event = Mock(spec_set=ActionEvent)
+        conf = {"stores": {"host": "localhost:5432", "user": "landscape"}}
+
+        with patch("charm.read_service_conf", return_value=conf):
+            self.harness.charm._on_get_service_conf_action(event)
+
+        event.set_results.assert_called_once()
+        result = event.set_results.call_args[0][0]
+        self.assertIn("config", result)
+        self.assertEqual(json.loads(result["config"]), conf)
+
     def test_action_pause(self):
         with patch("charm.check_call") as check_call_mock:
             self.harness.charm._pause(Mock())

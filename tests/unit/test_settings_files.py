@@ -15,6 +15,7 @@ from settings_files import (
     LicenseFileReadException,
     merge_service_conf,
     prepend_default_settings,
+    read_service_conf,
     update_default_settings,
     update_service_conf,
     write_license_file,
@@ -336,3 +337,27 @@ class WriteLicenseFileTestCase(TestCase):
             1000,
             1000,
         )
+
+
+def test_read_service_conf_empty():
+    data = read_service_conf()
+    assert data == {}
+
+
+def test_read_service_conf_parses_section(capture_service_conf):
+    capture_service_conf.tempfile.write_text(
+        "[stores]\nhost = localhost:5432\nuser = landscape\n"
+    )
+    data = read_service_conf()
+    assert data["stores"]["host"] == "localhost:5432"
+    assert data["stores"]["user"] == "landscape"
+
+
+def test_read_service_conf_multiple_sections(capture_service_conf):
+    capture_service_conf.tempfile.write_text(
+        "[stores]\nhost = db:5432\n\n[schema]\nstore_user = ls\n"
+    )
+    data = read_service_conf()
+    assert "stores" in data
+    assert "schema" in data
+    assert data["schema"]["store_user"] == "ls"

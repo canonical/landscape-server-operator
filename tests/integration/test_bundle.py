@@ -274,27 +274,38 @@ def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
     ), "landscape-server should be related via the `database` endpoint"
 
 
+def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
+    """
+    The get-service-conf action returns a JSON-serialisable dict with the
+    expected top-level sections from service.conf.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    assert result.status == "completed"
+
+    config = json.loads(result.results["config"])
+    assert (
+        "stores" in config
+    ), f"Expected 'stores' section in service.conf, got: {list(config)}"
+
+
 def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
     """
     The Landscape database schema is present after deployment.
 
-    Reads the connection details from service.conf on the leader unit and runs
-    a query to confirm the `account` table (created by landscape-schema) exists.
-    This works regardless of whether pgbouncer or direct PostgreSQL is in use,
-    since the host/port/user/password/dbname come from whatever landscape-server
-    is configured to connect to.
+    Reads the connection details from service.conf via the get-service-conf
+    action on the leader unit and runs a query to confirm the `account` table
+    (created by landscape-schema) exists. This works regardless of whether
+    pgbouncer or direct PostgreSQL is in use, since the host/port/user/password/
+    dbname come from whatever landscape-server is configured to connect to.
     """
     juju.wait(jubilant.all_active, timeout=300)
 
-    conf = juju.ssh(
-        "landscape-server/leader",
-        "sudo awk -F' = ' '/^\\[stores\\]/{f=1} /^\\[/{if(!/^\\[stores\\]/)f=0} "
-        "f && /^host/{h=$2} f && /^password/{pw=$2} "
-        "f && /^user/{u=$2} f && /^main/{m=$2} "
-        "END{print h,pw,u,m}' /etc/landscape/service.conf",
-    ).split()
-    host, port = conf[0].split(":")
-    password, user, dbname = conf[1], conf[2], conf[3]
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    stores = json.loads(result.results["config"])["stores"]
+    host, port = stores["host"].split(":")
+    password, user, dbname = stores["password"], stores["user"], stores["main"]
 
     result = juju.ssh(
         "landscape-server/leader",
@@ -304,7 +315,7 @@ def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
     ).strip()
 
     assert result == "1", (
-        f"Expected the 'account' table to exist in the landscape database, "
+        "Expected the 'account' table to exist in the landscape database, "
         f"got: {result!r}"
     )
 
