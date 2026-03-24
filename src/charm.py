@@ -586,11 +586,7 @@ class LandscapeServerCharm(CharmBase):
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
-        ports = [
-            Port("tcp", self.charm_config.package_upload_base_port),
-            Port("tcp", self.charm_config.hostagent_server_base_port),
-            Port("tcp", self.charm_config.ubuntu_installer_attach_base_port),
-        ]
+        ports = []
 
         for i in range(worker_counts):
             ports += [
@@ -599,6 +595,19 @@ class LandscapeServerCharm(CharmBase):
                 Port("tcp", self.charm_config.message_server_base_port + i),
                 Port("tcp", self.charm_config.api_base_port + i),
             ]
+
+        if self.unit.is_leader():
+            print("is leader")
+            ports.append(Port("tcp", self.charm_config.package_upload_base_port))
+            print("added pkg upload")
+
+        if self.charm_config.enable_hostagent_messenger:
+            ports.append(Port("tcp", self.charm_config.hostagent_server_base_port))
+
+        if self.charm_config.enable_ubuntu_installer_attach:
+            ports.append(
+                Port("tcp", self.charm_config.ubuntu_installer_attach_base_port)
+            )
 
         self.unit.set_ports(*ports)
 

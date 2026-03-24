@@ -206,10 +206,74 @@ class TestOnConfigChanged:
 
         assert haproxy.FrontendName.HOSTAGENT_MESSENGER in stored.haproxy_config
 
+    def test_hostagent_services_disable_closes_port(
+        self,
+        apt_fixture,
+        lb_certs_state,
+        certificate_and_key_fixture,
+        haproxy_write_file_fixture,
+    ):
+        """
+        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
+        then install the service and configure the HAProxy frontend.
+
+        Update the apt cache to ensure the package can be found.
+        """
+        add_package_mock, _ = apt_fixture
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **lb_certs_state,
+            config={"enable_hostagent_messenger": False},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": True},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
+
+    def test_hostagent_services_enable_opens_port(
+        self,
+        apt_fixture,
+        lb_certs_state,
+        certificate_and_key_fixture,
+        haproxy_write_file_fixture,
+    ):
+        """
+        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
+        then install the service and configure the HAProxy frontend.
+
+        Update the apt cache to ensure the package can be found.
+        """
+        add_package_mock, _ = apt_fixture
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **lb_certs_state,
+            config={"enable_hostagent_messenger": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port in state_out.opened_ports
+
     def test_ports_open(self):
         ctx = Context(LandscapeServerCharm)
-        state_in = State()
-        # default ports with two workers
+
+        # default config, non-leader unit
+        relation = PeerRelation("replicas", peers_data={})
+        state_in = State(relations=[relation], config={}, leader=False)
         expected_ports = {
             TCPPort(port=8070, protocol="tcp"),
             TCPPort(port=8071, protocol="tcp"),
@@ -219,9 +283,25 @@ class TestOnConfigChanged:
             TCPPort(port=8091, protocol="tcp"),
             TCPPort(port=9080, protocol="tcp"),
             TCPPort(port=9081, protocol="tcp"),
-            TCPPort(port=9100, protocol="tcp"),
-            TCPPort(port=50052, protocol="tcp"),
-            TCPPort(port=53354, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+        # default config, leader unit
+        relation = PeerRelation("replicas", peers_data={})
+        state_in = State(relations=[relation], config={}, leader=True)
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9100, protocol="tcp"),  # package upload
         }
 
         state_out = ctx.run(ctx.on.config_changed(), state_in)
@@ -269,6 +349,37 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
             LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True
         )
 
+    def test_enable_opens_port(
+        self,
+        apt_fixture,
+        lb_certs_state,
+        certificate_and_key_fixture,
+        haproxy_write_file_fixture,
+    ):
+        """
+        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
+        then install the service and configure the HAProxy frontend.
+
+        Update the apt cache to ensure the package can be found.
+        """
+        add_package_mock, _ = apt_fixture
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **lb_certs_state,
+            config={"enable_ubuntu_installer_attach": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port in state_out.opened_ports
+
     def test_disable(self, apt_fixture, lb_certs_state):
         """
         If the `enable_ubuntu_installer_attach` parameter moves from `True` to `False`,
@@ -292,6 +403,37 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
         assert haproxy.FrontendName.UBUNTU_INSTALLER_ATTACH not in stored.haproxy_config
         remove_package_mock.assert_called_once_with(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+
+    def test_disable_closes_port(
+        self,
+        apt_fixture,
+        lb_certs_state,
+        certificate_and_key_fixture,
+        haproxy_write_file_fixture,
+    ):
+        """
+        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
+        then install the service and configure the HAProxy frontend.
+
+        Update the apt cache to ensure the package can be found.
+        """
+        add_package_mock, _ = apt_fixture
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **lb_certs_state,
+            config={"enable_ubuntu_installer_attach": False},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": True},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
 
     def test_idempotent_enable(
         self,
