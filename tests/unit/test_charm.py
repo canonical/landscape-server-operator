@@ -357,6 +357,7 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
     def test_enable_opens_port(
         self,
+        apt_fixture,
         lb_certs_state,
     ):
         ctx = Context(LandscapeServerCharm)
