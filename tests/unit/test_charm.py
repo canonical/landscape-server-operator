@@ -325,10 +325,7 @@ class TestOnConfigChanged:
 
         assert state_out.opened_ports == expected_ports
 
-    def test_port_on_leader_change(
-        self,
-        lb_certs_state,
-    ):
+    def test_port_on_leader_change(self):
         ctx = Context(LandscapeServerCharm)
         relation = PeerRelation("replicas", peers_data={})
         expected_port = TCPPort(port=9100, protocol="tcp")
