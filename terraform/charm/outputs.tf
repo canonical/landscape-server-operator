@@ -55,3 +55,8 @@ output "requires" {
     application_dashboard = "application-dashboard",
   }, local.amqp_relations, local.db_relations, local.haproxy_relations, local.haproxy_route_relations)
 }
+
+output "has_modern_haproxy_interface" {
+  description = "Indicates whether the deployed revision supports the modern HAProxy route interface (i.e. does not use the legacy website endpoint)."
+  value       = !local.has_legacy_haproxy
+}

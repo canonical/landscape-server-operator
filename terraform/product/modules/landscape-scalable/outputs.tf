@@ -27,7 +27,7 @@ output "applications" {
 }
 
 locals {
-  haproxy_self_signed = var.haproxy == null ? false : (
+  haproxy_self_signed = var.haproxy == null || local.has_modern_haproxy ? false : (
     lookup(var.haproxy.config, "ssl_key", null) == null ||
     lookup(var.haproxy.config, "ssl_cert", null) == null ||
     lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
@@ -47,4 +47,9 @@ output "has_modern_amqp_relations" {
 output "has_modern_postgres_interface" {
   description = "Indicates whether the deployment supports the modern PostgreSQL charm interface."
   value       = local.has_modern_pg_interface
+}
+
+output "has_modern_haproxy_interface" {
+  description = "Indicates whether the deployed revision supports the modern HAProxy route interface (i.e. does not use the legacy website endpoint)."
+  value       = module.landscape_server.has_modern_haproxy_interface
 }
