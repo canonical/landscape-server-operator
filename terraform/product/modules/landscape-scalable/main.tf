@@ -155,7 +155,16 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route" {
     offer_url = var.haproxy_route_offer_url
   }
 
-  depends_on = [module.landscape_server]
+  depends_on = [
+    module.landscape_server,
+    juju_integration.landscape_server_pingserver_haproxy_route,
+    juju_integration.landscape_server_message_server_haproxy_route,
+    juju_integration.landscape_server_api_haproxy_route,
+    juju_integration.landscape_server_package_upload_haproxy_route,
+    juju_integration.landscape_server_repository_haproxy_route,
+    juju_integration.landscape_server_hostagent_messenger_haproxy_route,
+    juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route,
+  ]
 
   count = var.haproxy_route_offer_url != null ? 1 : 0
 }
