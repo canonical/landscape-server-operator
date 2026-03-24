@@ -208,18 +208,8 @@ class TestOnConfigChanged:
 
     def test_hostagent_services_disable_closes_port(
         self,
-        apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
-        haproxy_write_file_fixture,
     ):
-        """
-        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
-        then install the service and configure the HAProxy frontend.
-
-        Update the apt cache to ensure the package can be found.
-        """
-        add_package_mock, _ = apt_fixture
         ctx = Context(LandscapeServerCharm)
         state_in = State(
             **lb_certs_state,
@@ -239,18 +229,8 @@ class TestOnConfigChanged:
 
     def test_hostagent_services_enable_opens_port(
         self,
-        apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
-        haproxy_write_file_fixture,
     ):
-        """
-        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
-        then install the service and configure the HAProxy frontend.
-
-        Update the apt cache to ensure the package can be found.
-        """
-        add_package_mock, _ = apt_fixture
         ctx = Context(LandscapeServerCharm)
         state_in = State(
             **lb_certs_state,
@@ -377,18 +357,8 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
     def test_enable_opens_port(
         self,
-        apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
-        haproxy_write_file_fixture,
     ):
-        """
-        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
-        then install the service and configure the HAProxy frontend.
-
-        Update the apt cache to ensure the package can be found.
-        """
-        add_package_mock, _ = apt_fixture
         ctx = Context(LandscapeServerCharm)
         state_in = State(
             **lb_certs_state,
@@ -432,18 +402,8 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
     def test_disable_closes_port(
         self,
-        apt_fixture,
         lb_certs_state,
-        certificate_and_key_fixture,
-        haproxy_write_file_fixture,
     ):
-        """
-        If the `enable_ubuntu_installer_attach` parameter moves from `False` to `True`,
-        then install the service and configure the HAProxy frontend.
-
-        Update the apt cache to ensure the package can be found.
-        """
-        add_package_mock, _ = apt_fixture
         ctx = Context(LandscapeServerCharm)
         state_in = State(
             **lb_certs_state,
