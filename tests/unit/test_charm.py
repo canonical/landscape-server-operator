@@ -53,7 +53,6 @@ GitHub actions will set `GITHUB_ACTIONS` during runs.
 
 
 class TestGrafanaMachineAgentRelation(unittest.TestCase):
-
     def _get_cos_agent_relation_config(self, state: State) -> dict:
         """
         Extract the cos-agent relation configuration.
@@ -1296,7 +1295,7 @@ class TestCharm(unittest.TestCase):
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
             self.assertEqual(
-                "relayhost = smtp.example.com\n" "othersetting = nada\n",
+                "relayhost = smtp.example.com\nothersetting = nada\n",
                 mock_postfix_cf_file.read(),
             )
 
@@ -1318,7 +1317,7 @@ class TestCharm(unittest.TestCase):
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
             self.assertEqual(
-                "relayhost = smtp.example.com\n" "othersetting = nada\n",
+                "relayhost = smtp.example.com\nothersetting = nada\n",
                 mock_postfix_cf_file.read(),
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)

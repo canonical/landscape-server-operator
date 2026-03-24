@@ -54,7 +54,6 @@ class CapturingStringIO(StringIO):
 
 
 class ConfigureForDeploymentModeTestCase(TestCase):
-
     @patch("os.symlink")
     def test_configure_for_deployment_mode_standalone(self, symlink_mock):
         """
@@ -94,7 +93,6 @@ class ConfigureForDeploymentModeTestCase(TestCase):
 
 
 class MergeServiceConfTestCase(TestCase):
-
     def test_merge_service_conf_new(self):
         """
         Tests that a new section and key are created in the existing
@@ -147,7 +145,6 @@ class MergeServiceConfTestCase(TestCase):
 
 
 class PrependDefaultSettingsTestCase(TestCase):
-
     def test_prepend(self):
         infile = StringIO("# Second line")
         outfile = CapturingStringIO()
@@ -166,7 +163,6 @@ class PrependDefaultSettingsTestCase(TestCase):
 
 
 class UpdateDefaultSettingsTestCase(TestCase):
-
     def test_setting_exists(self):
         """Tests that a setting gets updated if it exists."""
         infile = StringIO('TEST="no"\n')
@@ -205,7 +201,6 @@ class UpdateDefaultSettingsTestCase(TestCase):
 
 
 class UpdateServiceConfTestCase(TestCase):
-
     def test_no_section(self):
         """
         Tests that a new config section is created if it does not
@@ -261,7 +256,6 @@ class UpdateServiceConfTestCase(TestCase):
 
 
 class WriteLicenseFileTestCase(TestCase):
-
     def test_from_file(self):
         """
         Tests that a license can be read from a file:// and written.

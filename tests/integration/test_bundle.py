@@ -533,9 +533,9 @@ def test_http_ingress_enabled(juju: jubilant.Juju, bundle: None):
 
     http_data = get_relation_data("http-ingress")
 
-    assert (
-        http_data.get("port") == "80"
-    ), f"Expected port 80, got {http_data.get('port')}"
+    assert http_data.get("port") == "80", (
+        f"Expected port 80, got {http_data.get('port')}"
+    )
     assert http_data.get("name") == "landscape-server"
 
 
@@ -603,16 +603,16 @@ def test_grpc_ingress_config_enabled(juju: jubilant.Juju, bundle: None):
 
         hostagent_data = get_relation_data("hostagent-messenger-ingress")
 
-        assert (
-            hostagent_data.get("port") == "6554"
-        ), f"Expected port 6554, got {hostagent_data.get('port')}"
+        assert hostagent_data.get("port") == "6554", (
+            f"Expected port 6554, got {hostagent_data.get('port')}"
+        )
         assert hostagent_data.get("name") == "landscape-server"
 
         installer_data = get_relation_data("ubuntu-installer-attach-ingress")
 
-        assert (
-            installer_data.get("port") == "50051"
-        ), f"Expected port 50051, got {installer_data.get('port')}"
+        assert installer_data.get("port") == "50051", (
+            f"Expected port 50051, got {installer_data.get('port')}"
+        )
         assert installer_data.get("name") == "landscape-server"
 
     finally:
@@ -655,9 +655,9 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=True,
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -689,9 +689,9 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=True,
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -708,9 +708,9 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
     response = session.get(
         f"http://{haproxy_ip}/metrics", timeout=10, headers={"Host": hostname}
     )
-    assert (
-        response.status_code == 403
-    ), f"Expected 403 for HTTP /metrics, got {response.status_code}"
+    assert response.status_code == 403, (
+        f"Expected 403 for HTTP /metrics, got {response.status_code}"
+    )
 
     response = session.get(
         f"https://{haproxy_ip}/metrics",
@@ -718,9 +718,9 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
         timeout=10,
         headers={"Host": hostname},
     )
-    assert (
-        response.status_code == 403
-    ), f"Expected 403 for HTTPS /metrics, got {response.status_code}"
+    assert response.status_code == 403, (
+        f"Expected 403 for HTTPS /metrics, got {response.status_code}"
+    )
 
     services = ("message-system", "api", "ping")
 
@@ -731,7 +731,7 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
             headers={"Host": hostname},
         )
         assert response.status_code == 403, (
-            f"Expected 403 for HTTP /{service}/metrics, " f"got {response.status_code}"
+            f"Expected 403 for HTTP /{service}/metrics, got {response.status_code}"
         )
 
         response = session.get(
@@ -741,7 +741,7 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
             headers={"Host": hostname},
         )
         assert response.status_code == 403, (
-            f"Expected 403 for HTTPS /{service}/metrics, " f"got {response.status_code}"
+            f"Expected 403 for HTTPS /{service}/metrics, got {response.status_code}"
         )
 
 

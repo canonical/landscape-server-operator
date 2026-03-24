@@ -27,8 +27,8 @@ The project and its dependencies are managed with [uv](https://docs.astral.sh/uv
 | Integration tests (against existing model) | `LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL=1 make integration-test`                                                                             |
 | Integration tests (deploy fresh model)     | `make integration-test`                                                                                                                   |
 | LBaaS integration tests                    | `make lbaas && LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL=1 LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL=1 LBAAS_MODEL_NAME=lbaas make integration-test` |
-| Lint                                       | `make lint`                                                                                                                               |
-| Format                                     | `make fmt`                                                                                                                                |
+| Lint (with fixes)                          | `make lint`                                                                                                                               |
+| Check (no fixes)                           | `make check`                                                                                                                              |
 | Build charm                                | `make build`                                                                                                                              |
 | Deploy bundle locally                      | `make deploy`                                                                                                                             |
 | Terraform tests                            | `make terraform-test-all`                                                                                                                 |

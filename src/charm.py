@@ -1649,8 +1649,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
             if proxy_var in env:
                 logger.info(
-                    f"add-apt-repository {proxy_var} variable set to : "
-                    f"{env[proxy_var]}"
+                    f"add-apt-repository {proxy_var} variable set to : {env[proxy_var]}"
                 )
 
         # juju_no_proxy is not perfectly compatible with Shell environment
