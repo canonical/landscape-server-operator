@@ -308,6 +308,32 @@ class TestOnConfigChanged:
 
         assert state_out.opened_ports == expected_ports
 
+    def test_worker_count_affects_ports(self):
+        ctx = Context(LandscapeServerCharm)
+
+        relation = PeerRelation("replicas", peers_data={})
+        state_in = State(
+            relations=[relation], config={"worker_counts": 3}, leader=False
+        )
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8072, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8082, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=8092, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9082, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
     """
