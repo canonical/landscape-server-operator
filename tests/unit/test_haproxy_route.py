@@ -129,7 +129,11 @@ class TestAllowHttp:
         for c in mock.call_args_list:
             service = c.kwargs.get("service", "")
             allow_http = c.kwargs.get("allow_http", False)
-            if "pingserver" in service or "repository" in service:
+            if (
+                "pingserver" in service
+                or "repository" in service
+                or "message-server" in service
+            ):
                 assert allow_http, f"Expected allow_http=True for {service}"
             else:
                 assert not allow_http, f"Expected allow_http=False for {service}"

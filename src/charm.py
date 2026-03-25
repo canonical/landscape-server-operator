@@ -1103,6 +1103,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=True,
             unit_address=unit_ip,
             hostname=hostname,
+            deny_paths=["/ping/metrics"],
         )
         self.message_server_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-message-server-{model_uuid}",
@@ -1111,9 +1112,10 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/message-system",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=True,
             unit_address=unit_ip,
             hostname=hostname,
+            deny_paths=["/message-system/metrics", "/attachment/metrics"],
         )
         self.api_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-api-{model_uuid}",
@@ -1125,6 +1127,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
+            deny_paths=["/api/metrics"],
         )
         self.package_upload_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-package-upload-{model_uuid}",
@@ -1139,6 +1142,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
+            deny_paths=["/upload/metrics"],
         )
         self.repository_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-repository-{model_uuid}",
@@ -1150,6 +1154,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=True,
             unit_address=unit_ip,
             hostname=hostname,
+            deny_paths=["/repository/metrics"],
         )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(

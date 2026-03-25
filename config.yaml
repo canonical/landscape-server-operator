@@ -207,9 +207,9 @@ options:
     type: boolean
     default: false
     description: |
-      When true (the default), allow plain HTTP access to all routes. When false,
-      HTTP requests are redirected to HTTPS except for /ping and /repository, which
-      always allow plain HTTP.
+      When true, allow plain HTTP access to all routes. When false (the default),
+      HTTP requests are redirected to HTTPS except for /ping, /repository, and
+      /message-system, which always allow plain HTTP.
   enable_hostagent_messenger:
     type: boolean
     default: false
