@@ -23,7 +23,7 @@ run "modern_amqp_relations" {
   }
 
   assert {
-    condition     = !can(output.requires.amqp)
+    condition     = try(output.requires.amqp, null) == null
     error_message = "Modern revision should not have legacy amqp relation"
   }
 }
@@ -44,12 +44,12 @@ run "legacy_amqp_relations_by_revision" {
   }
 
   assert {
-    condition     = !can(output.requires.inbound_amqp)
+    condition     = try(output.requires.inbound_amqp, null) == null
     error_message = "Legacy revision should not have inbound-amqp relation"
   }
 
   assert {
-    condition     = !can(output.requires.outbound_amqp)
+    condition     = try(output.requires.outbound_amqp, null) == null
     error_message = "Legacy revision should not have outbound-amqp relation"
   }
 }
@@ -63,17 +63,17 @@ run "modern_amqp_relations_null_revision" {
   }
 
   assert {
-    condition     = !can(output.requires.amqp)
+    condition     = try(output.requires.amqp, null) == null
     error_message = "Null revision should not use legacy amqp relation"
   }
 
   assert {
-    condition     = can(output.requires.inbound_amqp)
+    condition     = try(output.requires.inbound_amqp, null) != null
     error_message = "Null revision should have inbound-amqp relation"
   }
 
   assert {
-    condition     = can(output.requires.outbound_amqp)
+    condition     = try(output.requires.outbound_amqp, null) != null
     error_message = "Null revision should have outbound-amqp relation"
   }
 }
@@ -94,12 +94,12 @@ run "legacy_amqp_relations_by_channel" {
   }
 
   assert {
-    condition     = !can(output.requires.inbound_amqp)
+    condition     = try(output.requires.inbound_amqp, null) == null
     error_message = "Legacy channel should not have inbound-amqp relation"
   }
 
   assert {
-    condition     = !can(output.requires.outbound_amqp)
+    condition     = try(output.requires.outbound_amqp, null) == null
     error_message = "Legacy channel should not have outbound-amqp relation"
   }
 }
@@ -214,7 +214,7 @@ run "legacy_postgres_relations" {
   }
 
   assert {
-    condition     = !can(output.requires.database)
+    condition     = try(output.requires.database, null) == null
     error_message = "Legacy revision should not have database relation"
   }
 }
@@ -269,7 +269,7 @@ run "internal_haproxy_relations" {
   }
 
   assert {
-    condition     = !can(output.requires.website)
+    condition     = try(output.requires.website, null) == null
     error_message = "Rev 216+ should not have legacy website relation"
   }
 }
@@ -290,12 +290,12 @@ run "legacy_haproxy_relations" {
   }
 
   assert {
-    condition     = !can(output.requires.load_balancer_certificates)
+    condition     = try(output.requires.load_balancer_certificates, null) == null
     error_message = "Pre-216 should not have load-balancer-certificates relation"
   }
 
   assert {
-    condition     = !can(output.requires.http_ingress)
+    condition     = try(output.requires.http_ingress, null) == null
     error_message = "Pre-216 should not have ingress relations"
   }
 }
@@ -309,12 +309,12 @@ run "internal_haproxy_null_revision" {
   }
 
   assert {
-    condition     = can(output.requires.load_balancer_certificates)
+    condition     = try(output.requires.load_balancer_certificates, null) != null
     error_message = "Null revision should have internal haproxy relations"
   }
 
   assert {
-    condition     = !can(output.requires.website)
+    condition     = try(output.requires.website, null) == null
     error_message = "Null revision should not have legacy website relation"
   }
 }

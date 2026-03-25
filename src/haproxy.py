@@ -52,7 +52,6 @@ class ACL(str, Enum):
 
 
 class HTTPBackend(str, Enum):
-
     API = "landscape-http-api"
     APPSERVER = "landscape-http-appserver"
     HASHIDS = "landscape-http-hashid-databases"
@@ -65,7 +64,6 @@ class HTTPBackend(str, Enum):
 
 
 class HTTPSBackend(str, Enum):
-
     API = "landscape-https-api"
     APPSERVER = "landscape-https-appserver"
     HASHIDS = "landscape-https-hashid-databases"

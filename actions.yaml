@@ -36,3 +36,7 @@ disable-ubuntu-installer-attach:
 get-certificates:
   description: |
     Returns the TLS certificates used by the HAProxy service on this unit.
+get-service-conf:
+  description: |
+    Returns the parsed contents of /etc/landscape/service.conf as a JSON
+    string, useful for debugging or scripting against the live configuration.

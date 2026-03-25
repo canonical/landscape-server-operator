@@ -1,3 +1,5 @@
+import time
+
 import jubilant
 import requests
 from requests.adapters import HTTPAdapter
@@ -136,6 +138,48 @@ def restore_db_relations(juju: jubilant.Juju, expected: set[str]) -> None:
             juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
 
     juju.wait(jubilant.all_active, timeout=300)
+
+
+def wait_for_service(
+    juju: jubilant.Juju,
+    unit: str,
+    service: str,
+    timeout: int = 60,
+    check_interval: float = 5.0,
+) -> None:
+    """
+    Poll until a systemd service is active on the given unit.
+
+    Juju reporting active does not guarantee all systemd services have finished
+    starting, so this retries until `timeout` seconds have elapsed.
+    """
+    deadline = time.monotonic() + timeout
+    last_exc: jubilant.CLIError | None = None
+    while time.monotonic() < deadline:
+        try:
+            juju.ssh(unit, f"systemctl is-active {service}.service")
+            return
+        except jubilant.CLIError as e:
+            last_exc = e
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(check_interval, remaining))
+    raise AssertionError(
+        f"Service '{service}' never became active on '{unit}'"
+    ) from last_exc
+
+
+def has_pgbouncer(juju: jubilant.Juju) -> bool:
+    """
+    Checks if PgBouncer is in the current model and is related to landscape-server
+    via the `database` endpoint.
+    """
+    pgbouncer = juju.status().apps.get("pgbouncer")
+    if not pgbouncer:
+        return False
+
+    return "database" in pgbouncer.relations
 
 
 def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:

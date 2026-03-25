@@ -14,6 +14,7 @@ develop a new k8s charm using the Operator Framework:
 
 from dataclasses import asdict
 from functools import cached_property
+import json
 import os
 import subprocess
 from subprocess import CalledProcessError, check_call
@@ -44,7 +45,7 @@ from charms.operator_libs_linux.v1.systemd import (
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppRequirer,
 )
-from ops import main
+from ops import main, Port
 from ops.charm import (
     ActionEvent,
     CharmBase,
@@ -85,6 +86,7 @@ from settings_files import (
     get_postgres_roles,
     merge_service_conf,
     prepend_default_settings,
+    read_service_conf,
     update_db_conf,
     update_default_settings,
     update_service_conf,
@@ -291,6 +293,9 @@ class LandscapeServerCharm(CharmBase):
         self.framework.observe(
             self.on.get_certificates_action, self._on_get_certificates_action
         )
+        self.framework.observe(
+            self.on.get_service_conf_action, self._on_get_service_conf_action
+        )
 
         # State
         self._stored.set_default(
@@ -470,6 +475,8 @@ class LandscapeServerCharm(CharmBase):
             logger.exception(e)
             return
 
+        self._set_ports()
+
         # Update additional configuration
         update_service_conf(
             {"global": {"deployment-mode": self.charm_config.deployment_mode}}
@@ -581,6 +588,31 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_haproxy()
         self._update_ready_status(restart_services=True)
+
+    def _set_ports(self):
+        worker_counts = self.charm_config.worker_counts
+        ports = []
+
+        for i in range(worker_counts):
+            ports += [
+                Port("tcp", self.charm_config.pingserver_base_port + i),
+                Port("tcp", self.charm_config.appserver_base_port + i),
+                Port("tcp", self.charm_config.message_server_base_port + i),
+                Port("tcp", self.charm_config.api_base_port + i),
+            ]
+
+        if self.unit.is_leader():
+            ports.append(Port("tcp", self.charm_config.package_upload_base_port))
+
+        if self.charm_config.enable_hostagent_messenger:
+            ports.append(Port("tcp", self.charm_config.hostagent_server_base_port))
+
+        if self.charm_config.enable_ubuntu_installer_attach:
+            ports.append(
+                Port("tcp", self.charm_config.ubuntu_installer_attach_base_port)
+            )
+
+        self.unit.set_ports(*ports)
 
     def _get_secret_token(self) -> str | None:
         """
@@ -1209,6 +1241,9 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_ready_status()
 
+    def _on_get_service_conf_action(self, event: ActionEvent) -> None:
+        event.set_results({"config": json.dumps(read_service_conf())})
+
     def _on_get_certificates_action(self, event: ActionEvent) -> None:
         cert_attrs = self._get_certificate_request_attributes()
         if not cert_attrs:
@@ -1390,7 +1425,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 try:
                     service_resume(service)
                 except SystemdError as e:
-                    logger.warn(str(e))
+                    logger.warning(str(e))
         else:
             # Disable leader services on this unit. Requests will be directed to the
             # leader anyways.
@@ -1398,7 +1433,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 try:
                     service_pause(service)
                 except SystemdError as e:
-                    logger.warn(str(e))
+                    logger.warning(str(e))
+
+        self._set_ports()
 
         self._update_haproxy()
         self._update_ready_status(restart_services=True)
@@ -1649,8 +1686,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
             if proxy_var in env:
                 logger.info(
-                    f"add-apt-repository {proxy_var} variable set to : "
-                    f"{env[proxy_var]}"
+                    f"add-apt-repository {proxy_var} variable set to : {env[proxy_var]}"
                 )
 
         # juju_no_proxy is not perfectly compatible with Shell environment

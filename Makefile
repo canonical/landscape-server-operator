@@ -27,18 +27,15 @@ coverage:
 	uv run coverage run --branch --source=src -m pytest -v --tb native tests/unit
 	uv run coverage report -m
 
+.PHONY: check
+check:
+	uv run ruff check src tests
+	uv run ruff format --check src tests
+
 .PHONY: lint
 lint:
-	uv run flake8 src tests
-	uv run isort --check-only src tests
-	uv run black --check src tests
-	uv run ruff check src tests
-
-.PHONY: fmt
-fmt:
-	uv run isort src tests
-	uv run black src tests
 	uv run ruff check --fix src tests
+	uv run ruff format src tests
 
 # Charm building and deployment
 .PHONY: build

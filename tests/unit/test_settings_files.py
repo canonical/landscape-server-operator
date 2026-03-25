@@ -15,6 +15,7 @@ from settings_files import (
     LicenseFileReadException,
     merge_service_conf,
     prepend_default_settings,
+    read_service_conf,
     update_default_settings,
     update_service_conf,
     write_license_file,
@@ -54,7 +55,6 @@ class CapturingStringIO(StringIO):
 
 
 class ConfigureForDeploymentModeTestCase(TestCase):
-
     @patch("os.symlink")
     def test_configure_for_deployment_mode_standalone(self, symlink_mock):
         """
@@ -94,7 +94,6 @@ class ConfigureForDeploymentModeTestCase(TestCase):
 
 
 class MergeServiceConfTestCase(TestCase):
-
     def test_merge_service_conf_new(self):
         """
         Tests that a new section and key are created in the existing
@@ -147,7 +146,6 @@ class MergeServiceConfTestCase(TestCase):
 
 
 class PrependDefaultSettingsTestCase(TestCase):
-
     def test_prepend(self):
         infile = StringIO("# Second line")
         outfile = CapturingStringIO()
@@ -166,7 +164,6 @@ class PrependDefaultSettingsTestCase(TestCase):
 
 
 class UpdateDefaultSettingsTestCase(TestCase):
-
     def test_setting_exists(self):
         """Tests that a setting gets updated if it exists."""
         infile = StringIO('TEST="no"\n')
@@ -205,7 +202,6 @@ class UpdateDefaultSettingsTestCase(TestCase):
 
 
 class UpdateServiceConfTestCase(TestCase):
-
     def test_no_section(self):
         """
         Tests that a new config section is created if it does not
@@ -261,7 +257,6 @@ class UpdateServiceConfTestCase(TestCase):
 
 
 class WriteLicenseFileTestCase(TestCase):
-
     def test_from_file(self):
         """
         Tests that a license can be read from a file:// and written.
@@ -336,3 +331,27 @@ class WriteLicenseFileTestCase(TestCase):
             1000,
             1000,
         )
+
+
+def test_read_service_conf_empty():
+    data = read_service_conf()
+    assert data == {}
+
+
+def test_read_service_conf_parses_section(capture_service_conf):
+    capture_service_conf.tempfile.write_text(
+        "[stores]\nhost = localhost:5432\nuser = landscape\n"
+    )
+    data = read_service_conf()
+    assert data["stores"]["host"] == "localhost:5432"
+    assert data["stores"]["user"] == "landscape"
+
+
+def test_read_service_conf_multiple_sections(capture_service_conf):
+    capture_service_conf.tempfile.write_text(
+        "[stores]\nhost = db:5432\n\n[schema]\nstore_user = ls\n"
+    )
+    data = read_service_conf()
+    assert "stores" in data
+    assert "schema" in data
+    assert data["schema"]["store_user"] == "ls"

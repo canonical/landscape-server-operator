@@ -19,9 +19,11 @@ from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
     has_modern_pg,
+    has_pgbouncer,
     has_tls_certs_provider,
     restore_db_relations,
     supports_legacy_pg,
+    wait_for_service,
 )
 
 
@@ -252,7 +254,79 @@ def test_legacy_db_relation(juju: jubilant.Juju, bundle: None):
     restore_db_relations(juju, initial_relations)
 
 
+def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
+    """
+    If PgBouncer is deployed, landscape-server connects to it via the `database`
+    endpoint rather than directly to PostgreSQL.
+    """
+    if not has_pgbouncer(juju):
+        pytest.skip("PgBouncer not present in this model, skipping...")
+
+    pg_relations = set(juju.status().apps["pgbouncer"].relations)
+    assert "database" in pg_relations, "pgbouncer should have a `database` relation"
+    assert "backend-database" in pg_relations, (
+        "pgbouncer should have a `backend-database` relation to PostgreSQL"
+    )
+
+    ls_relations = set(juju.status().apps["landscape-server"].relations)
+    assert "database" in ls_relations, (
+        "landscape-server should be related via the `database` endpoint"
+    )
+
+
+def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
+    """
+    The get-service-conf action returns a JSON-serialisable dict with the
+    expected top-level sections from service.conf.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    assert result.status == "completed"
+
+    config = json.loads(result.results["config"])
+    assert "stores" in config, (
+        f"Expected 'stores' section in service.conf, got: {list(config)}"
+    )
+
+
+def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
+    """
+    The Landscape database schema is present after deployment.
+
+    Reads the connection details from service.conf via the get-service-conf
+    action on the leader unit and runs a query to confirm the `account` table
+    (created by landscape-schema) exists. This works regardless of whether
+    pgbouncer or direct PostgreSQL is in use, since the host/port/user/password/
+    dbname come from whatever landscape-server is configured to connect to.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    stores = json.loads(result.results["config"])["stores"]
+    host, port = stores["host"].split(":")
+    password, user, dbname = stores["password"], stores["user"], stores["main"]
+
+    result = juju.ssh(
+        "landscape-server/leader",
+        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
+        ' -tAc "SELECT COUNT(*) FROM information_schema.tables'
+        " WHERE table_schema = 'public' AND table_name = 'account';\"",
+    ).strip()
+
+    assert result == "1", (
+        "Expected the 'account' table to exist in the landscape database, "
+        f"got: {result!r}"
+    )
+
+
 def test_all_services_up(juju: jubilant.Juju, bundle: None):
+    """
+    All expected Landscape systemd services are active on every unit.
+
+    Uses `wait_for_service` rather than a one-shot check because Juju
+    reporting active does not guarantee the services have finished starting.
+    """
     juju.wait(jubilant.all_active, timeout=300)
 
     status = juju.status()
@@ -262,26 +336,14 @@ def test_all_services_up(juju: jubilant.Juju, bundle: None):
 
     for name, unit_status in units.items():
         for service in DEFAULT_SERVICES:
-            try:
-                juju.ssh(name, f"systemctl is-active {service}.service")
-            except Exception as e:
-                pytest.fail(f"Failed to run command on unit: {e}")
+            wait_for_service(juju, name, service)
 
         if enable_ubuntu_installer:
-            try:
-                juju.ssh(
-                    name,
-                    f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
-                )
-            except Exception as e:
-                pytest.fail(f"Failed to run command on unit: {e}")
+            wait_for_service(juju, name, LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
         if unit_status.leader:
             for service in LEADER_SERVICES:
-                try:
-                    juju.ssh(name, f"systemctl is-active {service}.service")
-                except Exception as e:
-                    pytest.fail(f"Failed to run command on unit: {e}")
+                wait_for_service(juju, name, service)
 
 
 def test_ubuntu_installer_attach_service(juju: jubilant.Juju, bundle: None):
@@ -303,14 +365,7 @@ def test_ubuntu_installer_attach_service(juju: jubilant.Juju, bundle: None):
         )
         juju.wait(jubilant.all_active, timeout=300)
         for name in units.keys():
-            try:
-                juju.ssh(
-                    name,
-                    f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
-                )
-
-            except Exception as e:
-                pytest.fail(f"Failed to run command on unit: {e}")
+            wait_for_service(juju, name, LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
     finally:
         restore_val = "true" if original else "false"
@@ -341,10 +396,7 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
         assert status.apps["landscape-server"].app_status.current == "active"
 
         for name in status.apps["landscape-server"].units.keys():
-            juju.ssh(
-                name,
-                f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
-            )
+            wait_for_service(juju, name, LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": "false"}
@@ -548,9 +600,9 @@ def test_http_ingress_enabled(juju: jubilant.Juju, bundle: None):
 
     http_data = get_relation_data("http-ingress")
 
-    assert (
-        http_data.get("port") == "80"
-    ), f"Expected port 80, got {http_data.get('port')}"
+    assert http_data.get("port") == "80", (
+        f"Expected port 80, got {http_data.get('port')}"
+    )
     assert http_data.get("name") == "landscape-server"
 
 
@@ -618,16 +670,16 @@ def test_grpc_ingress_config_enabled(juju: jubilant.Juju, bundle: None):
 
         hostagent_data = get_relation_data("hostagent-messenger-ingress")
 
-        assert (
-            hostagent_data.get("port") == "6554"
-        ), f"Expected port 6554, got {hostagent_data.get('port')}"
+        assert hostagent_data.get("port") == "6554", (
+            f"Expected port 6554, got {hostagent_data.get('port')}"
+        )
         assert hostagent_data.get("name") == "landscape-server"
 
         installer_data = get_relation_data("ubuntu-installer-attach-ingress")
 
-        assert (
-            installer_data.get("port") == "50051"
-        ), f"Expected port 50051, got {installer_data.get('port')}"
+        assert installer_data.get("port") == "50051", (
+            f"Expected port 50051, got {installer_data.get('port')}"
+        )
         assert installer_data.get("name") == "landscape-server"
 
     finally:
@@ -670,9 +722,9 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=True,
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -704,9 +756,9 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=True,
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -723,9 +775,9 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
     response = session.get(
         f"http://{haproxy_ip}/metrics", timeout=10, headers={"Host": hostname}
     )
-    assert (
-        response.status_code == 403
-    ), f"Expected 403 for HTTP /metrics, got {response.status_code}"
+    assert response.status_code == 403, (
+        f"Expected 403 for HTTP /metrics, got {response.status_code}"
+    )
 
     response = session.get(
         f"https://{haproxy_ip}/metrics",
@@ -733,9 +785,9 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
         timeout=10,
         headers={"Host": hostname},
     )
-    assert (
-        response.status_code == 403
-    ), f"Expected 403 for HTTPS /metrics, got {response.status_code}"
+    assert response.status_code == 403, (
+        f"Expected 403 for HTTPS /metrics, got {response.status_code}"
+    )
 
     services = ("message-system", "api", "ping")
 
@@ -746,7 +798,7 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
             headers={"Host": hostname},
         )
         assert response.status_code == 403, (
-            f"Expected 403 for HTTP /{service}/metrics, " f"got {response.status_code}"
+            f"Expected 403 for HTTP /{service}/metrics, got {response.status_code}"
         )
 
         response = session.get(
@@ -756,7 +808,7 @@ def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Ju
             headers={"Host": hostname},
         )
         assert response.status_code == 403, (
-            f"Expected 403 for HTTPS /{service}/metrics, " f"got {response.status_code}"
+            f"Expected 403 for HTTPS /{service}/metrics, got {response.status_code}"
         )
 
 
@@ -895,10 +947,7 @@ def test_haproxy_installed_and_configured(juju: jubilant.Juju, bundle: None):
             except Exception:
                 pytest.fail(f"Error file missing on {unit_name}: {error_file}")
 
-        try:
-            juju.ssh(unit_name, f"systemctl is-active {haproxy.HAPROXY_SERVICE}")
-        except Exception as e:
-            pytest.fail(f"HAProxy service not active on {unit_name}: {e}")
+        wait_for_service(juju, unit_name, haproxy.HAPROXY_SERVICE)
 
 
 def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):

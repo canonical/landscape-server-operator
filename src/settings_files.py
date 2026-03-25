@@ -237,3 +237,13 @@ def get_postgres_roles(postgresql_version: str) -> PostgresRoles:
     return PostgresRoles(
         owner=owner, relation=relation, application=application, superuser=superuser
     )
+
+
+def read_service_conf() -> dict:
+    """
+    Returns the parsed contents of SERVICE_CONF as a plain dict of
+    {section: {key: value}}, suitable for serialisation to JSON.
+    """
+    config = ConfigParser()
+    config.read(SERVICE_CONF)
+    return {section: dict(config[section]) for section in config.sections()}
