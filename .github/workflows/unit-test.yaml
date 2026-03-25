@@ -12,7 +12,7 @@ on:
   workflow_call:
 
 jobs:
-  unit-test:
+  charm-unit-test:
     name: Unit test charm
     strategy:
       fail-fast: false
@@ -33,6 +33,10 @@ jobs:
       - name: Run tests
         run: make test
 
+  terraform-unit-test:
+    name: Terraform unit tests
+    runs-on: [self-hosted, amd64, noble]
+    steps:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.10"
