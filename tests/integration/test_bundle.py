@@ -264,14 +264,14 @@ def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
 
     pg_relations = set(juju.status().apps["pgbouncer"].relations)
     assert "database" in pg_relations, "pgbouncer should have a `database` relation"
-    assert (
-        "backend-database" in pg_relations
-    ), "pgbouncer should have a `backend-database` relation to PostgreSQL"
+    assert "backend-database" in pg_relations, (
+        "pgbouncer should have a `backend-database` relation to PostgreSQL"
+    )
 
     ls_relations = set(juju.status().apps["landscape-server"].relations)
-    assert (
-        "database" in ls_relations
-    ), "landscape-server should be related via the `database` endpoint"
+    assert "database" in ls_relations, (
+        "landscape-server should be related via the `database` endpoint"
+    )
 
 
 def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
@@ -285,9 +285,9 @@ def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
     assert result.status == "completed"
 
     config = json.loads(result.results["config"])
-    assert (
-        "stores" in config
-    ), f"Expected 'stores' section in service.conf, got: {list(config)}"
+    assert "stores" in config, (
+        f"Expected 'stores' section in service.conf, got: {list(config)}"
+    )
 
 
 def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):

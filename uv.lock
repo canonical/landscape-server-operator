@@ -563,6 +563,7 @@ dev = [
     { name = "pydantic" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "urllib3" },
 ]
 integration = [
     { name = "grpcio" },
@@ -588,6 +589,7 @@ dev = [
     { name = "pydantic", specifier = "==1.10.26" },
     { name = "pytest", specifier = "==9.0.2" },
     { name = "ruff", specifier = "==0.15.7" },
+    { name = "urllib3", specifier = "==2.6.3" },
 ]
 integration = [
     { name = "grpcio", specifier = "==1.78.0" },
