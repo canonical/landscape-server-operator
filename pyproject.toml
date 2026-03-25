@@ -19,6 +19,7 @@ dev = [
   "pydantic==1.10.26",
   "pytest==9.0.2",
   "ruff==0.15.7",
+  "urllib3==2.6.3",
 ]
 integration = [
   "grpcio==1.78.0",
