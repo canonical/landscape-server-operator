@@ -170,6 +170,18 @@ def wait_for_service(
     ) from last_exc
 
 
+def has_pgbouncer(juju: jubilant.Juju) -> bool:
+    """
+    Checks if PgBouncer is in the current model and is related to landscape-server
+    via the `database` endpoint.
+    """
+    pgbouncer = juju.status().apps.get("pgbouncer")
+    if not pgbouncer:
+        return False
+
+    return "database" in pgbouncer.relations
+
+
 def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
     """
     Check if an app in the given model

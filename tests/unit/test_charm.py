@@ -25,6 +25,7 @@ from ops.testing import (
     Relation,
     State,
     StoredState,
+    TCPPort,
 )
 import pytest
 from scenario.errors import UncaughtCharmError
@@ -53,7 +54,6 @@ GitHub actions will set `GITHUB_ACTIONS` during runs.
 
 
 class TestGrafanaMachineAgentRelation(unittest.TestCase):
-
     def _get_cos_agent_relation_config(self, state: State) -> dict:
         """
         Extract the cos-agent relation configuration.
@@ -220,6 +220,146 @@ class TestOnConfigChanged:
         ctx.run(ctx.on.config_changed(), state)
         assert calls == ["prod"]
 
+    def test_hostagent_services_disable_closes_port(
+        self,
+        lb_certs_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **lb_certs_state,
+            config={"enable_hostagent_messenger": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port in state_in.opened_ports
+
+        state_in.config.update({"enable_hostagent_messenger": False})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
+
+    def test_hostagent_services_enable_opens_port(
+        self,
+        lb_certs_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **lb_certs_state,
+            config={"enable_hostagent_messenger": False},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": True},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port not in state_in.opened_ports
+
+        state_in.config.update({"enable_hostagent_messenger": True})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port in state_out.opened_ports
+
+    def test_ports_open(self):
+        ctx = Context(LandscapeServerCharm)
+        relation = PeerRelation("replicas", peers_data={})
+
+        # default config, non-leader unit
+        state_in = State(relations=[relation], config={}, leader=False)
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+        # default config, leader unit
+        state_in = State(relations=[relation], config={}, leader=True)
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9100, protocol="tcp"),  # package upload
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+    def test_worker_count_affects_ports(self):
+        ctx = Context(LandscapeServerCharm)
+
+        relation = PeerRelation("replicas", peers_data={})
+        state_in = State(
+            relations=[relation], config={"worker_counts": 3}, leader=False
+        )
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8072, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8082, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=8092, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9082, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+    def test_port_on_leader_change(self):
+        ctx = Context(LandscapeServerCharm)
+        relation = PeerRelation("replicas", peers_data={})
+        expected_port = TCPPort(port=9100, protocol="tcp")
+        leader_state = State(relations=[relation], config={}, leader=True)
+
+        state_out = ctx.run(ctx.on.leader_elected(), leader_state)
+
+        assert expected_port in state_out.opened_ports
+
+        non_leader_state = State(relations=[relation], leader=False)
+
+        event = ctx.on.relation_changed(relation)
+        state_out = ctx.run(event, non_leader_state)
+
+        assert expected_port not in state_out.opened_ports
+
+        state_out = ctx.run(event, leader_state)
+
+        assert expected_port in state_out.opened_ports
+
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
     """
@@ -261,6 +401,35 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
             LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True
         )
 
+    def test_enable_opens_port(
+        self,
+        apt_fixture,
+        lb_certs_state,
+        certificate_and_key_fixture,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **lb_certs_state,
+            config={"enable_ubuntu_installer_attach": False},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": True},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port not in state_in.opened_ports
+
+        state_in.config.update({"enable_ubuntu_installer_attach": True})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port in state_out.opened_ports
+
     def test_disable(self, apt_fixture, lb_certs_state):
         """
         If the `enable_ubuntu_installer_attach` parameter moves from `True` to `False`,
@@ -284,6 +453,35 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
 
         assert haproxy.FrontendName.UBUNTU_INSTALLER_ATTACH not in stored.haproxy_config
         remove_package_mock.assert_called_once_with(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+
+    def test_disable_closes_port(
+        self,
+        apt_fixture,
+        lb_certs_state,
+        certificate_and_key_fixture,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **lb_certs_state,
+            config={"enable_ubuntu_installer_attach": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port in state_in.opened_ports
+
+        state_in.config.update({"enable_ubuntu_installer_attach": False})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
 
     def test_idempotent_enable(
         self,
@@ -1311,7 +1509,7 @@ class TestCharm(unittest.TestCase):
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
             self.assertEqual(
-                "relayhost = smtp.example.com\n" "othersetting = nada\n",
+                "relayhost = smtp.example.com\nothersetting = nada\n",
                 mock_postfix_cf_file.read(),
             )
 
@@ -1333,7 +1531,7 @@ class TestCharm(unittest.TestCase):
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
             self.assertEqual(
-                "relayhost = smtp.example.com\n" "othersetting = nada\n",
+                "relayhost = smtp.example.com\nothersetting = nada\n",
                 mock_postfix_cf_file.read(),
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
@@ -2148,3 +2346,15 @@ class TestOnUpgradeCharm:
 
         haproxy_install_fixture.assert_not_called()
         assert stored.ready.get("load-balancer-certificates") is True
+
+
+def test_action_get_service_conf(monkeypatch):
+    conf = {"stores": {"host": "localhost:5432", "user": "landscape"}}
+    monkeypatch.setattr("charm.read_service_conf", lambda: conf)
+
+    ctx = Context(LandscapeServerCharm)
+    ctx.run(ctx.on.action("get-service-conf"), State())
+
+    assert ctx.action_results is not None
+    assert "config" in ctx.action_results
+    assert json.loads(ctx.action_results["config"]) == conf

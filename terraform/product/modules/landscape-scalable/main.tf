@@ -148,8 +148,8 @@ resource "juju_application" "lb_certs" {
 }
 
 locals {
-  has_modern_amqp_relations = can(module.landscape_server.requires.inbound_amqp) && can(module.landscape_server.requires.outbound_amqp)
-  has_internal_haproxy      = can(module.landscape_server.requires.load_balancer_certificates)
+  has_modern_amqp_relations = try(module.landscape_server.requires.inbound_amqp, null) != null && try(module.landscape_server.requires.outbound_amqp, null) != null
+  has_internal_haproxy      = try(module.landscape_server.requires.load_balancer_certificates, null) != null
 }
 
 resource "juju_integration" "landscape_server_inbound_amqp" {
@@ -294,7 +294,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_ingress" {
 }
 
 locals {
-  has_modern_pg_interface = can(module.landscape_server.requires.database)
+  has_modern_pg_interface = try(module.landscape_server.requires.database, null) != null
 }
 
 
@@ -332,6 +332,58 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 
   depends_on = [module.landscape_server, module.postgresql]
 
-  count = var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+  count = var.postgresql != null && local.has_modern_pg_interface && var.pgbouncer == null ? 1 : 0
 
+}
+
+resource "juju_application" "pgbouncer" {
+  name       = var.pgbouncer.app_name
+  model_uuid = var.model_uuid
+  units      = 0
+  config     = var.pgbouncer.config
+
+  charm {
+    name     = "pgbouncer"
+    revision = var.pgbouncer.revision
+    channel  = var.pgbouncer.channel
+    base     = var.pgbouncer.base
+  }
+
+  count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_pgbouncer" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.database
+  }
+
+  application {
+    name     = juju_application.pgbouncer[0].name
+    endpoint = "database"
+  }
+
+  depends_on = [module.landscape_server, juju_application.pgbouncer]
+
+  count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "pgbouncer_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.pgbouncer[0].name
+    endpoint = "backend-database"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.pgbouncer, module.postgresql]
+
+  count = var.pgbouncer != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
 }

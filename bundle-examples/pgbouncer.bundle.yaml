@@ -1,4 +1,4 @@
-description: Landscape Scalable Dev with Charmed PostgreSQL 16
+description: Landscape Scalable Dev with internal HAProxy and PgBouncer
 applications:
   postgresql:
     channel: 16/stable
@@ -12,6 +12,9 @@ applications:
       plugin_pg_trgm_enable: true
       experimental_max_connections: 500
     base: ubuntu@24.04
+  pgbouncer:
+    channel: 1/stable
+    charm: ch:pgbouncer
   rabbitmq-server:
     channel: latest/edge
     charm: ch:rabbitmq-server
@@ -22,8 +25,11 @@ applications:
     charm: ../landscape-server_ubuntu@24.04-amd64.charm
     num_units: 1
     options:
-        landscape_ppa: ppa:landscape/self-hosted-beta
-        min_install: True
+      landscape_ppa: ppa:landscape/self-hosted-beta
+      min_install: True
+      enable_hostagent_messenger: True
+      enable_ubuntu_installer_attach: True
+      root_url: https://landscape.local/
     base: ubuntu@24.04
   lb-certs:
     charm: self-signed-certificates
@@ -33,5 +39,6 @@ applications:
 relations:
   - [landscape-server:inbound-amqp, rabbitmq-server]
   - [landscape-server:outbound-amqp, rabbitmq-server]
-  - [landscape-server:database, postgresql:database]
+  - [landscape-server:database, pgbouncer:database]
+  - [pgbouncer:backend-database, postgresql:database]
   - [landscape-server:load-balancer-certificates, lb-certs:certificates]
