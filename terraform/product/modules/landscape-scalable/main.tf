@@ -289,7 +289,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
 locals {
   has_modern_pg_interface    = can(module.landscape_server.requires.database)
-  has_haproxy_route       = module.landscape_server.has_haproxy_route_interface
+  has_haproxy_route          = module.landscape_server.has_haproxy_route_interface
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
 }
