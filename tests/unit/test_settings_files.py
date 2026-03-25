@@ -81,7 +81,6 @@ def redirect_systemd_paths(monkeypatch, tmp_path):
 
 @pytest.mark.usefixtures("redirect_systemd_paths")
 class TestWriteDeploymentModeSystemdOverride:
-
     def test_writes_drop_in_for_each_service(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
 
