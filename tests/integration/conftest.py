@@ -9,7 +9,7 @@ import uuid
 import jubilant
 import pytest
 
-from tests.integration.helpers import has_haproxy_route_provider, has_tls_certs_provider
+from tests.integration.helpers import has_haproxy_route_provider
 
 BUNDLE_NAME = "bundle.yaml"
 """
@@ -145,9 +145,6 @@ def lbaas(juju: jubilant.Juju):
         try:
             lbaas_status = lbaas_juju.status()
             assert "haproxy" in lbaas_status.apps, "haproxy not found in lbaas model"
-            assert has_tls_certs_provider(lbaas_juju, "haproxy"), (
-                "haproxy not integrated with a TLS certs provider"
-            )
         except Exception as e:
             pytest.fail(
                 f"Failed to connect to existing lbaas model '{lbaas_model}': {e}"

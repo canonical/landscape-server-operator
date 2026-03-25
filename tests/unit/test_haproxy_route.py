@@ -115,9 +115,9 @@ class TestAllowHttp:
             service = c.kwargs.get("service", "")
             if "pingserver" in service or "repository" in service:
                 continue
-            assert (
-                c.kwargs.get("allow_http") is True
-            ), f"Expected allow_http=True for {service}"
+            assert c.kwargs.get("allow_http") is True, (
+                f"Expected allow_http=True for {service}"
+            )
 
     def test_allow_http_false_only_ping_and_repository_allow_http(
         self, replicas_network_state
@@ -183,9 +183,9 @@ class TestHostname:
         mock = _run_provide(context, state)
         assert mock.called
         for c in mock.call_args_list:
-            assert (
-                c.kwargs.get("hostname") == "my.landscape.example.com"
-            ), f"Wrong hostname for {c.kwargs.get('service')}"
+            assert c.kwargs.get("hostname") == "my.landscape.example.com", (
+                f"Wrong hostname for {c.kwargs.get('service')}"
+            )
 
     def test_hostname_falls_back_to_leader_ip_when_no_root_url(
         self, replicas_network_state
@@ -195,9 +195,9 @@ class TestHostname:
         mock = _run_provide(context, state, leader_ip=LEADER_IP)
         assert mock.called
         for c in mock.call_args_list:
-            assert (
-                c.kwargs.get("hostname") == LEADER_IP
-            ), f"Expected leader IP as hostname for {c.kwargs.get('service')}"
+            assert c.kwargs.get("hostname") == LEADER_IP, (
+                f"Expected leader IP as hostname for {c.kwargs.get('service')}"
+            )
 
 
 class TestServiceNames:
@@ -214,9 +214,9 @@ class TestServiceNames:
         assert mock_provide.called
         for c in mock_provide.call_args_list:
             service = c.kwargs.get("service", "")
-            assert (
-                model_uuid in service
-            ), f"Expected model UUID in service name: {service}"
+            assert model_uuid in service, (
+                f"Expected model UUID in service name: {service}"
+            )
 
     def test_appserver_service_name_prefix(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
