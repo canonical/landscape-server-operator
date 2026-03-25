@@ -101,3 +101,17 @@ variable "rabbitmq_server" {
   default  = {}
   nullable = true
 }
+
+variable "pgbouncer" {
+  description = "Configuration for the PgBouncer charm. Set to null to skip deployment. PgBouncer is a subordinate charm and does not have its own units."
+  type = object({
+    app_name = optional(string, "pgbouncer")
+    channel  = optional(string, "1/stable")
+    config   = optional(map(string), {})
+    revision = optional(number)
+    base     = optional(string, "ubuntu@24.04")
+  })
+
+  default  = null
+  nullable = true
+}

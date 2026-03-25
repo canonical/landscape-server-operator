@@ -215,6 +215,18 @@ def wait_for_http_status(
     )
 
 
+def has_pgbouncer(juju: jubilant.Juju) -> bool:
+    """
+    Checks if PgBouncer is in the current model and is related to landscape-server
+    via the `database` endpoint.
+    """
+    pgbouncer = juju.status().apps.get("pgbouncer")
+    if not pgbouncer:
+        return False
+
+    return "database" in pgbouncer.relations
+
+
 def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
     """
     Check if an app in the given model
@@ -223,19 +235,6 @@ def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
     status = juju.status()
     return any(
         rel.interface == "haproxy-route"
-        for rels in status.apps[app].relations.values()
-        for rel in rels
-    )
-
-
-def has_tls_certs_provider(juju: jubilant.Juju, app: str = "landscape-server") -> bool:
-    """
-    Check if an app in the given model
-    has a `tls-certificates` relation established.
-    """
-    status = juju.status()
-    return any(
-        rel.interface == "tls-certificates"
         for rels in status.apps[app].relations.values()
         for rel in rels
     )

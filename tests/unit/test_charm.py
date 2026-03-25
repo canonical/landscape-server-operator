@@ -25,6 +25,7 @@ from ops.testing import (
     Relation,
     State,
     StoredState,
+    TCPPort,
 )
 
 from charm import (
@@ -50,7 +51,6 @@ GitHub actions will set `GITHUB_ACTIONS` during runs.
 
 
 class TestGrafanaMachineAgentRelation(unittest.TestCase):
-
     def _get_cos_agent_relation_config(self, state: State) -> dict:
         """
         Extract the cos-agent relation configuration.
@@ -220,21 +220,145 @@ class TestOnConfigChanged:
         ctx.run(ctx.on.config_changed(), state)
         assert calls == ["prod"]
 
-    def test_deployment_mode_override_called(
+    def test_hostagent_services_disable_closes_port(
         self,
-        monkeypatch,
-        mock_write_deployment_mode_systemd_override,
+        replicas_network_state,
     ):
-        calls = []
-        monkeypatch.setattr(
-            "charm.write_deployment_mode_systemd_override",
-            lambda mode: calls.append(mode),
-        )
-        monkeypatch.setattr("charm.configure_for_deployment_mode", lambda mode: None)
         ctx = Context(LandscapeServerCharm)
-        state = State(config={"deployment_mode": "prod"})
-        ctx.run(ctx.on.config_changed(), state)
-        assert calls == ["prod"]
+        initial_state = State(
+            **replicas_network_state,
+            config={"enable_hostagent_messenger": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port in state_in.opened_ports
+
+        state_in.config.update({"enable_hostagent_messenger": False})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
+
+    def test_hostagent_services_enable_opens_port(
+        self,
+        replicas_network_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **replicas_network_state,
+            config={"enable_hostagent_messenger": False},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_hostagent_messenger": True},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=50052, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port not in state_in.opened_ports
+
+        state_in.config.update({"enable_hostagent_messenger": True})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port in state_out.opened_ports
+
+    def test_ports_open(self):
+        ctx = Context(LandscapeServerCharm)
+        relation = PeerRelation("replicas", peers_data={})
+
+        # default config, non-leader unit
+        state_in = State(relations=[relation], config={}, leader=False)
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+        # default config, leader unit
+        state_in = State(relations=[relation], config={}, leader=True)
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9100, protocol="tcp"),  # package upload
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+    def test_worker_count_affects_ports(self):
+        ctx = Context(LandscapeServerCharm)
+
+        relation = PeerRelation("replicas", peers_data={})
+        state_in = State(
+            relations=[relation], config={"worker_counts": 3}, leader=False
+        )
+        expected_ports = {
+            TCPPort(port=8070, protocol="tcp"),
+            TCPPort(port=8071, protocol="tcp"),
+            TCPPort(port=8072, protocol="tcp"),
+            TCPPort(port=8080, protocol="tcp"),
+            TCPPort(port=8081, protocol="tcp"),
+            TCPPort(port=8082, protocol="tcp"),
+            TCPPort(port=8090, protocol="tcp"),
+            TCPPort(port=8091, protocol="tcp"),
+            TCPPort(port=8092, protocol="tcp"),
+            TCPPort(port=9080, protocol="tcp"),
+            TCPPort(port=9081, protocol="tcp"),
+            TCPPort(port=9082, protocol="tcp"),
+        }
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert state_out.opened_ports == expected_ports
+
+    def test_port_on_leader_change(self):
+        ctx = Context(LandscapeServerCharm)
+        relation = PeerRelation("replicas", peers_data={})
+        expected_port = TCPPort(port=9100, protocol="tcp")
+        leader_state = State(relations=[relation], config={}, leader=True)
+
+        state_out = ctx.run(ctx.on.leader_elected(), leader_state)
+
+        assert expected_port in state_out.opened_ports
+
+        non_leader_state = State(relations=[relation], leader=False)
+
+        event = ctx.on.relation_changed(relation)
+        state_out = ctx.run(event, non_leader_state)
+
+        assert expected_port not in state_out.opened_ports
+
+        state_out = ctx.run(event, leader_state)
+
+        assert expected_port in state_out.opened_ports
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
@@ -292,6 +416,34 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
         ctx.run(ctx.on.config_changed(), state_in)
 
         remove_package_mock.assert_called_once_with(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+
+    def test_disable_closes_port(
+        self,
+        apt_fixture,
+        replicas_network_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **replicas_network_state,
+            config={"enable_ubuntu_installer_attach": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": False},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port in state_in.opened_ports
+
+        state_in.config.update({"enable_ubuntu_installer_attach": False})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port not in state_out.opened_ports
 
     def test_idempotent_enable(
         self,
@@ -640,7 +792,9 @@ class TestCharm(unittest.TestCase):
         )
         ppa = harness.model.config.get("landscape_ppa")
 
-        with (patches as mocks,):
+        with (
+            patches as mocks,
+        ):
             harness.begin_with_initial_hooks()
 
         mocks["check_call"].assert_any_call(
@@ -656,7 +810,7 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(status, WaitingStatus)
         self.assertEqual(
             status.message,
-            ("Waiting on relations: db, inbound-amqp, " "outbound-amqp"),
+            ("Waiting on relations: db, inbound-amqp, outbound-amqp"),
         )
 
     def test_install_package_not_found_error(self):
@@ -790,7 +944,9 @@ class TestCharm(unittest.TestCase):
             update_service_conf=DEFAULT,
         )
 
-        with (patches as mocks,):
+        with (
+            patches as mocks,
+        ):
             harness.begin_with_initial_hooks()
 
         mocks["write_license_file"].assert_any_call(f"file://{mock_input}", 1000, 1000)
@@ -1275,7 +1431,7 @@ class TestCharm(unittest.TestCase):
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
             self.assertEqual(
-                "relayhost = smtp.example.com\n" "othersetting = nada\n",
+                "relayhost = smtp.example.com\nothersetting = nada\n",
                 mock_postfix_cf_file.read(),
             )
 
@@ -1297,7 +1453,7 @@ class TestCharm(unittest.TestCase):
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
             self.assertEqual(
-                "relayhost = smtp.example.com\n" "othersetting = nada\n",
+                "relayhost = smtp.example.com\nothersetting = nada\n",
                 mock_postfix_cf_file.read(),
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
@@ -1636,7 +1792,9 @@ class TestCharm(unittest.TestCase):
         have changed and an nrpe-external-master relation exists.
         """
         self.harness.charm._update_nrpe_checks = Mock()
-        with (patch("charm.update_service_conf") as mock_update_conf,):
+        with (
+            patch("charm.update_service_conf") as mock_update_conf,
+        ):
             self.harness.add_relation("nrpe-external-master", "nrpe")
             relation_id = self.harness.add_relation("replicas", "landscape-server")
             self.harness.set_leader()
@@ -1661,7 +1819,9 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._update_nrpe_checks = Mock()
         self.harness.hooks_disabled()
 
-        with (patch("charm.update_service_conf") as mock_update_conf,):
+        with (
+            patch("charm.update_service_conf") as mock_update_conf,
+        ):
             self.harness.add_relation("nrpe-external-master", "nrpe")
             relation_id = self.harness.add_relation("replicas", "landscape-server")
             self.harness.update_relation_data(
@@ -1900,7 +2060,6 @@ class TestGetModifiedEnvVars(unittest.TestCase):
 
 
 class TestOnUpgradeCharm:
-
     def test_upgrade_charm_calls_provide_requirements(
         self,
         haproxy_route_state,
@@ -1915,3 +2074,15 @@ class TestOnUpgradeCharm:
             context.run(context.on.upgrade_charm(), state)
 
         assert mock_provide.call_count >= 1
+
+
+def test_action_get_service_conf(monkeypatch):
+    conf = {"stores": {"host": "localhost:5432", "user": "landscape"}}
+    monkeypatch.setattr("charm.read_service_conf", lambda: conf)
+
+    ctx = Context(LandscapeServerCharm)
+    ctx.run(ctx.on.action("get-service-conf"), State())
+
+    assert ctx.action_results is not None
+    assert "config" in ctx.action_results
+    assert json.loads(ctx.action_results["config"]) == conf

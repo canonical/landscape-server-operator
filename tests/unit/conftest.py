@@ -9,7 +9,6 @@ import settings_files
 
 
 class ConfigReader:
-
     def __init__(self, tempfile):
         self.tempfile = tempfile
 

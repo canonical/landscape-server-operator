@@ -336,3 +336,85 @@ run "test_haproxy_route_integrations_skipped" {
     error_message = "haproxy-route integrations should not be created when offer_url is null"
   }
 }
+
+run "test_pgbouncer_integration" {
+  command = plan
+
+  variables {
+    pgbouncer = {}
+  }
+
+  override_module {
+    target = module.landscape_server
+    outputs = {
+      app_name = "landscape-server"
+      requires = {
+        inbound_amqp  = "inbound-amqp"
+        outbound_amqp = "outbound-amqp"
+        database      = "database"
+        db            = "db"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(juju_application.pgbouncer) == 1
+    error_message = "PgBouncer application should be deployed when pgbouncer is set"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_pgbouncer) == 1
+    error_message = "landscape-server → pgbouncer integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.pgbouncer_postgresql) == 1
+    error_message = "pgbouncer → postgresql backend-database integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_postgresql_modern) == 0
+    error_message = "Direct landscape-server → postgresql integration should not be created when pgbouncer is deployed"
+  }
+}
+
+run "test_pgbouncer_skipped" {
+  command = plan
+
+  variables {
+    pgbouncer = null
+  }
+
+  override_module {
+    target = module.landscape_server
+    outputs = {
+      app_name = "landscape-server"
+      requires = {
+        inbound_amqp  = "inbound-amqp"
+        outbound_amqp = "outbound-amqp"
+        database      = "database"
+        db            = "db"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(juju_application.pgbouncer) == 0
+    error_message = "PgBouncer application should not be deployed when pgbouncer is null"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_pgbouncer) == 0
+    error_message = "landscape-server → pgbouncer integration should not be created when pgbouncer is null"
+  }
+
+  assert {
+    condition     = length(juju_integration.pgbouncer_postgresql) == 0
+    error_message = "pgbouncer → postgresql integration should not be created when pgbouncer is null"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_postgresql_modern) == 1
+    error_message = "Direct landscape-server → postgresql integration should be created when pgbouncer is null"
+  }
+}

@@ -65,6 +65,11 @@ run "validate_output_structure" {
     condition     = can(output.applications.rabbitmq_server)
     error_message = "Applications output should include rabbitmq_server"
   }
+
+  assert {
+    condition     = can(output.applications.pgbouncer)
+    error_message = "Applications output should include pgbouncer key (may be null)"
+  }
 }
 
 run "validate_self_signed_output" {

@@ -22,8 +22,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Run lint
-        run: make lint
+      - name: Check linting and formatting
+        run: make check
 
   terraform-check:
     runs-on: ubuntu-latest

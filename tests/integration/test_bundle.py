@@ -16,6 +16,7 @@ from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
     has_modern_pg,
+    has_pgbouncer,
     restore_db_relations,
     supports_legacy_pg,
     wait_for_service,
@@ -57,9 +58,9 @@ def test_allow_http_true_routes_not_redirected(
             response = session.get(
                 url, verify=False, allow_redirects=False, headers={"Host": hostname}
             )
-            assert (
-                not response.is_redirect
-            ), f"Expected no redirect from {url}, got {response.status_code}"
+            assert not response.is_redirect, (
+                f"Expected no redirect from {url}, got {response.status_code}"
+            )
     finally:
         juju.config("landscape-server", values={"allow_http": str(original).lower()})
         juju.wait(jubilant.all_active, timeout=300)
@@ -195,6 +196,72 @@ def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     assert "db" in relations
 
     restore_db_relations(juju, initial_relations)
+
+
+def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
+    """
+    If PgBouncer is deployed, landscape-server connects to it via the `database`
+    endpoint rather than directly to PostgreSQL.
+    """
+    if not has_pgbouncer(juju):
+        pytest.skip("PgBouncer not present in this model, skipping...")
+
+    pg_relations = set(juju.status().apps["pgbouncer"].relations)
+    assert "database" in pg_relations, "pgbouncer should have a `database` relation"
+    assert "backend-database" in pg_relations, (
+        "pgbouncer should have a `backend-database` relation to PostgreSQL"
+    )
+
+    ls_relations = set(juju.status().apps["landscape-server"].relations)
+    assert "database" in ls_relations, (
+        "landscape-server should be related via the `database` endpoint"
+    )
+
+
+def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
+    """
+    The get-service-conf action returns a JSON-serialisable dict with the
+    expected top-level sections from service.conf.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    assert result.status == "completed"
+
+    config = json.loads(result.results["config"])
+    assert "stores" in config, (
+        f"Expected 'stores' section in service.conf, got: {list(config)}"
+    )
+
+
+def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
+    """
+    The Landscape database schema is present after deployment.
+
+    Reads the connection details from service.conf via the get-service-conf
+    action on the leader unit and runs a query to confirm the `account` table
+    (created by landscape-schema) exists. This works regardless of whether
+    pgbouncer or direct PostgreSQL is in use, since the host/port/user/password/
+    dbname come from whatever landscape-server is configured to connect to.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    stores = json.loads(result.results["config"])["stores"]
+    host, port = stores["host"].split(":")
+    password, user, dbname = stores["password"], stores["user"], stores["main"]
+
+    result = juju.ssh(
+        "landscape-server/leader",
+        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
+        ' -tAc "SELECT COUNT(*) FROM information_schema.tables'
+        " WHERE table_schema = 'public' AND table_name = 'account';\"",
+    ).strip()
+
+    assert result == "1", (
+        "Expected the 'account' table to exist in the landscape database, "
+        f"got: {result!r}"
+    )
 
 
 def test_all_services_up(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -423,9 +490,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         hostagent_data = get_relation_data("hostagent-messenger-haproxy-route")
 
-        assert (
-            hostagent_data.get("external_grpc_port") == "6554"
-        ), "Expected external_grpc_port 6554, "
+        assert hostagent_data.get("external_grpc_port") == "6554", (
+            "Expected external_grpc_port 6554, "
+        )
         f"got {hostagent_data.get('external_grpc_port')}"
         assert hostagent_data.get("service", "").startswith(
             "landscape-hostagent-messenger-"
@@ -433,9 +500,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
 
-        assert (
-            installer_data.get("external_grpc_port") == "50051"
-        ), "Expected external_grpc_port 50051, "
+        assert installer_data.get("external_grpc_port") == "50051", (
+            "Expected external_grpc_port 50051, "
+        )
         f"got {installer_data.get('external_grpc_port')}"
         assert installer_data.get("service", "").startswith(
             "landscape-ubuntu-installer-attach-"
@@ -483,9 +550,9 @@ def test_lbaas_http_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=False,
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected 200 for HTTP /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -517,9 +584,60 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             timeout=10,
             headers={"Host": hostname},
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected 200 for HTTPS /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        )
+
+
+def test_lbaas_metrics_acl_all_endpoints(juju: jubilant.Juju, lbaas: jubilant.Juju):
+    config = juju.config("landscape-server")
+    root_url = config.get("root_url", "https://landscape.local/")
+    hostname = urlparse(root_url).hostname
+
+    status = lbaas.status()
+    haproxy_unit = list(status.apps["haproxy"].units.values())[0]
+    haproxy_ip = haproxy_unit.public_address
+
+    session = get_session()
+
+    response = session.get(
+        f"http://{haproxy_ip}/metrics", timeout=10, headers={"Host": hostname}
+    )
+    assert response.status_code == 403, (
+        f"Expected 403 for HTTP /metrics, got {response.status_code}"
+    )
+
+    response = session.get(
+        f"https://{haproxy_ip}/metrics",
+        verify=False,
+        timeout=10,
+        headers={"Host": hostname},
+    )
+    assert response.status_code == 403, (
+        f"Expected 403 for HTTPS /metrics, got {response.status_code}"
+    )
+
+    services = ("message-system", "api", "ping")
+
+    for service in services:
+        response = session.get(
+            f"http://{haproxy_ip}/{service}/metrics",
+            timeout=10,
+            headers={"Host": hostname},
+        )
+        assert response.status_code == 403, (
+            f"Expected 403 for HTTP /{service}/metrics, got {response.status_code}"
+        )
+
+        response = session.get(
+            f"https://{haproxy_ip}/{service}/metrics",
+            verify=False,
+            timeout=10,
+            headers={"Host": hostname},
+        )
+        assert response.status_code == 403, (
+            f"Expected 403 for HTTPS /{service}/metrics, got {response.status_code}"
+        )
 
 
 def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juju):
