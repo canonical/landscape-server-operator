@@ -14,13 +14,14 @@ on:
 jobs:
   unit-test:
     name: Unit test charm
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-22.04
-          - ubuntu-24.04
+        series:
+          - jammy
+          - noble
+
+    runs-on: [self-hosted, amd64, "${{ matrix.series }}"]
     timeout-minutes: 5
     steps:
       - name: Checkout
