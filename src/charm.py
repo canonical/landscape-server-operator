@@ -1083,7 +1083,15 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http,
             unit_address=unit_ip,
             hostname=hostname,
-            deny_paths=["/metrics"],
+            deny_paths=[
+                "/metrics",
+                "/ping",
+                "/message-system",
+                "/attachment",
+                "/api",
+                "/upload",
+                "/repository",
+            ],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-pingserver-{model_uuid}",

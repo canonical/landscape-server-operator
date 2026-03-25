@@ -147,6 +147,13 @@ class TestLeaderRoutes:
         paths = calls[0].kwargs["paths"]
         assert "/hash-id-databases" in paths
         assert "/repository" not in paths
+        deny_paths = calls[0].kwargs["deny_paths"]
+        assert "/ping" in deny_paths
+        assert "/api" in deny_paths
+        assert "/upload" in deny_paths
+        assert "/repository" in deny_paths
+        assert "/message-system" in deny_paths
+        assert "/attachment" in deny_paths
 
     def test_repository_route_published_by_all_units(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
