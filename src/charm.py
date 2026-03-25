@@ -587,8 +587,6 @@ class LandscapeServerCharm(CharmBase):
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
         ports = []
-        deployment_mode = self.charm_config.deployment_mode
-        is_standalone = deployment_mode == "standalone"
 
         for i in range(worker_counts):
             ports += [
@@ -598,7 +596,7 @@ class LandscapeServerCharm(CharmBase):
                 Port("tcp", self.charm_config.api_base_port + i),
             ]
 
-        if self.unit.is_leader() and is_standalone:
+        if self.unit.is_leader():
             ports.append(Port("tcp", self.charm_config.package_upload_base_port))
 
         if self.charm_config.enable_hostagent_messenger:
