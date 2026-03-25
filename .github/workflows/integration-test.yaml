@@ -1,0 +1,23 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: Integration tests
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 15 * * SAT"
+
+jobs:
+  integration-tests:
+    name: Integration tests
+    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
+    secrets: inherit
+    with:
+      provider: lxd
+      juju-channel: 3/stable
+      self-hosted-runner: true
+      self-hosted-runner-label: large
+      charmcraft-channel: latest/edge
+      modules: '["test_bundle.py"]'
+      with-uv: true
