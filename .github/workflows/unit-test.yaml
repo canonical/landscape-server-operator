@@ -37,6 +37,9 @@ jobs:
     name: Terraform unit tests
     runs-on: [self-hosted, amd64, noble]
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.10"
