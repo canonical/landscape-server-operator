@@ -28,7 +28,7 @@ output "applications" {
 }
 
 locals {
-  haproxy_self_signed = var.haproxy == null || coalesce(local.has_haproxy_route, false) ? false : (
+  haproxy_self_signed = var.haproxy == null || local.has_haproxy_route ? false : (
     lookup(var.haproxy.config, "ssl_key", null) == null ||
     lookup(var.haproxy.config, "ssl_cert", null) == null ||
     lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
