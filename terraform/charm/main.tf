@@ -5,7 +5,7 @@ resource "juju_application" "landscape_server" {
   model_uuid = var.model_uuid
 
   charm {
-    name     = var.charm_name
+    name     = "landscape-server"
     channel  = var.channel
     revision = var.revision
     base     = var.base

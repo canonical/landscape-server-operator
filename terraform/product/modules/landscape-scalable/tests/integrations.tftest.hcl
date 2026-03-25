@@ -277,6 +277,7 @@ run "test_haproxy_route_integrations_created" {
         db                                    = "db"
         application_dashboard                 = "application-dashboard"
       }
+      has_haproxy_route_interface = true
     }
   }
 

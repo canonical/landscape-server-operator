@@ -28,7 +28,7 @@ output "applications" {
 }
 
 locals {
-  haproxy_self_signed = var.haproxy == null || local.has_modern_haproxy ? false : (
+  haproxy_self_signed = var.haproxy == null || coalesce(local.has_haproxy_route, false) ? false : (
     lookup(var.haproxy.config, "ssl_key", null) == null ||
     lookup(var.haproxy.config, "ssl_cert", null) == null ||
     lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
@@ -36,7 +36,7 @@ locals {
 }
 
 output "haproxy_self_signed" {
-  description = "Indicates whether legacy HAProxy is using a self-signed TLS certificate. Null when haproxy is not deployed."
+  description = "Indicates whether the external HAProxy charm is using a self-signed TLS certificate. Null when haproxy is not deployed."
   value       = var.haproxy != null ? local.haproxy_self_signed : null
 }
 
@@ -50,7 +50,7 @@ output "has_modern_postgres_interface" {
   value       = local.has_modern_pg_interface
 }
 
-output "has_modern_haproxy_interface" {
-  description = "Indicates whether the deployed revision supports the modern HAProxy route interface (i.e. does not use the legacy website endpoint)."
-  value       = module.landscape_server.has_modern_haproxy_interface
+output "has_haproxy_route_interface" {
+  description = "Indicates whether the deployment uses in-model HAProxy (26.04+) instead of the external HAProxy charm."
+  value       = module.landscape_server.has_haproxy_route_interface
 }

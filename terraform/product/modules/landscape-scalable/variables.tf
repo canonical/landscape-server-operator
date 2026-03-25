@@ -8,7 +8,6 @@ variable "model_uuid" {
 variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
-    charm_name = optional(string, "landscape-server")
     app_name   = optional(string, "landscape-server")
     channel    = optional(string, "25.10/edge")
     config = optional(map(string), {

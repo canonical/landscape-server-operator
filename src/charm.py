@@ -1144,6 +1144,10 @@ class LandscapeServerCharm(CharmBase):
             hostname=hostname,
             deny_paths=["/upload/metrics"],
         )
+        # Repository uses appserver ports and allow_http=True because clients
+        # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
+        # It has its own route rather than being merged with appserver because
+        # it has different allow_http and deny_paths semantics.
         self.repository_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-repository-{model_uuid}",
             ports=appserver_ports,

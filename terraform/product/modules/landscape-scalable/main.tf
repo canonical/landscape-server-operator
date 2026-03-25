@@ -16,7 +16,6 @@ module "landscape_server" {
   model_uuid  = var.model_uuid
   config      = var.landscape_server.config
   app_name    = var.landscape_server.app_name
-  charm_name  = var.landscape_server.charm_name
   channel     = var.landscape_server.channel
   constraints = var.landscape_server.constraints
   revision    = var.landscape_server.revision
@@ -166,7 +165,7 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route" {
     juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route,
   ]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_pingserver_haproxy_route" {
@@ -183,7 +182,7 @@ resource "juju_integration" "landscape_server_pingserver_haproxy_route" {
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_message_server_haproxy_route" {
@@ -200,7 +199,7 @@ resource "juju_integration" "landscape_server_message_server_haproxy_route" {
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_api_haproxy_route" {
@@ -217,7 +216,7 @@ resource "juju_integration" "landscape_server_api_haproxy_route" {
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_package_upload_haproxy_route" {
@@ -234,7 +233,7 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route" {
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_repository_haproxy_route" {
@@ -251,7 +250,7 @@ resource "juju_integration" "landscape_server_repository_haproxy_route" {
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route" {
@@ -268,7 +267,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route"
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy && local.enable_hostagent_messenger ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route" {
@@ -285,12 +284,12 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_modern_haproxy && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 locals {
   has_modern_pg_interface    = can(module.landscape_server.requires.database)
-  has_modern_haproxy         = module.landscape_server.has_modern_haproxy_interface
+  has_haproxy_route       = module.landscape_server.has_haproxy_route_interface
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
 }

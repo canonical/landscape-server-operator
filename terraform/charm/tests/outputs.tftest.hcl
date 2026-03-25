@@ -238,7 +238,7 @@ run "modern_postgres_relations_null_revision" {
   }
 }
 
-run "internal_haproxy_relations" {
+run "in_model_haproxy_relations" {
   command = plan
 
   variables {
@@ -289,7 +289,7 @@ run "internal_haproxy_relations" {
   }
 }
 
-run "legacy_haproxy_relations" {
+run "external_haproxy_relations" {
   command = plan
 
   variables {
@@ -315,7 +315,7 @@ run "legacy_haproxy_relations" {
   }
 }
 
-run "internal_haproxy_null_revision" {
+run "in_model_haproxy_null_revision" {
   command = plan
 
   variables {
@@ -335,7 +335,7 @@ run "internal_haproxy_null_revision" {
   }
 }
 
-run "legacy_haproxy_null_revision" {
+run "external_haproxy_null_revision" {
   command = plan
 
   variables {
