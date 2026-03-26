@@ -5,7 +5,6 @@ from src.config import (
     DEFAULT_CONFIGURATION,
     get_config_defaults,
     LandscapeCharmConfiguration,
-    RedirectHTTPS,
 )
 
 
@@ -58,7 +57,7 @@ def test_defaults():
     assert not config.min_install
     assert config.prometheus_scrape_interval == "1m"
     assert not config.autoregistration
-    assert config.redirect_https == RedirectHTTPS.DEFAULT
+    assert config.redirect_https == "default"
 
     assert not config.enable_hostagent_messenger
     assert not config.enable_ubuntu_installer_attach
@@ -172,7 +171,7 @@ def test_port_collision_from_workers_detected():
         "following ports"
     )
 
-    assert error_message in str(context)
+    assert error_message in str(context.value)
 
 
 def test_port_collision_from_config_detected():
@@ -189,7 +188,7 @@ def test_port_collision_from_config_detected():
         "following ports"
     )
 
-    assert error_message in str(context)
+    assert error_message in str(context.value)
 
 
 def test_valid_custom_ports():
@@ -205,3 +204,19 @@ def test_valid_custom_ports():
     defaults["worker_counts"] = 100
 
     LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize("mode", ["standalone", "prod", "my-mode_1"])
+def test_deployment_mode_valid(mode):
+    defaults = get_config_defaults()
+    defaults["deployment_mode"] = mode
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.deployment_mode == mode
+
+
+@pytest.mark.parametrize("mode", ["bad mode", "bad\nmode", "bad;mode", ""])
+def test_deployment_mode_invalid(mode):
+    defaults = get_config_defaults()
+    defaults["deployment_mode"] = mode
+    with pytest.raises(ValidationError, match="must match"):
+        LandscapeCharmConfiguration(**defaults)
