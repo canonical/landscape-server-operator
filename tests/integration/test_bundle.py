@@ -122,7 +122,7 @@ def test_redirect_https_default_routes_redirect_to_https(
 ):
     """
     When redirect_https=default, HTTP requests are redirected to HTTPS except for
-    /ping, /repository, and /message-system which always allow plain HTTP.
+    /ping and /repository which always allow plain HTTP.
     """
     host = _haproxy_ip(juju, lbaas)
     hostname = urlparse(
@@ -134,7 +134,7 @@ def test_redirect_https_default_routes_redirect_to_https(
         juju.wait(jubilant.all_active, timeout=600)
         lbaas.wait(jubilant.all_active, timeout=300)
 
-        for route in ("ping", "message-system"):
+        for route in ("ping",):
             url = f"http://{host}/{route}"
             wait_for_http_status(
                 url,
@@ -146,6 +146,7 @@ def test_redirect_https_default_routes_redirect_to_https(
             )
 
         for route in (
+            "message-system",
             "api/about",
             "hashid-databases",
             "upload",
