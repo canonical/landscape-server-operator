@@ -9,12 +9,12 @@ import json
 import time
 from urllib.parse import urlparse
 
+import haproxy
 import jubilant
 import pytest
 import requests
 
 from charm import DEFAULT_SERVICES, LANDSCAPE_UBUNTU_INSTALLER_ATTACH, LEADER_SERVICES
-import haproxy
 from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
