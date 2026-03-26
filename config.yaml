@@ -208,9 +208,9 @@ options:
     default: default
     description: |
       Redirect HTTP requests to HTTPS. May be one of {default|all|none}. The 'default'
-      option redirects all HTTP traffic except for /ping, /repository, and
-      /message-system. The 'all' option redirects all routes including those exceptions.
-      The 'none' option disables HTTPS redirection entirely.
+      option will redirect all HTTP traffic except for /ping and /repository. If an
+      invalid value is provided, the charm will remain in the maintenance status
+      until a valid value is given.
   enable_hostagent_messenger:
     type: boolean
     default: false
