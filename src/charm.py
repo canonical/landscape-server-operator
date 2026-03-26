@@ -1061,7 +1061,12 @@ class LandscapeServerCharm(CharmBase):
         api_ports = [cfg.api_base_port + i for i in range(workers)]
 
         forwarded_proto_https = [("X-Forwarded-Proto", "https")]
-        allow_http = cfg.allow_http
+        redirect_https = cfg.redirect_https
+        # "none" disables HTTPS redirects everywhere; "all" forces them everywhere
+        # including routes that normally allow plain HTTP (ping, repository,
+        # message-server); "default" uses per-route defaults.
+        allow_http_default = redirect_https == "none"
+        allow_http_always = redirect_https != "all"
 
         hostname = leader_ip
         if self.charm_config.root_url:
@@ -1080,7 +1085,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=[
@@ -1100,7 +1105,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/ping",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=True,
+            allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=["/ping/metrics"],
@@ -1112,7 +1117,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/message-system",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=True,
+            allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=["/message-system/metrics", "/attachment/metrics"],
@@ -1124,7 +1129,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/api",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=["/api/metrics"],
@@ -1139,7 +1144,7 @@ class LandscapeServerCharm(CharmBase):
             check_rise=2,
             check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http,
+            allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=["/upload/metrics"],
@@ -1155,7 +1160,7 @@ class LandscapeServerCharm(CharmBase):
             protocol="http",
             check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
-            allow_http=True,
+            allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=hostname,
             deny_paths=["/repository/metrics"],

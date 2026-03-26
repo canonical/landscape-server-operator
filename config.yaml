@@ -203,13 +203,14 @@ options:
     description: |
       Bypassed Landscape administrator registration approval for clients that
       register using the registration password.
-  allow_http:
-    type: boolean
-    default: false
+  redirect_https:
+    type: string
+    default: default
     description: |
-      When true, allow plain HTTP access to all routes. When false (the default),
-      HTTP requests are redirected to HTTPS except for /ping, /repository, and
-      /message-system, which always allow plain HTTP.
+      Redirect HTTP requests to HTTPS. May be one of {default|all|none}. The 'default'
+      option redirects all HTTP traffic except for /ping, /repository, and
+      /message-system. The 'all' option redirects all routes including those exceptions.
+      The 'none' option disables HTTPS redirection entirely.
   enable_hostagent_messenger:
     type: boolean
     default: false

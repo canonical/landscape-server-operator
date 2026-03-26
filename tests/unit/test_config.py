@@ -57,7 +57,7 @@ def test_defaults():
     assert not config.min_install
     assert config.prometheus_scrape_interval == "1m"
     assert not config.autoregistration
-    assert not config.allow_http
+    assert config.redirect_https == "default"
 
     assert not config.enable_hostagent_messenger
     assert not config.enable_ubuntu_installer_attach

@@ -103,12 +103,12 @@ class TestCalledOnEvents:
         assert not mock_provide.called
 
 
-class TestAllowHttp:
-    """allow_http flag on each route reflects the allow_http config."""
+class TestRedirectHttps:
+    """allow_http flag on each route reflects the redirect_https config."""
 
-    def test_allow_http_true_all_routes_allow_http(self, replicas_network_state):
+    def test_redirect_https_none_all_routes_allow_http(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
-        state = State(config={"allow_http": True}, **replicas_network_state)
+        state = State(config={"redirect_https": "none"}, **replicas_network_state)
         mock = _run_provide(context, state)
         assert mock.called
         for c in mock.call_args_list:
@@ -119,24 +119,30 @@ class TestAllowHttp:
                 f"Expected allow_http=True for {service}"
             )
 
-    def test_allow_http_false_only_ping_and_repository_allow_http(
+    def test_redirect_https_default_only_ping_repository_message_allow_http(
         self, replicas_network_state
     ):
         context = Context(LandscapeServerCharm)
-        state = State(config={"allow_http": False}, **replicas_network_state)
+        state = State(config={"redirect_https": "default"}, **replicas_network_state)
         mock = _run_provide(context, state)
         assert mock.called
         for c in mock.call_args_list:
             service = c.kwargs.get("service", "")
             allow_http = c.kwargs.get("allow_http", False)
-            if (
-                "pingserver" in service
-                or "repository" in service
-                or "message-server" in service
-            ):
+            if "pingserver" in service or "repository" in service:
                 assert allow_http, f"Expected allow_http=True for {service}"
             else:
                 assert not allow_http, f"Expected allow_http=False for {service}"
+
+    def test_redirect_https_all_no_routes_allow_http(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(config={"redirect_https": "all"}, **replicas_network_state)
+        mock = _run_provide(context, state)
+        assert mock.called
+        for c in mock.call_args_list:
+            allow_http = c.kwargs.get("allow_http", False)
+            service = c.kwargs.get("service", "")
+            assert not allow_http, f"Expected allow_http=False for {service}"
 
 
 class TestLeaderRoutes:

@@ -53,7 +53,7 @@ class LandscapeCharmConfiguration(BaseModel):
     min_install: bool
     prometheus_scrape_interval: str
     autoregistration: bool
-    allow_http: bool
+    redirect_https: str
     enable_hostagent_messenger: bool
     enable_ubuntu_installer_attach: bool
     max_global_haproxy_connections: int
