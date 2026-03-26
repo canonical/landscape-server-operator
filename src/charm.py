@@ -311,7 +311,6 @@ class LandscapeServerCharm(CharmBase):
                 "Invalid configuration. See `juju debug-log`."
             )
 
-<<<<<<< HEAD
         self.appserver_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="appserver-haproxy-route"
         )
