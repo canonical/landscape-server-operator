@@ -83,7 +83,11 @@ make fmt
 
 ### Build the charm
 
-When developing the charm, you can use the [`uv run ccc pack`](https://github.com/canonical/charmcraftcache) command to build the charm locally.
+When developing the charm, use `make build` to build the charm locally. This uses [`ccc` (charmcraftcache)](https://github.com/canonical/charmcraftcache) via `uv run ccc pack`. The default platform is `ubuntu@24.04:amd64`; override it with `PLATFORM`:
+
+```sh
+make build PLATFORM=ubuntu@22.04:amd64
+```
 
 > [!NOTE]
 > Make sure you add this repository (<https://github.com/canonical/landscape-server-operator>) as a remote to your fork, otherwise `ccc` will fail.
@@ -104,45 +108,46 @@ The cleaning and building steps can be skipped by passing `SKIP_CLEAN=true` and 
 
 ## Terraform development
 
-The Landscape charm integrates with Terraform modules for infrastructure provisioning, including LBaaS setup.
+The Landscape Server charm includes Terraform modules for deploying the `landscape-scalable` product module and for LBaaS local development.
+
+### Deploy landscape-scalable via Terraform
+
+To deploy Landscape using the product Terraform module instead of a bundle, use:
+
+```sh
+make deploy-landscape-scalable
+```
+
+This requires [`terraform`](https://developer.hashicorp.com/terraform/install) and [`jq`](https://jqlang.org/download/) to be installed. The recipe creates a Juju model, then runs `terraform apply` using the model's UUID (retrieved via `juju show-model` and `jq`). You can customise the model name:
+
+```sh
+make deploy-landscape-scalable MODEL_NAME=my-landscape SKIP_CLEAN=true
+```
 
 ### Run tests
 
 Run the Terraform tests:
 
-> [!IMPORTANT]
-> Make sure you have `terraform` installed:
->
-> ```sh
-> make install-terraform
-> ```
->
-> Or manually install:
->
-> ```sh
-> sudo snap install terraform --classic
-> ```
-
 ```sh
-make terraform-test
+make terraform-test-all
 ```
 
 ### Lint and format
 
-To lint the Terraform module, make sure you have `tflint` installed:
+To lint the Terraform modules, make sure you have `tflint` installed:
 
 ```sh
 sudo snap install tflint
 ```
 
-Then, use the following Make recipe:
+Then, lint and format all modules:
 
 ```sh
-make tflint-fix
+make terraform-fix-all
 ```
 
-Format the Terraform module:
+Or check without modifying:
 
 ```sh
-make fmt-fix
+make terraform-check-all
 ```
