@@ -51,6 +51,6 @@ output "has_modern_postgres_interface" {
 }
 
 output "has_haproxy_route_interface" {
-  description = "Indicates whether the deployment uses in-model HAProxy (26.04+) instead of the external HAProxy charm."
+  description = "Indicates whether the deployment uses the modern haproxy-route relation/interface instead of the legacy website interface."
   value       = module.landscape_server.has_haproxy_route_interface
 }
