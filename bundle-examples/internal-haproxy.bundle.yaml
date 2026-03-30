@@ -19,15 +19,15 @@ applications:
     options:
       consumer-timeout: 259200000
   landscape-server:
-    charm: ../landscape-server_ubuntu@24.04-amd64.charm
+    charm: ../landscape-server_ubuntu@26.04-amd64.charm
     num_units: 1
     options:
-      landscape_ppa: ppa:landscape/self-hosted-beta
+      landscape_ppa: ppa:jansdhillon/test21
       min_install: True
       enable_hostagent_messenger: True
       enable_ubuntu_installer_attach: True
       root_url: https://landscape.local/
-    base: ubuntu@24.04
+    base: ubuntu@26.04
   lb-certs:
     charm: self-signed-certificates
     channel: stable
