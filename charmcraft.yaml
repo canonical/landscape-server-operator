@@ -11,8 +11,8 @@ platforms:
 charm-libs:
   - lib: data_platform_libs.data_interfaces
     version: "0"
-  - lib: traefik_k8s.ingress
-    version: "2"
+  - lib: haproxy.haproxy_route
+    version: "1"
 
 parts:
   # "uv-deps" is a magic part name charmcraft uses to satisfy the uv plugin's
