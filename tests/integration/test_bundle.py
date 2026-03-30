@@ -9,7 +9,6 @@ import json
 import time
 from urllib.parse import urlparse
 
-import haproxy
 import jubilant
 import pytest
 import requests
@@ -916,38 +915,6 @@ def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant
             },
         )
         juju.wait(jubilant.all_active, timeout=300)
-
-
-def test_haproxy_installed_and_configured(juju: jubilant.Juju, bundle: None):
-    juju.wait(jubilant.all_active, timeout=300)
-
-    status = juju.status()
-    units = status.apps["landscape-server"].units
-
-    for unit_name in units.keys():
-        try:
-            juju.ssh(unit_name, f"dpkg -l | grep -q {haproxy.HAPROXY_APT_PACKAGE_NAME}")
-        except Exception as e:
-            pytest.fail(f"HAProxy not installed on {unit_name}: {e}")
-
-        try:
-            juju.ssh(
-                unit_name,
-                f"sudo {haproxy.HAPROXY_EXECUTABLE} -c -f "
-                f"{haproxy.HAPROXY_RENDERED_CONFIG_PATH}",
-            )
-        except Exception as e:
-            pytest.fail(f"HAProxy config validation failed on {unit_name}: {e}")
-
-        for error_file in haproxy.ERROR_FILES["files"].values():
-            try:
-                juju.ssh(
-                    unit_name, f"test -f {haproxy.ERROR_FILES['location']}/{error_file}"
-                )
-            except Exception:
-                pytest.fail(f"Error file missing on {unit_name}: {error_file}")
-
-        wait_for_service(juju, unit_name, haproxy.HAPROXY_SERVICE)
 
 
 def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):

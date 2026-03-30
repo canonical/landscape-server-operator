@@ -218,21 +218,21 @@ class TestHostname:
 
 
 class TestServiceNames:
-    """Service names include the model UUID to ensure uniqueness across models."""
+    """Service names include the app name to ensure uniqueness within a model."""
 
-    def test_service_names_include_model_uuid(self, replicas_network_state):
+    def test_service_names_include_app_name(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(**replicas_network_state)
         with patch(PATCH_PROVIDE) as mock_provide:
             with context(context.on.config_changed(), state) as mgr:
-                model_uuid = mgr.charm.model.uuid
+                app_name = mgr.charm.app.name
                 mgr.charm._stored.leader_ip = LEADER_IP
                 mgr.charm._provide_all_haproxy_route_requirements()
         assert mock_provide.called
         for c in mock_provide.call_args_list:
             service = c.kwargs.get("service", "")
-            assert model_uuid in service, (
-                f"Expected model UUID in service name: {service}"
+            assert service.startswith(app_name), (
+                f"Expected app name prefix in service name: {service}"
             )
 
     def test_appserver_service_name_prefix(self, replicas_network_state):
@@ -241,7 +241,7 @@ class TestServiceNames:
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "appserver")
         assert calls
-        assert calls[0].kwargs["service"].startswith("landscape-appserver-")
+        assert calls[0].kwargs["service"].endswith("-appserver")
 
     def test_pingserver_service_name_prefix(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
@@ -249,7 +249,7 @@ class TestServiceNames:
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "pingserver")
         assert calls
-        assert calls[0].kwargs["service"].startswith("landscape-pingserver-")
+        assert calls[0].kwargs["service"].endswith("-pingserver")
 
 
 class TestConditionalRoutes:
