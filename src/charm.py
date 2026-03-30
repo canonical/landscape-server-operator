@@ -283,7 +283,7 @@ class LandscapeServerCharm(CharmBase):
         self._stored.set_default(leader_ip="")
         self._stored.set_default(running=False)
         self._stored.set_default(paused=False)
-        self._stored.set_default(default_root_url="")
+
         self._stored.set_default(account_bootstrapped=False)
         self._stored.set_default(secret_token=None)
         self._stored.set_default(cookie_encryption_key=None)
@@ -1254,9 +1254,6 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         root_url = self.charm_config.root_url
         if not root_url:
-            root_url = self._stored.default_root_url
-
-        if not root_url:
             root_url = "https://" + str(
                 self.model.get_binding(event.relation).network.bind_address
             )
@@ -1483,13 +1480,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             )
             return
         karg["root_url"] = self.charm_config.root_url
-        if not karg["root_url"]:
-            default_root_url = self._stored.default_root_url
-            if default_root_url:
-                karg["root_url"] = default_root_url
-            else:
-                logger.error("Bootstrap account waiting on default root url..")
-                return
+        if not karg["root_url"] and self._stored.leader_ip:
+            karg["root_url"] = "https://" + self._stored.leader_ip
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
 
