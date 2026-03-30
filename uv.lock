@@ -566,7 +566,6 @@ dependencies = [
     { name = "jinja2" },
     { name = "ops" },
     { name = "pydantic" },
-    { name = "urllib3" },
 ]
 
 [package.dev-dependencies]
@@ -577,6 +576,7 @@ dev = [
     { name = "ops", extra = ["testing"] },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "urllib3" },
 ]
 integration = [
     { name = "grpcio" },
@@ -592,7 +592,6 @@ requires-dist = [
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "ops", specifier = "==2.23.1" },
     { name = "pydantic", specifier = "==2.9.2" },
-    { name = "urllib3", specifier = "==2.6.3" },
 ]
 
 [package.metadata.requires-dev]
@@ -603,6 +602,7 @@ dev = [
     { name = "ops", extras = ["testing"], specifier = "==2.23.1" },
     { name = "pytest", specifier = "==9.0.2" },
     { name = "ruff", specifier = "==0.15.7" },
+    { name = "urllib3", specifier = "==2.6.3" },
 ]
 integration = [
     { name = "grpcio", specifier = "==1.78.0" },
