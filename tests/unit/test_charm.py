@@ -1969,6 +1969,7 @@ class TestMultiplePPAs:
         ctx = Context(LandscapeServerCharm)
         state = State(
             config={"landscape_ppa": ",".join(ppas)},
+            unit_status=MaintenanceStatus(),
             stored_states=[
                 StoredState(
                     owner_path="LandscapeServerCharm",
