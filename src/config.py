@@ -78,7 +78,10 @@ class LandscapeCharmConfiguration(BaseModel):
     @classmethod
     def deployment_mode_safe_chars(cls, v):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", v):
-            raise ValueError(f"deployment_mode {v!r} must match [A-Za-z0-9_-]+")
+            raise ValueError(
+                f"deployment_mode {v!r} contains invalid characters. "
+                "Only letters, numbers, hyphens, and underscores are allowed."
+            )
 
         return v
 
