@@ -61,6 +61,14 @@ deploy-lbaas:
 	$(MAKE) add-model
 	juju deploy -m $(MODEL_NAME) $(LBAAS_BUNDLE_PATH)
 
+.PHONY: check-jq
+check-jq:
+	@command -v jq >/dev/null 2>&1 || { echo "Error: jq is not installed. See https://jqlang.org/download/"; exit 1; }
+
+.PHONY: check-terraform
+check-terraform:
+	@command -v terraform >/dev/null 2>&1 || { echo "Error: terraform is not installed. See https://developer.hashicorp.com/terraform/install"; exit 1; }
+
 .PHONY: install-terraform
 install-terraform:
 	@if command -v terraform >/dev/null 2>&1; then \
@@ -91,26 +99,29 @@ clean:
 	-juju destroy-model --no-prompt $(MODEL_NAME) \
 		--force --no-wait --destroy-storage
 	-cd terraform/product/modules/landscape-scalable && \
-		rm -rf *.tfstate
+		rm -rf terraform.tfstate*
 
 .PHONY: terraform-check-all
-terraform-check-all: install-terraform
+terraform-check-all: check-terraform
 	cd terraform/charm && $(MAKE) check-charm-module
 	cd terraform/product && $(MAKE) check-product-modules
 
 .PHONY: terraform-fix-all
-terraform-fix-all: install-terraform
+terraform-fix-all: check-terraform
 	cd terraform/charm && $(MAKE) fix-charm-module
 	cd terraform/product && $(MAKE) fix-product-modules
 
 .PHONY: terraform-test-all
-terraform-test-all: install-terraform
+terraform-test-all: check-terraform
 	cd terraform/charm && $(MAKE) test-charm-module
 	cd terraform/product && $(MAKE) test-product-modules
 
+# Variables: MODEL_NAME (default: <dir>-build), SKIP_CLEAN (default: false), SKIP_ADD_MODEL (default: false)
 .PHONY: deploy-landscape-scalable
-deploy-landscape-scalable: install-terraform clean add-model
+deploy-landscape-scalable: check-terraform check-jq
+	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
+	$(MAKE) add-model
 	cd terraform/product/modules/landscape-scalable && \
 	terraform init -backend=false && \
 	terraform apply -auto-approve \
-		-var model=$(MODEL_NAME)
+		-var model_uuid=$$(juju show-model $(MODEL_NAME) --format=json | jq -r '.["$(MODEL_NAME)"]["model-uuid"]')

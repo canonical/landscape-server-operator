@@ -205,6 +205,21 @@ class TestOnConfigChanged:
 
         assert haproxy.FrontendName.HOSTAGENT_MESSENGER in stored.haproxy_config
 
+    def test_deployment_mode_override_called(
+        self,
+        monkeypatch,
+    ):
+        calls = []
+        monkeypatch.setattr(
+            "charm.write_deployment_mode_systemd_override",
+            lambda mode: calls.append(mode),
+        )
+        monkeypatch.setattr("charm.configure_for_deployment_mode", lambda mode: None)
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"deployment_mode": "prod"})
+        ctx.run(ctx.on.config_changed(), state)
+        assert calls == ["prod"]
+
     def test_hostagent_services_disable_closes_port(
         self,
         lb_certs_state,

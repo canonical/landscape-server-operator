@@ -205,3 +205,19 @@ def test_valid_custom_ports():
     defaults["worker_counts"] = 100
 
     LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize("mode", ["standalone", "prod", "my-mode_1"])
+def test_deployment_mode_valid(mode):
+    defaults = get_config_defaults()
+    defaults["deployment_mode"] = mode
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.deployment_mode == mode
+
+
+@pytest.mark.parametrize("mode", ["bad mode", "bad\nmode", "bad;mode", ""])
+def test_deployment_mode_invalid(mode):
+    defaults = get_config_defaults()
+    defaults["deployment_mode"] = mode
+    with pytest.raises(ValidationError, match="must match"):
+        LandscapeCharmConfiguration(**defaults)

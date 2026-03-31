@@ -15,6 +15,8 @@ from string import ascii_letters, digits
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from charms.operator_libs_linux.v1.systemd import daemon_reload
+
 from database import get_postgres_owner_role_from_version, PostgresRoles
 from helpers import migrate_service_conf
 
@@ -56,10 +58,40 @@ class SecretTokenMissing(Exception):
     pass
 
 
+_SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE = [
+    "landscape-api.service",
+    "landscape-appserver.service",
+    "landscape-async-frontend.service",
+    "landscape-job-handler.service",
+    "landscape-msgserver.service",
+    "landscape-package-search.service",
+    "landscape-package-upload.service",
+    "landscape-pingserver.service",
+]
+
+_DEPLOYMENT_MODE_OVERRIDE_CONF = "deployment-mode.conf"
+
+
+def write_deployment_mode_systemd_override(mode: str) -> None:
+    """
+    Writes a systemd drop-in per service to override LANDSCAPE_SYSTEM__DEPLOYMENT_MODE.
+
+    Necessary because the package hardcodes 'standalone' in each unit file's
+    Environment= directive.
+    """
+    for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
+        override_dir = f"/etc/systemd/system/{service}.d"
+        os.makedirs(override_dir, exist_ok=True)
+        with open(os.path.join(override_dir, _DEPLOYMENT_MODE_OVERRIDE_CONF), "w") as f:
+            f.write("[Service]\n")
+            f.write(f"Environment=LANDSCAPE_SYSTEM__DEPLOYMENT_MODE={mode}\n")
+    daemon_reload()
+
+
 def configure_for_deployment_mode(mode: str) -> None:
     """
-    Places files where Landscape expects to find them for different deployment
-    modes.
+    Creates filesystem symlinks so Landscape can locate config files for the given
+    deployment mode.
     """
     if mode == "standalone":
         return

@@ -91,6 +91,7 @@ from settings_files import (
     update_default_settings,
     update_service_conf,
     VHOSTS,
+    write_deployment_mode_systemd_override,
     write_license_file,
 )
 
@@ -482,6 +483,7 @@ class LandscapeServerCharm(CharmBase):
             {"global": {"deployment-mode": self.charm_config.deployment_mode}}
         )
         configure_for_deployment_mode(self.charm_config.deployment_mode)
+        write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
 
         if self.charm_config.additional_service_config:
             merge_service_conf(self.charm_config.additional_service_config)

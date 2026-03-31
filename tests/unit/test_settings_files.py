@@ -8,7 +8,11 @@ from unittest import TestCase
 from unittest.mock import patch
 from urllib.error import URLError
 
+import pytest
+
 from settings_files import (
+    _DEPLOYMENT_MODE_OVERRIDE_CONF,
+    _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE,
     CONFIGS_DIR,
     configure_for_deployment_mode,
     LICENSE_FILE,
@@ -18,6 +22,7 @@ from settings_files import (
     read_service_conf,
     update_default_settings,
     update_service_conf,
+    write_deployment_mode_systemd_override,
     write_license_file,
 )
 
@@ -52,6 +57,58 @@ class CapturingStringIO(StringIO):
         self.captured = self.getvalue()
 
         return super().close(*args, **kwargs)
+
+
+@pytest.fixture()
+def redirect_systemd_paths(monkeypatch, tmp_path):
+    real_makedirs = os.makedirs
+
+    def fake_makedirs(path, exist_ok=False):
+        real_makedirs(
+            path.replace("/etc/systemd/system", str(tmp_path)), exist_ok=exist_ok
+        )
+
+    monkeypatch.setattr("settings_files.os.makedirs", fake_makedirs)
+    real_open = open
+
+    def fake_open(path, mode="r", **kwargs):
+        return real_open(
+            path.replace("/etc/systemd/system", str(tmp_path)), mode, **kwargs
+        )
+
+    monkeypatch.setattr("builtins.open", fake_open)
+
+
+@pytest.mark.usefixtures("redirect_systemd_paths")
+class TestWriteDeploymentModeSystemdOverride:
+    def test_writes_drop_in_for_each_service(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
+
+        write_deployment_mode_systemd_override("prod")
+
+        for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
+            drop_in = tmp_path / f"{service}.d" / _DEPLOYMENT_MODE_OVERRIDE_CONF
+            assert drop_in.exists()
+
+    def test_drop_in_content(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
+
+        write_deployment_mode_systemd_override("prod")
+
+        for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
+            content = (
+                tmp_path / f"{service}.d" / _DEPLOYMENT_MODE_OVERRIDE_CONF
+            ).read_text()
+            assert "[Service]" in content
+            assert "Environment=LANDSCAPE_SYSTEM__DEPLOYMENT_MODE=prod" in content
+
+    def test_calls_daemon_reload(self, monkeypatch, tmp_path):
+        called = []
+        monkeypatch.setattr("settings_files.daemon_reload", lambda: called.append(True))
+
+        write_deployment_mode_systemd_override("prod")
+
+        assert called == [True]
 
 
 class ConfigureForDeploymentModeTestCase(TestCase):
