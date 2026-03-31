@@ -328,7 +328,9 @@ class LandscapeServerCharm(CharmBase):
             ],
         )
         try:
-            self.charm_config = LandscapeCharmConfiguration.validate(self.model.config)
+            self.charm_config = LandscapeCharmConfiguration.model_validate(
+                self.model.config
+            )
         except ValidationError as e:
             logger.error(f"Invalid configuration: {e.errors()}")
             self.charm_config = DEFAULT_CONFIGURATION
@@ -452,7 +454,9 @@ class LandscapeServerCharm(CharmBase):
         Handle configuration changes.
         """
         try:
-            self.charm_config = LandscapeCharmConfiguration.validate(self.model.config)
+            self.charm_config = LandscapeCharmConfiguration.model_validate(
+                self.model.config
+            )
             self.unit.status = WaitingStatus("Configuration validated...")
         except ValidationError as e:
             logger.error(f"Invalid configuration: {e.errors()}")
