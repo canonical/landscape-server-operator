@@ -697,8 +697,6 @@ class LandscapeServerCharm(CharmBase):
             except apt.GPGKeyError:
                 logger.error("Failed to import Landscape PPA key")
 
-        landscape_ppa = self.charm_config.landscape_ppa
-
         try:
             # This package is responsible for the hanging installs and ignores env vars
             apt.remove_package(["needrestart"])

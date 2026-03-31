@@ -1649,9 +1649,7 @@ class TestCharm(unittest.TestCase):
             self.harness.charm._upgrade(event)
 
         for ppa in ppas:
-            check_call_mock.assert_any_call(
-                ["add-apt-repository", "-y", ppa], env=ANY
-            )
+            check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
     def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
         event = Mock(spec_set=ActionEvent)
