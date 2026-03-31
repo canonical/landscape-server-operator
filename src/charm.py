@@ -1710,7 +1710,6 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Upgrading packages")
         event.log("Upgrading Landscape packages...")
 
-        landscape_ppa = self.charm_config.landscape_ppa
         try:
             for ppa in self.charm_config.landscape_ppas:
                 check_call(
@@ -1720,10 +1719,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         except CalledProcessError as e:
             logger.error(
                 "Failed to add APT repository %s during upgrade: %s",
-                landscape_ppa,
+                ppa,
                 e,
             )
-            event.fail(f"Failed to add APT repository {landscape_ppa}")
+            event.fail(f"Failed to add APT repository {ppa}")
             self.unit.status = BlockedStatus("Failed to upgrade packages")
             return
 
