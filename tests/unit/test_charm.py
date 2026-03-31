@@ -1634,7 +1634,7 @@ class TestCharm(unittest.TestCase):
             "ppa:canonical-python-maintainers/python-backports",
         ]
         self.harness.charm.charm_config = Mock(
-            landscape_ppa="\n".join(ppas),
+            landscape_ppa=",".join(ppas),
             landscape_ppas=ppas,
             http_proxy=None,
             https_proxy=None,
@@ -1958,6 +1958,34 @@ class TestCharm(unittest.TestCase):
                 },
             }
         )
+
+
+class TestMultiplePPAs:
+    def test_upgrade_adds_each_ppa(self):
+        ppas = [
+            "ppa:landscape/self-hosted-beta",
+            "ppa:canonical-python-maintainers/python-backports",
+        ]
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": ",".join(ppas)},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"running": False},
+                )
+            ],
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
+            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
+            ctx.run(ctx.on.action("upgrade"), state)
+
+        for ppa in ppas:
+            check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
 
 # TODO fix from broken commit.
