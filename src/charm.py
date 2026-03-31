@@ -710,9 +710,10 @@ class LandscapeServerCharm(CharmBase):
             # that will be used only for add-apt-repository call
             add_apt_repository_env = self._build_add_apt_repository_env()
 
-            check_call(
-                ["add-apt-repository", "-y", landscape_ppa], env=add_apt_repository_env
-            )
+            for ppa in self.charm_config.landscape_ppas:
+                check_call(
+                    ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
+                )
 
             if self.charm_config.min_install:
                 logger.info("Not installing hashids..")
@@ -1713,10 +1714,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         landscape_ppa = self.charm_config.landscape_ppa
         try:
-            check_call(
-                ["add-apt-repository", "-y", landscape_ppa],
-                env=self._build_add_apt_repository_env(),
-            )
+            for ppa in self.charm_config.landscape_ppas:
+                check_call(
+                    ["add-apt-repository", "-y", ppa],
+                    env=self._build_add_apt_repository_env(),
+                )
         except CalledProcessError as e:
             logger.error(
                 "Failed to add APT repository %s during upgrade: %s",
