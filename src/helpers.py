@@ -15,7 +15,17 @@ def get_modified_env_vars():
     """
     env_vars = os.environ.copy()
     logger.info("Fixing python paths")
-    new_paths = [path for path in sys.path if "juju" not in path]
+    new_paths = [
+        path
+        for path in sys.path
+        if "juju" not in path
+        # Exclude the charm's own stdlib paths (e.g. /usr/lib/python3.14) so that
+        # subprocesses running under the landscape venv's Python (3.12) don't pick up
+        # C extensions compiled for a different Python version, causing
+        # SRE module mismatches.
+        and f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        not in path
+    ]
     env_vars["PYTHONPATH"] = ":".join(new_paths) + ":/opt/canonical/landscape"
     return env_vars
 

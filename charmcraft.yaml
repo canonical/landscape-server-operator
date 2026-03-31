@@ -33,5 +33,9 @@ parts:
       - libffi-dev # Needed to build Python dependencies with Rust from source
       - libssl-dev # Needed to build Python dependencies with Rust from source
       - pkg-config # Needed to build Python dependencies with Rust from source
+      - software-properties-common
+    override-build: |
+      add-apt-repository -y ppa:canonical-python-maintainers/python-backports
+      craftctl default
     after:
       - uv-deps
