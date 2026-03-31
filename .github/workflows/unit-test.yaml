@@ -12,15 +12,16 @@ on:
   workflow_call:
 
 jobs:
-  unit-test:
+  charm-unit-test:
     name: Unit test charm
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-22.04
-          - ubuntu-24.04
+        series:
+          - jammy
+          - noble
+
+    runs-on: [self-hosted, amd64, "${{ matrix.series }}"]
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -31,6 +32,13 @@ jobs:
 
       - name: Run tests
         run: make test
+
+  terraform-unit-test:
+    name: Terraform unit tests
+    runs-on: [self-hosted, amd64, noble]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - uses: hashicorp/setup-terraform@v3
         with:

@@ -29,6 +29,13 @@ class ConfigReader:
 
 
 @pytest.fixture(autouse=True)
+def mock_write_deployment_mode_systemd_override(monkeypatch):
+    monkeypatch.setattr(
+        "charm.write_deployment_mode_systemd_override", lambda *a, **kw: None
+    )
+
+
+@pytest.fixture(autouse=True)
 def capture_service_conf(tmp_path, monkeypatch) -> ConfigReader:
     """
     Redirect all writes to `SERVICE_CONF` to a tempfile within this fixture.
