@@ -1,4 +1,6 @@
 description: Landscape Scalable Dev with internal HAProxy
+model-config:
+  image-stream: daily
 applications:
   postgresql:
     channel: 16/stable
