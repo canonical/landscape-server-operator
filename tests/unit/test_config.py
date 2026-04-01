@@ -221,3 +221,33 @@ def test_deployment_mode_invalid(mode):
     defaults["deployment_mode"] = mode
     with pytest.raises(ValidationError, match="must match"):
         LandscapeCharmConfiguration(**defaults)
+
+
+def test_landscape_ppas_single():
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "landscape_ppa": "ppa:foo/bar",
+        }
+    )
+    assert config.landscape_ppas == ["ppa:foo/bar"]
+
+
+def test_landscape_ppas_multiple():
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "landscape_ppa": "ppa:foo/bar,ppa:baz/qux",
+        }
+    )
+    assert config.landscape_ppas == ["ppa:foo/bar", "ppa:baz/qux"]
+
+
+def test_landscape_ppas_strips_whitespace():
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "landscape_ppa": "ppa:foo/bar, ppa:baz/qux",
+        }
+    )
+    assert config.landscape_ppas == ["ppa:foo/bar", "ppa:baz/qux"]

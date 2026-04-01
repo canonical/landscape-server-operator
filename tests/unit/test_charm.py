@@ -1622,12 +1622,19 @@ class TestCharm(unittest.TestCase):
     def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
-        self.harness.charm.charm_config = Mock(
-            landscape_ppas=["ppa:landscape/self-hosted-beta"],
+        ppa = "ppa:landscape/self-hosted-beta"
+        mock_config = Mock(
+            landscape_ppa=ppa,
             http_proxy="http://proxy.example.com:3128",
             https_proxy="https://proxy.example.com:3128",
             no_proxy="localhost,127.0.0.1",
         )
+        type(mock_config).landscape_ppas = PropertyMock(
+            side_effect=lambda: [
+                p.strip() for p in mock_config.landscape_ppa.split(",") if p.strip()
+            ]
+        )
+        self.harness.charm.charm_config = mock_config
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
@@ -1640,8 +1647,7 @@ class TestCharm(unittest.TestCase):
         add_apt_call = next(
             c
             for c in check_call_mock.call_args_list
-            if c.args[0]
-            == ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"]
+            if c.args[0] == ["add-apt-repository", "-y", ppa]
         )
         env = add_apt_call.kwargs["env"]
         self.assertEqual(env["http_proxy"], "http://proxy.example.com:3128")
