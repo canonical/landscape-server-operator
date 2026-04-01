@@ -1623,7 +1623,6 @@ class TestCharm(unittest.TestCase):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
         self.harness.charm.charm_config = Mock(
-            landscape_ppa="ppa:landscape/self-hosted-beta",
             landscape_ppas=["ppa:landscape/self-hosted-beta"],
             http_proxy="http://proxy.example.com:3128",
             https_proxy="https://proxy.example.com:3128",
@@ -1978,6 +1977,25 @@ class TestMultiplePPAs:
 
         for ppa in ppas:
             check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+
+    def test_install_single_ppa(self):
+        ppa = "ppa:landscape/self-hosted-beta"
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": ppa},
+            unit_status=MaintenanceStatus(),
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
 
 # TODO fix from broken commit.
