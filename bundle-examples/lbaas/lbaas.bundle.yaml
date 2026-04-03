@@ -1,4 +1,4 @@
-description: Landscape Scalable Dev with cross-model managed HAProxy (LBaaS)
+description: Landscape Scalable Dev base to integrate with externally-managed HAProxy via an offer (LBaaS)
 applications:
   postgresql:
     channel: 16/stable

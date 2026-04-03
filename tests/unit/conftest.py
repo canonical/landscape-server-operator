@@ -19,13 +19,6 @@ class ConfigReader:
 
 
 @pytest.fixture(autouse=True)
-def mock_write_deployment_mode_systemd_override(monkeypatch):
-    monkeypatch.setattr(
-        "charm.write_deployment_mode_systemd_override", lambda *a, **kw: None
-    )
-
-
-@pytest.fixture(autouse=True)
 def capture_service_conf(tmp_path, monkeypatch) -> ConfigReader:
     """
     Redirect all writes to `SERVICE_CONF` to a tempfile within this fixture.
@@ -109,6 +102,7 @@ def haproxy_route_state_fixture(
         "message-server-haproxy-route",
         "api-haproxy-route",
         "package-upload-haproxy-route",
+        "repository-haproxy-route",
     ]:
         rels.append(scenario.Relation(endpoint=endpoint))
 
@@ -116,22 +110,6 @@ def haproxy_route_state_fixture(
         "relations": rels,
         "networks": replicas_network_state.get("networks", []),
     }
-
-
-@pytest.fixture(name="check_haproxy_installed")
-def check_haproxy_installed_fixture(monkeypatch: pytest.MonkeyPatch) -> Mock:
-    check_mock = Mock(return_value=Mock(name="haproxy"))
-    monkeypatch.setattr("charm.apt.DebianPackage.from_installed_package", check_mock)
-    return check_mock
-
-
-@pytest.fixture(name="check_haproxy_not_installed")
-def check_haproxy_not_installed_fixture(monkeypatch: pytest.MonkeyPatch) -> Mock:
-    from charms.operator_libs_linux.v0.apt import PackageNotFoundError
-
-    check_mock = Mock(side_effect=PackageNotFoundError("haproxy"))
-    monkeypatch.setattr("charm.apt.DebianPackage.from_installed_package", check_mock)
-    return check_mock
 
 
 @pytest.fixture(name="replicas")

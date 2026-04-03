@@ -204,22 +204,6 @@ class TestOnConfigChanged:
 
         assert hasattr(charm, "hostagent_messenger_haproxy_route")
 
-    def test_deployment_mode_override_called(
-        self,
-        monkeypatch,
-        mock_write_deployment_mode_systemd_override,
-    ):
-        calls = []
-        monkeypatch.setattr(
-            "charm.write_deployment_mode_systemd_override",
-            lambda mode: calls.append(mode),
-        )
-        monkeypatch.setattr("charm.configure_for_deployment_mode", lambda mode: None)
-        ctx = Context(LandscapeServerCharm)
-        state = State(config={"deployment_mode": "prod"})
-        ctx.run(ctx.on.config_changed(), state)
-        assert calls == ["prod"]
-
     def test_hostagent_services_disable_closes_port(
         self,
         replicas_network_state,
@@ -416,6 +400,34 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
         ctx.run(ctx.on.config_changed(), state_in)
 
         remove_package_mock.assert_called_once_with(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+
+    def test_enable_opens_port(
+        self,
+        apt_fixture,
+        replicas_network_state,
+    ):
+        ctx = Context(LandscapeServerCharm)
+        initial_state = State(
+            **replicas_network_state,
+            config={"enable_ubuntu_installer_attach": False},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": True},
+                )
+            ],
+        )
+        expected_port = TCPPort(port=53354, protocol="tcp")
+
+        state_in = ctx.run(ctx.on.config_changed(), initial_state)
+
+        assert expected_port not in state_in.opened_ports
+
+        state_in.config.update({"enable_ubuntu_installer_attach": True})
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert expected_port in state_out.opened_ports
 
     def test_disable_closes_port(
         self,
@@ -1870,7 +1882,10 @@ class TestBootstrapAccount(unittest.TestCase):
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
         self.harness.update_config(
-            {"admin_email": "hello@ubuntu.com", "admin_name": "Hello Ubuntu"}
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+            }
         )
         self.assertIn("password required", self.log_mock.call_args.args[0])
         self.process_mock.assert_not_called()
