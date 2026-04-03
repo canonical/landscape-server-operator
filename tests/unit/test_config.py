@@ -5,6 +5,7 @@ from src.config import (
     DEFAULT_CONFIGURATION,
     get_config_defaults,
     LandscapeCharmConfiguration,
+    RedirectHTTPS,
 )
 
 
@@ -218,5 +219,5 @@ def test_deployment_mode_valid(mode):
 def test_deployment_mode_invalid(mode):
     defaults = get_config_defaults()
     defaults["deployment_mode"] = mode
-    with pytest.raises(ValidationError, match="must match"):
+    with pytest.raises(ValidationError, match="invalid characters"):
         LandscapeCharmConfiguration(**defaults)

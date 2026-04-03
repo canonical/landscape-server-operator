@@ -170,6 +170,51 @@ def wait_for_service(
     ) from last_exc
 
 
+def wait_for_http_status(
+    url: str,
+    expected_status: int | tuple[int, ...],
+    session: requests.Session | None = None,
+    timeout: int = 30,
+    check_interval: float = 1.0,
+    **request_kwargs,
+) -> requests.Response:
+    """
+    Poll until an HTTP request returns the expected status code(s).
+
+    HAProxy config changes may not be immediate, so this retries until the
+    expected status is returned or timeout seconds have elapsed.
+    """
+    if session is None:
+        session = get_session()
+
+    if isinstance(expected_status, int):
+        expected_statuses = (expected_status,)
+    else:
+        expected_statuses = expected_status
+
+    deadline = time.monotonic() + timeout
+    last_response: requests.Response | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            response = session.get(url, **request_kwargs)
+            if response.status_code in expected_statuses:
+                return response
+            last_response = response
+        except requests.RequestException:
+            pass
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(check_interval, remaining))
+
+    status = last_response.status_code if last_response else "no response"
+    raise AssertionError(
+        f"URL '{url}' never returned status {expected_statuses}, last status: {status}"
+    )
+
+
 def has_pgbouncer(juju: jubilant.Juju) -> bool:
     """
     Checks if PgBouncer is in the current model and is related to landscape-server
@@ -190,19 +235,6 @@ def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
     status = juju.status()
     return any(
         rel.interface == "haproxy-route"
-        for rels in status.apps[app].relations.values()
-        for rel in rels
-    )
-
-
-def has_tls_certs_provider(juju: jubilant.Juju, app: str = "landscape-server") -> bool:
-    """
-    Check if an app in the given model
-    has a `tls-certificates` relation established.
-    """
-    status = juju.status()
-    return any(
-        rel.interface == "tls-certificates"
         for rels in status.apps[app].relations.values()
         for rel in rels
     )

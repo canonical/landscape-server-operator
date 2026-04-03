@@ -1092,8 +1092,10 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
+            # Because this route contains `/`
+            # it will swallow the others so they
+            # need to be denied to avoid a race.
             deny_paths=[
-                "/metrics",
                 "/ping",
                 "/message-system",
                 "/attachment",
@@ -1112,7 +1114,6 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=hostname,
-            deny_paths=["/ping/metrics"],
         )
         self.message_server_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-message-server-{model_uuid}",
@@ -1124,7 +1125,6 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
-            deny_paths=["/message-system/metrics", "/attachment/metrics"],
         )
         self.api_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-api-{model_uuid}",
@@ -1136,7 +1136,6 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
-            deny_paths=["/api/metrics"],
         )
         self.package_upload_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-package-upload-{model_uuid}",
@@ -1151,7 +1150,6 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=hostname,
-            deny_paths=["/upload/metrics"],
         )
         # Repository uses appserver ports and allow_http=True because clients
         # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
@@ -1167,7 +1165,6 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=hostname,
-            deny_paths=["/repository/metrics"],
         )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(

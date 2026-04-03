@@ -1890,20 +1890,8 @@ class TestBootstrapAccount(unittest.TestCase):
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_doesnt_run_with_missing_rooturl(self, _):
-        self.harness.update_config(
-            {
-                "admin_email": "hello@ubuntu.com",
-                "admin_name": "Hello Ubuntu",
-                "admin_password": "password",
-            }
-        )
-        self.assertIn("root url", self.log_mock.call_args.args[0])
-        self.process_mock.assert_not_called()
-
-    @patch("charm.update_service_conf")
-    def test_bootstrap_account_default_root_url_is_used(self, _):
-        self.harness.charm._stored.default_root_url = "https://hello.lxd"
+    def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
+        self.harness.charm._stored.leader_ip = "10.0.0.1"
         self.harness.update_config(
             {
                 "admin_email": "hello@ubuntu.com",
@@ -1912,14 +1900,14 @@ class TestBootstrapAccount(unittest.TestCase):
             }
         )
         self.assertIn(
-            self.harness.charm._stored.default_root_url,
+            "https://10.0.0.1",
             self.process_mock.call_args.args[0],
         )
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_config_url_over_default(self, _):
-        """If config root url and default root url exists, use config url"""
-        self.harness.charm._stored.default_root_url = "https://hello.lxd"
+    def test_bootstrap_account_config_url_over_leader_ip(self, _):
+        """If config root_url and leader_ip are both set, use config url"""
+        self.harness.charm._stored.leader_ip = "10.0.0.1"
         config_root_url = "https://www.landscape.com"
         self.harness.update_config(
             {

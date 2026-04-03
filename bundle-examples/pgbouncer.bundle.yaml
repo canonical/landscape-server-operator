@@ -1,4 +1,4 @@
-description: Landscape Scalable Dev with internal HAProxy and PgBouncer
+description: Landscape Scalable Dev with in-model HAProxy and PgBouncer
 applications:
   postgresql:
     channel: 16/stable
