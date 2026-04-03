@@ -78,7 +78,10 @@ class LandscapeCharmConfiguration(BaseModel):
     @classmethod
     def deployment_mode_safe_chars(cls, v):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", v):
-            raise ValueError(f"deployment_mode {v!r} must match [A-Za-z0-9_-]+")
+            raise ValueError(
+                f"deployment_mode {v!r} contains invalid characters. "
+                "Only letters, numbers, hyphens, and underscores are allowed."
+            )
 
         return v
 
@@ -95,8 +98,8 @@ class LandscapeCharmConfiguration(BaseModel):
             "oidc_logout_url",
         )
 
-        openid = {k: getattr(self, k) for k in OPENID_CONFIGS}
-        oidc = {k: getattr(self, k) for k in OIDC_CONFIGS}
+        openid = self.model_dump(include=set(OPENID_CONFIGS))
+        oidc = self.model_dump(include=set(OIDC_CONFIGS))
 
         if any(openid.values()) and any(oidc.values()):
             raise ValueError(
@@ -112,7 +115,7 @@ class LandscapeCharmConfiguration(BaseModel):
         If using either `openid_provider_url` or `openid_logout_url`, must provide both.
         """
         required_configs = ("openid_provider_url", "openid_logout_url")
-        fields = {k: getattr(self, k) for k in required_configs}
+        fields = self.model_dump(include=set(required_configs))
 
         if any(fields.values()) and not all(fields.values()):
             raise ValueError(
@@ -128,7 +131,7 @@ class LandscapeCharmConfiguration(BaseModel):
         must provide all three.
         """
         required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
-        fields = {k: getattr(self, k) for k in required_configs}
+        fields = self.model_dump(include=set(required_configs))
 
         if any(fields.values()) and not all(fields.values()):
             raise ValueError(

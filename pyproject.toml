@@ -6,8 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
   "cosl==1.4.0",
   "ops==2.23.1",
-  "pydantic>=2",
-  "urllib3==2.6.3",
+  "pydantic==2.9.2",
 ]
 
 [dependency-groups]
