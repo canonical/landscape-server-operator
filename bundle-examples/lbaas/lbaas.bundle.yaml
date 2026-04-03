@@ -53,3 +53,4 @@ relations:
   - [landscape-server:inbound-amqp, rabbitmq-server]
   - [landscape-server:outbound-amqp, rabbitmq-server]
   - [landscape-server:database, postgresql:database]
+  # haproxy-route relations created in Terraform
