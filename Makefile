@@ -4,7 +4,7 @@ include terraform/product/Makefile
 DIR_NAME := $(notdir $(shell pwd))
 LBAAS_DIR ?= ./bundle-examples/lbaas
 LBAAS_BUNDLE_PATH ?= $(LBAAS_DIR)/lbaas.bundle.yaml
-BUNDLE_PATH ?= ./bundle-examples/internal-haproxy.bundle.yaml
+BUNDLE_PATH ?= ./bundle-examples/bundle.yaml
 PLATFORM ?= ubuntu@24.04:amd64
 MODEL_NAME ?= $(DIR_NAME)-build
 LBAAS_MODEL_NAME ?= lbaas
