@@ -32,7 +32,7 @@ locals {
   db_relations                  = local.has_modern_postgres_interface ? { database = "database", db = "db" } : { db = "db" }
 
   # External HAProxy (pre-26.04): if revision is old enough, expose website endpoint
-  in_model_haproxy_rev    = 277
+  in_model_haproxy_rev    = 278
   legacy_haproxy_channels = ["latest/stable", "latest/beta", "24.04/edge"]
   has_external_haproxy    = var.revision != null ? var.revision < local.in_model_haproxy_rev : contains(local.legacy_haproxy_channels, var.channel)
   haproxy_relations       = local.has_external_haproxy ? { website = "website" } : {}
