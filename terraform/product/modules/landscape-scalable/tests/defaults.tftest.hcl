@@ -106,8 +106,8 @@ run "validate_config_defaults" {
   }
 
   assert {
-    condition     = lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
-    error_message = "HAProxy should use SELFSIGNED SSL cert by default"
+    condition     = length(var.haproxy.config) == 0
+    error_message = "HAProxy should default to empty config"
   }
 }
 

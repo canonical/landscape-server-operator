@@ -54,16 +54,11 @@ variable "postgresql" {
 }
 
 variable "haproxy" {
-  description = "Configuration for the (legacy) HAProxy charm. Set to null to skip deployment."
+  description = "Configuration for the HAProxy charm. Set to null to skip deployment."
   type = object({
-    app_name = optional(string, "haproxy")
-    channel  = optional(string, "latest/edge")
-    config = optional(map(string), {
-      default_timeouts            = "queue 60000, connect 5000, client 120000, server 120000"
-      global_default_bind_options = "no-tlsv10"
-      services                    = ""
-      ssl_cert                    = "SELFSIGNED"
-    })
+    app_name    = optional(string, "haproxy")
+    channel     = optional(string, "latest/edge")
+    config      = optional(map(string), {})
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
     revision    = optional(number)
@@ -71,7 +66,7 @@ variable "haproxy" {
     units       = optional(number, 1)
   })
 
-  default  = null
+  default  = {}
   nullable = true
 }
 

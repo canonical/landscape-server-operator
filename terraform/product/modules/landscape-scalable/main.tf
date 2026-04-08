@@ -36,7 +36,7 @@ module "haproxy" {
   base        = var.haproxy.base
   units       = var.haproxy.units
 
-  count = var.haproxy != null && var.haproxy_route_offer_url == null && !local.has_haproxy_route ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 module "postgresql" {
@@ -140,6 +140,142 @@ resource "juju_integration" "landscape_server_haproxy" {
   depends_on = [module.landscape_server, module.haproxy]
 
   count = var.haproxy != null && var.haproxy_route_offer_url == null && !local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_appserver_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "appserver-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_pingserver_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "pingserver-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_message_server_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "message-server-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_api_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "api-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_package_upload_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "package-upload-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_repository_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "repository-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "hostagent-messenger-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "ubuntu-installer-attach-haproxy-route"
+  }
+
+  application {
+    name = module.haproxy[0].app_name
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_appserver_haproxy_route" {
