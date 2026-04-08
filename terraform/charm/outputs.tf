@@ -35,7 +35,7 @@ locals {
   in_model_haproxy_rev    = 274
   legacy_haproxy_channels = ["latest/stable", "latest/beta", "24.04/edge"]
   has_external_haproxy    = var.revision != null ? var.revision < local.in_model_haproxy_rev : contains(local.legacy_haproxy_channels, var.channel)
-  haproxy_relations         = local.has_external_haproxy ? { website = "website" } : {}
+  haproxy_relations       = local.has_external_haproxy ? { website = "website" } : {}
 
   haproxy_route_relations = local.has_external_haproxy ? {} : {
     appserver_haproxy_route               = "appserver-haproxy-route"
