@@ -478,6 +478,56 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 
 }
 
+resource "juju_application" "haproxy_self_signed_certs" {
+  name        = var.haproxy_self_signed_certs.app_name
+  model_uuid  = var.model_uuid
+  units       = 1
+  constraints = var.haproxy_self_signed_certs.constraints
+
+  charm {
+    name     = "self-signed-certificates"
+    revision = var.haproxy_self_signed_certs.revision
+    channel  = var.haproxy_self_signed_certs.channel
+    base     = var.haproxy_self_signed_certs.base
+  }
+
+  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+}
+
+resource "juju_integration" "haproxy_certificates" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "certificates"
+  }
+
+  application {
+    name = juju_application.haproxy_self_signed_certs[0].name
+  }
+
+  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+
+  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+}
+
+resource "juju_integration" "haproxy_receive_ca_certs" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "receive-ca-certs"
+  }
+
+  application {
+    name = juju_application.haproxy_self_signed_certs[0].name
+  }
+
+  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+
+  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+}
+
 resource "juju_application" "pgbouncer" {
   name       = var.pgbouncer.app_name
   model_uuid = var.model_uuid

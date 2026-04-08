@@ -86,21 +86,16 @@ run "validate_self_signed_output" {
   }
 }
 
-run "validate_self_signed_false_with_custom_cert" {
+run "validate_self_signed_false_without_certs" {
   command = plan
 
   variables {
-    haproxy = {
-      config = {
-        ssl_cert = "custom-cert-content"
-        ssl_key  = "custom-key-content"
-      }
-    }
+    haproxy_self_signed_certs = null
   }
 
   assert {
     condition     = output.haproxy_self_signed == false
-    error_message = "With custom SSL cert/key, haproxy_self_signed should be false"
+    error_message = "Without self-signed-certificates deployed, haproxy_self_signed should be false"
   }
 }
 

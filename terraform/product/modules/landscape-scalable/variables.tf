@@ -109,3 +109,17 @@ variable "pgbouncer" {
   default  = null
   nullable = true
 }
+
+variable "haproxy_self_signed_certs" {
+  description = "Configuration for the self-signed-certificates charm used by HAProxy. Set to null to skip deployment."
+  type = object({
+    app_name    = optional(string, "self-signed-certificates")
+    channel     = optional(string, "1/stable")
+    constraints = optional(string, "arch=amd64")
+    revision    = optional(number)
+    base        = optional(string, "ubuntu@24.04")
+  })
+
+  default  = {}
+  nullable = true
+}

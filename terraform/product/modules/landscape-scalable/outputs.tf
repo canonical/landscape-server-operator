@@ -19,25 +19,22 @@ output "admin_password" {
 output "applications" {
   description = "The charms included in the module."
   value = {
-    landscape_server = module.landscape_server
-    haproxy          = var.haproxy != null && length(module.haproxy) > 0 ? module.haproxy[0] : null
-    postgresql       = var.postgresql != null && length(module.postgresql) > 0 ? module.postgresql[0] : null
-    rabbitmq_server  = var.rabbitmq_server != null && length(juju_application.rabbitmq_server) > 0 ? juju_application.rabbitmq_server[0] : null
-    pgbouncer        = var.pgbouncer != null && length(juju_application.pgbouncer) > 0 ? juju_application.pgbouncer[0] : null
+    landscape_server         = module.landscape_server
+    haproxy                  = var.haproxy != null && length(module.haproxy) > 0 ? module.haproxy[0] : null
+    haproxy_self_signed_certs = var.haproxy_self_signed_certs != null && length(juju_application.haproxy_self_signed_certs) > 0 ? juju_application.haproxy_self_signed_certs[0] : null
+    postgresql               = var.postgresql != null && length(module.postgresql) > 0 ? module.postgresql[0] : null
+    rabbitmq_server          = var.rabbitmq_server != null && length(juju_application.rabbitmq_server) > 0 ? juju_application.rabbitmq_server[0] : null
+    pgbouncer                = var.pgbouncer != null && length(juju_application.pgbouncer) > 0 ? juju_application.pgbouncer[0] : null
   }
 }
 
 locals {
-  haproxy_self_signed = var.haproxy == null ? false : (
-    lookup(var.haproxy.config, "ssl_key", null) == null ||
-    lookup(var.haproxy.config, "ssl_cert", null) == null ||
-    lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
-  )
+  haproxy_self_signed = var.haproxy != null && length(juju_application.haproxy_self_signed_certs) > 0
 }
 
 output "haproxy_self_signed" {
-  description = "Indicates whether the external HAProxy charm is using a self-signed TLS certificate. Null when haproxy is not deployed."
-  value       = var.haproxy != null && length(module.haproxy) > 0 && !local.has_haproxy_route ? local.haproxy_self_signed : null
+  description = "Indicates whether HAProxy is using self-signed TLS certificates. True when self-signed-certificates is deployed alongside haproxy, null when haproxy is not deployed."
+  value       = var.haproxy != null && length(module.haproxy) > 0 ? local.haproxy_self_signed : null
 }
 
 output "has_modern_amqp_relations" {
