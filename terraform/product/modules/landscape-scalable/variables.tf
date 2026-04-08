@@ -57,7 +57,7 @@ variable "haproxy" {
   description = "Configuration for the HAProxy charm. Set to null to skip deployment."
   type = object({
     app_name    = optional(string, "haproxy")
-    channel     = optional(string, "latest/edge")
+    channel     = optional(string, "2.8/edge")
     config      = optional(map(string), {})
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
