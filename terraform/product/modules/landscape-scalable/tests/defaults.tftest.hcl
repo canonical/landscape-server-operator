@@ -24,8 +24,8 @@ run "validate_channel_defaults" {
   }
 
   assert {
-    condition     = var.haproxy.channel == "latest/edge"
-    error_message = "HAProxy channel should default to 'latest/edge'"
+    condition     = var.haproxy.channel == "2.8/edge"
+    error_message = "HAProxy channel should default to '2.8/edge'"
   }
 
   assert {
