@@ -36,14 +36,20 @@ terraform init
 terraform apply -var model_uuid=<model-uuid>
 ```
 
+> [!TIP]
+> Customize the module inputs with a `terraform.tfvars` file. An example is `terraform.tfvars.example`, which can be used after removing the `.example` extension.
+>
+> ```sh
+> cp terraform.tfvars.example terraform.tfvars
+> terraform init
+> terraform apply
+> ```
+
 After deploying the module to the model, use the `juju status` command to monitor the lifecycle:
 
 ```sh
 juju status -m landscape --relations --watch 2s
 ```
-
-> [!TIP]
-> Customize the module inputs with a `terraform.tfvars` file. An example is `terraform.tfvars.example`, which can be used after removing the `.example` extension.
 
 This module uses the [Landscape Server charm module](https://github.com/canonical/landscape-charm/tree/main/terraform).
 

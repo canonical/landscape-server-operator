@@ -243,8 +243,8 @@ run "in_model_haproxy_relations" {
 
   variables {
     model_uuid = uuid()
-    channel    = "26.04/beta"
-    revision   = 216
+    channel    = "25.10/edge"
+    revision   = 274
     base       = "ubuntu@24.04"
   }
 
@@ -295,7 +295,7 @@ run "external_haproxy_relations" {
   variables {
     model_uuid = uuid()
     channel    = "25.10/edge"
-    revision   = 215
+    revision   = 273
     base       = "ubuntu@24.04"
   }
 
@@ -320,7 +320,7 @@ run "in_model_haproxy_null_revision" {
 
   variables {
     model_uuid = uuid()
-    channel    = "26.04/beta"
+    channel    = "25.10/edge"
     revision   = null
   }
 
@@ -340,7 +340,7 @@ run "external_haproxy_null_revision" {
 
   variables {
     model_uuid = uuid()
-    channel    = "25.10/edge"
+    channel    = "24.04/edge"
     revision   = null
   }
 
