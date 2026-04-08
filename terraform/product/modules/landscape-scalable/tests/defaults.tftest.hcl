@@ -72,8 +72,8 @@ run "validate_base_defaults" {
   }
 
   assert {
-    condition     = var.haproxy.base == "ubuntu@22.04"
-    error_message = "HAProxy base should default to 'ubuntu@22.04'"
+    condition     = var.haproxy.base == "ubuntu@24.04"
+    error_message = "HAProxy base should default to 'ubuntu@24.04'"
   }
 
   assert {
