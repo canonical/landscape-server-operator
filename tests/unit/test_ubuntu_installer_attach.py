@@ -12,14 +12,14 @@ from charm import LandscapeServerCharm
 
 
 class TestConfigureUbuntuInstallerAttach:
-    def test_disable_with_package_error(self, apt_fixture, lb_certs_state):
+    def test_disable_with_package_error(self, apt_fixture, replicas_network_state):
         """PackageError on disable keeps state unchanged and logs error."""
         _, remove_package_mock = apt_fixture
         remove_package_mock.side_effect = PackageError("Failed to remove package")
 
         ctx = Context(LandscapeServerCharm)
         state_in = State(
-            **lb_certs_state,
+            **replicas_network_state,
             config={"enable_ubuntu_installer_attach": False},
             stored_states=[
                 StoredState(
@@ -47,7 +47,7 @@ class TestConfigureUbuntuInstallerAttach:
         )
         assert stored.content.get("enable_ubuntu_installer_attach") is True
 
-    def test_enable_with_package_error(self, apt_fixture, lb_certs_state):
+    def test_enable_with_package_error(self, apt_fixture, replicas_network_state):
         """PackageError on enable keeps state unchanged and logs error."""
         add_package_mock, _ = apt_fixture
         error_message = "Detailed package installation error"
@@ -55,7 +55,7 @@ class TestConfigureUbuntuInstallerAttach:
 
         ctx = Context(LandscapeServerCharm)
         state_in = State(
-            **lb_certs_state,
+            **replicas_network_state,
             config={"enable_ubuntu_installer_attach": True},
             stored_states=[
                 StoredState(

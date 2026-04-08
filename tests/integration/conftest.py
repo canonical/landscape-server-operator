@@ -9,7 +9,7 @@ import uuid
 import jubilant
 import pytest
 
-from tests.integration.helpers import has_haproxy_route_provider, has_tls_certs_provider
+from tests.integration.helpers import has_haproxy_route_provider
 
 BUNDLE_NAME = "bundle.yaml"
 """
@@ -113,25 +113,30 @@ def lbaas(juju: jubilant.Juju):
     Set up external HAProxy in a separate model for LBaaS testing.
 
     This fixture can either:
+    - Return the existing juju model if USE_HOST_JUJU_MODEL is True
+        (haproxy already local)
     - Use an existing lbaas model (if USE_HOST_LBAAS_MODEL is True)
     - Create a temporary model and deploy haproxy + self-signed-certificates
 
     Environment variables:
+    - LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL: Return local model directly
+        (haproxy co-deployed)
     - LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL: Set to use existing lbaas deployment
     - LBAAS_MODEL_NAME: Name of the lbaas model (default: "lbaas")
     """
+    if (
+        USE_HOST_JUJU_MODEL
+        and not USE_HOST_LBAAS_MODEL
+        and "haproxy" in juju.status().apps
+    ):
+        yield juju
+        return
+
     status = juju.status()
     app_status = status.apps.get("landscape-server")
 
-    if not app_status or any(
-        x not in app_status.relations
-        for x in [
-            "http-ingress",
-            "ubuntu-installer-attach-ingress",
-            "hostagent-messenger-ingress",
-        ]
-    ):
-        pytest.skip("Ingress not configured, skipping...")
+    if not app_status or not has_haproxy_route_provider(juju, "landscape-server"):
+        pytest.skip("HAProxy route not configured, skipping...")
 
     if USE_HOST_LBAAS_MODEL:
         lbaas_model = LBAAS_MODEL_NAME
@@ -140,9 +145,6 @@ def lbaas(juju: jubilant.Juju):
         try:
             lbaas_status = lbaas_juju.status()
             assert "haproxy" in lbaas_status.apps, "haproxy not found in lbaas model"
-            assert has_tls_certs_provider(lbaas_juju, "haproxy"), (
-                "haproxy not integrated with a TLS certs provider"
-            )
         except Exception as e:
             pytest.fail(
                 f"Failed to connect to existing lbaas model '{lbaas_model}': {e}"
@@ -172,37 +174,40 @@ def lbaas(juju: jubilant.Juju):
             )
             lbaas_juju.wait(jubilant.all_active, timeout=300)
 
-            lbaas_juju.offer(endpoint="haproxy:haproxy-route")
+            lbaas_juju.offer("haproxy", endpoint="haproxy-route")
 
             offer_app_name = "lbaas-haproxy"
             juju.consume(f"admin/{lbaas_model}.haproxy", offer_app_name)
 
             juju.integrate(
-                f"{offer_app_name}:haproxy-route", "http-ingress:haproxy-route"
-            )
-            juju.wait(
-                lambda status: has_haproxy_route_provider(juju, "http-ingress"),
-                timeout=300,
-            )
-
-            juju.integrate(
                 f"{offer_app_name}:haproxy-route",
-                "hostagent-messenger-ingress:haproxy-route",
+                "landscape-server:appserver-haproxy-route",
             )
             juju.wait(
                 lambda status: has_haproxy_route_provider(
-                    juju, "hostagent-messenger-ingress"
+                    juju, "appserver-haproxy-route"
                 ),
                 timeout=300,
             )
 
             juju.integrate(
                 f"{offer_app_name}:haproxy-route",
-                "ubuntu-installer-attach-ingress:haproxy-route",
+                "landscape-server:hostagent-messenger-haproxy-route",
             )
             juju.wait(
                 lambda status: has_haproxy_route_provider(
-                    juju, "ubuntu-installer-attach-ingress"
+                    juju, "hostagent-messenger-haproxy-route"
+                ),
+                timeout=300,
+            )
+
+            juju.integrate(
+                f"{offer_app_name}:haproxy-route",
+                "landscape-server:ubuntu-installer-attach-haproxy-route",
+            )
+            juju.wait(
+                lambda status: has_haproxy_route_provider(
+                    juju, "ubuntu-installer-attach-haproxy-route"
                 ),
                 timeout=300,
             )

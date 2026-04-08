@@ -23,17 +23,29 @@ requires:
     interface: rabbitmq
   application-dashboard:
     interface: register-application
-  load-balancer-certificates:
-    interface: tls-certificates
+  appserver-haproxy-route:
+    interface: haproxy-route
     limit: 1
-  http-ingress:
-    interface: ingress
+  pingserver-haproxy-route:
+    interface: haproxy-route
     limit: 1
-  hostagent-messenger-ingress:
-    interface: ingress
+  message-server-haproxy-route:
+    interface: haproxy-route
     limit: 1
-  ubuntu-installer-attach-ingress:
-    interface: ingress
+  api-haproxy-route:
+    interface: haproxy-route
+    limit: 1
+  package-upload-haproxy-route:
+    interface: haproxy-route
+    limit: 1
+  hostagent-messenger-haproxy-route:
+    interface: haproxy-route
+    limit: 1
+  ubuntu-installer-attach-haproxy-route:
+    interface: haproxy-route
+    limit: 1
+  repository-haproxy-route:
+    interface: haproxy-route
     limit: 1
 
 provides:
