@@ -282,37 +282,37 @@ run "test_haproxy_route_integrations_created" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_appserver_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 1
     error_message = "appserver haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_pingserver_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_pingserver_haproxy_route_lbaas) == 1
     error_message = "pingserver haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_message_server_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_message_server_haproxy_route_lbaas) == 1
     error_message = "message-server haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_api_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_api_haproxy_route_lbaas) == 1
     error_message = "api haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_package_upload_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_package_upload_haproxy_route_lbaas) == 1
     error_message = "package-upload haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
     error_message = "hostagent-messenger haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route) == 1
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1
     error_message = "ubuntu-installer-attach haproxy-route integration should be created"
   }
 
@@ -333,7 +333,7 @@ run "test_haproxy_route_integrations_skipped" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_appserver_haproxy_route) == 0
+    condition     = length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 0
     error_message = "haproxy-route integrations should not be created when offer_url is null"
   }
 }
