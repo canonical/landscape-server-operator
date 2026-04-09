@@ -47,11 +47,6 @@ resource "juju_application" "haproxy" {
     channel = "2.8/edge"
   }
 
-  config = {
-    external-hostname = "landscape.local"
-    enable-hsts       = "false"
-  }
-
   units = 1
 }
 
@@ -105,7 +100,7 @@ data "juju_offer" "haproxy_route" {
   url = juju_offer.haproxy_route.url
 }
 
-resource "juju_integration" "http_ingress" {
+resource "juju_integration" "pingserver_haproxy_route" {
   model = data.juju_model.landscape_model.name
 
   application {
@@ -113,12 +108,12 @@ resource "juju_integration" "http_ingress" {
   }
 
   application {
-    name     = "http-ingress"
-    endpoint = "haproxy-route"
+    name     = "landscape-server"
+    endpoint = "pingserver-haproxy-route"
   }
 }
 
-resource "juju_integration" "hostagent_messenger_ingress" {
+resource "juju_integration" "message_server_haproxy_route" {
   model = data.juju_model.landscape_model.name
 
   application {
@@ -126,12 +121,12 @@ resource "juju_integration" "hostagent_messenger_ingress" {
   }
 
   application {
-    name     = "hostagent-messenger-ingress"
-    endpoint = "haproxy-route"
+    name     = "landscape-server"
+    endpoint = "message-server-haproxy-route"
   }
 }
 
-resource "juju_integration" "ubuntu_installer_attach_ingress" {
+resource "juju_integration" "api_haproxy_route" {
   model = data.juju_model.landscape_model.name
 
   application {
@@ -139,9 +134,84 @@ resource "juju_integration" "ubuntu_installer_attach_ingress" {
   }
 
   application {
-    name     = "ubuntu-installer-attach-ingress"
-    endpoint = "haproxy-route"
+    name     = "landscape-server"
+    endpoint = "api-haproxy-route"
   }
+}
+
+resource "juju_integration" "package_upload_haproxy_route" {
+  model = data.juju_model.landscape_model.name
+
+  application {
+    offer_url = data.juju_offer.haproxy_route.url
+  }
+
+  application {
+    name     = "landscape-server"
+    endpoint = "package-upload-haproxy-route"
+  }
+}
+
+resource "juju_integration" "repository_haproxy_route" {
+  model = data.juju_model.landscape_model.name
+
+  application {
+    offer_url = data.juju_offer.haproxy_route.url
+  }
+
+  application {
+    name     = "landscape-server"
+    endpoint = "repository-haproxy-route"
+  }
+}
+
+resource "juju_integration" "hostagent_messenger_haproxy_route" {
+  model = data.juju_model.landscape_model.name
+
+  application {
+    offer_url = data.juju_offer.haproxy_route.url
+  }
+
+  application {
+    name     = "landscape-server"
+    endpoint = "hostagent-messenger-haproxy-route"
+  }
+}
+
+resource "juju_integration" "ubuntu_installer_attach_haproxy_route" {
+  model = data.juju_model.landscape_model.name
+
+  application {
+    offer_url = data.juju_offer.haproxy_route.url
+  }
+
+  application {
+    name     = "landscape-server"
+    endpoint = "ubuntu-installer-attach-haproxy-route"
+  }
+}
+
+resource "juju_integration" "appserver_haproxy_route" {
+  model = data.juju_model.landscape_model.name
+
+  application {
+    offer_url = data.juju_offer.haproxy_route.url
+  }
+
+  application {
+    name     = "landscape-server"
+    endpoint = "appserver-haproxy-route"
+  }
+
+  depends_on = [
+    juju_integration.pingserver_haproxy_route,
+    juju_integration.message_server_haproxy_route,
+    juju_integration.api_haproxy_route,
+    juju_integration.package_upload_haproxy_route,
+    juju_integration.repository_haproxy_route,
+    juju_integration.hostagent_messenger_haproxy_route,
+    juju_integration.ubuntu_installer_attach_haproxy_route,
+  ]
 }
 
 resource "terraform_data" "wait_for_lbaas" {

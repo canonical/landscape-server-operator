@@ -36,14 +36,20 @@ terraform init
 terraform apply -var model_uuid=<model-uuid>
 ```
 
+> [!TIP]
+> Customize the module inputs with a `terraform.tfvars` file. An example is `terraform.tfvars.example`, which can be used after removing the `.example` extension.
+>
+> ```sh
+> cp terraform.tfvars.example terraform.tfvars
+> terraform init
+> terraform apply
+> ```
+
 After deploying the module to the model, use the `juju status` command to monitor the lifecycle:
 
 ```sh
 juju status -m landscape --relations --watch 2s
 ```
-
-> [!TIP]
-> Customize the module inputs with a `terraform.tfvars` file. An example is `terraform.tfvars.example`, which can be used after removing the `.example` extension.
 
 This module uses the [Landscape Server charm module](https://github.com/canonical/landscape-charm/tree/main/terraform).
 
@@ -111,10 +117,9 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 | <a name="output_admin_email"></a> [admin\_email](#output\_admin\_email)                                                            | Administrator email from the Landscape Server config.                                                                                                       |
 | <a name="output_admin_password"></a> [admin\_password](#output\_admin\_password)                                                   | Administrator password from the Landscape Server config (sensitive).                                                                                        |
 | <a name="output_applications"></a> [applications](#output\_applications)                                                           | The charms included in the module.                                                                                                                          |
-| <a name="output_haproxy_self_signed"></a> [haproxy\_self\_signed](#output\_haproxy\_self\_signed)                                  | Indicates whether legacy HAProxy is using a self-signed TLS certificate. Null for 26.04+ deployments with internal HAProxy or when haproxy is not deployed. |
-| <a name="output_has_internal_haproxy"></a> [has\_internal\_haproxy](#output\_has\_internal\_haproxy)                               | Indicates whether the deployment uses internal HAProxy (26.04 beta+) instead of the legacy external HAProxy charm.                                          |
+| <a name="output_haproxy_self_signed"></a> [haproxy\_self\_signed](#output\_haproxy\_self\_signed)                                  | Indicates whether the external HAProxy charm is using a self-signed TLS certificate. Null when haproxy is not deployed.                                     |
+| <a name="output_has_haproxy_route_interface"></a> [has\_haproxy\_route\_interface](#output\_has\_haproxy\_route\_interface)        | Indicates whether the deployment uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint.                            |
 | <a name="output_has_modern_amqp_relations"></a> [has\_modern\_amqp\_relations](#output\_has\_modern\_amqp\_relations)              | Indicates whether the deployment uses the modern inbound/outbound AMQP endpoints.                                                                           |
 | <a name="output_has_modern_postgres_interface"></a> [has\_modern\_postgres\_interface](#output\_has\_modern\_postgres\_interface)  | Indicates whether the deployment supports the modern PostgreSQL charm interface.                                                                            |
-| <a name="output_ingress_configurators_deployed"></a> [ingress\_configurators\_deployed](#output\_ingress\_configurators\_deployed) | Indicates whether ingress configurator charms are deployed for external load balancer integration.                                                          |
 | <a name="output_registration_key"></a> [registration\_key](#output\_registration\_key)                                             | Registration key from the Landscape Server config.                                                                                                          |
 <!-- END_TF_DOCS -->

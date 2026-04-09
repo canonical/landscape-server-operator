@@ -238,34 +238,49 @@ run "modern_postgres_relations_null_revision" {
   }
 }
 
-run "internal_haproxy_relations" {
+run "in_model_haproxy_relations" {
   command = plan
 
   variables {
     model_uuid = uuid()
-    channel    = "26.04/beta"
-    revision   = 216
+    channel    = "25.10/edge"
+    revision   = 278
     base       = "ubuntu@24.04"
   }
 
   assert {
-    condition     = output.requires.load_balancer_certificates == "load-balancer-certificates"
-    error_message = "Rev 216+ should have load-balancer-certificates relation"
+    condition     = output.requires.appserver_haproxy_route == "appserver-haproxy-route"
+    error_message = "Rev 216+ should have appserver-haproxy-route relation"
   }
 
   assert {
-    condition     = output.requires.http_ingress == "http-ingress"
-    error_message = "Rev 216+ should have http-ingress relation"
+    condition     = output.requires.pingserver_haproxy_route == "pingserver-haproxy-route"
+    error_message = "Rev 216+ should have pingserver-haproxy-route relation"
   }
 
   assert {
-    condition     = output.requires.hostagent_messenger_ingress == "hostagent-messenger-ingress"
-    error_message = "Rev 216+ should have hostagent-messenger-ingress relation"
+    condition     = output.requires.message_server_haproxy_route == "message-server-haproxy-route"
+    error_message = "Rev 216+ should have message-server-haproxy-route relation"
   }
 
   assert {
-    condition     = output.requires.ubuntu_installer_attach_ingress == "ubuntu-installer-attach-ingress"
-    error_message = "Rev 216+ should have ubuntu-installer-attach-ingress relation"
+    condition     = output.requires.api_haproxy_route == "api-haproxy-route"
+    error_message = "Rev 216+ should have api-haproxy-route relation"
+  }
+
+  assert {
+    condition     = output.requires.package_upload_haproxy_route == "package-upload-haproxy-route"
+    error_message = "Rev 216+ should have package-upload-haproxy-route relation"
+  }
+
+  assert {
+    condition     = output.requires.hostagent_messenger_haproxy_route == "hostagent-messenger-haproxy-route"
+    error_message = "Rev 216+ should have hostagent-messenger-haproxy-route relation"
+  }
+
+  assert {
+    condition     = output.requires.ubuntu_installer_attach_haproxy_route == "ubuntu-installer-attach-haproxy-route"
+    error_message = "Rev 216+ should have ubuntu-installer-attach-haproxy-route relation"
   }
 
   assert {
@@ -274,13 +289,13 @@ run "internal_haproxy_relations" {
   }
 }
 
-run "legacy_haproxy_relations" {
+run "external_haproxy_relations" {
   command = plan
 
   variables {
     model_uuid = uuid()
     channel    = "25.10/edge"
-    revision   = 215
+    revision   = 277
     base       = "ubuntu@24.04"
   }
 
@@ -300,21 +315,42 @@ run "legacy_haproxy_relations" {
   }
 }
 
-run "internal_haproxy_null_revision" {
+run "in_model_haproxy_null_revision" {
   command = plan
 
   variables {
     model_uuid = uuid()
+    channel    = "25.10/edge"
     revision   = null
   }
 
   assert {
-    condition     = try(output.requires.load_balancer_certificates, null) != null
-    error_message = "Null revision should have internal haproxy relations"
+    condition     = can(output.requires.appserver_haproxy_route)
+    error_message = "Null revision on 26.04/beta should have haproxy-route relations"
   }
 
   assert {
-    condition     = try(output.requires.website, null) == null
-    error_message = "Null revision should not have legacy website relation"
+    condition     = !can(output.requires.website)
+    error_message = "Null revision on 26.04/beta should not have legacy website relation"
+  }
+}
+
+run "external_haproxy_null_revision" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "24.04/edge"
+    revision   = null
+  }
+
+  assert {
+    condition     = output.requires.website == "website"
+    error_message = "Null revision on 25.10/edge should have legacy website relation"
+  }
+
+  assert {
+    condition     = !can(output.requires.appserver_haproxy_route)
+    error_message = "Null revision on 25.10/edge should not have haproxy-route relations"
   }
 }
