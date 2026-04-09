@@ -7,7 +7,7 @@ resource "juju_machine" "landscape_server" {
   name       = "landscape-server-${count.index}"
 
   lifecycle {
-    create_before_destroy = true
+    ignore_changes = [constraints]
   }
 }
 
@@ -25,8 +25,6 @@ module "landscape_server" {
   depends_on = [juju_machine.landscape_server]
 }
 
-# Legacy external HAProxy (pre-26.04 only)
-# For 26.04+ with internal HAProxy, external LB would be in a separate model (LBaaS)
 module "haproxy" {
   source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=haproxy-rev331"
   model_uuid  = var.model_uuid
@@ -38,64 +36,7 @@ module "haproxy" {
   base        = var.haproxy.base
   units       = var.haproxy.units
 
-  count = var.haproxy != null && !local.has_internal_haproxy ? 1 : 0
-}
-
-resource "juju_application" "http_ingress" {
-  name        = var.http_ingress.app_name
-  model_uuid  = var.model_uuid
-  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
-  constraints = var.http_ingress.constraints
-  config      = var.http_ingress.config
-
-  charm {
-    name     = "ingress-configurator"
-    revision = var.http_ingress.revision
-    channel  = var.http_ingress.channel
-    base     = var.http_ingress.base
-  }
-
-  depends_on = [juju_machine.landscape_server]
-
-  count = var.http_ingress != null && local.has_internal_haproxy ? 1 : 0
-}
-
-resource "juju_application" "hostagent_messenger_ingress" {
-  name        = var.hostagent_messenger_ingress.app_name
-  model_uuid  = var.model_uuid
-  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
-  constraints = var.hostagent_messenger_ingress.constraints
-  config      = var.hostagent_messenger_ingress.config
-
-  charm {
-    name     = "ingress-configurator"
-    revision = var.hostagent_messenger_ingress.revision
-    channel  = var.hostagent_messenger_ingress.channel
-    base     = var.hostagent_messenger_ingress.base
-  }
-
-  depends_on = [juju_machine.landscape_server]
-
-  count = var.hostagent_messenger_ingress != null && local.has_internal_haproxy ? 1 : 0
-}
-
-resource "juju_application" "ubuntu_installer_attach_ingress" {
-  name        = var.ubuntu_installer_attach_ingress.app_name
-  model_uuid  = var.model_uuid
-  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
-  constraints = var.ubuntu_installer_attach_ingress.constraints
-  config      = var.ubuntu_installer_attach_ingress.config
-
-  charm {
-    name     = "ingress-configurator"
-    revision = var.ubuntu_installer_attach_ingress.revision
-    channel  = var.ubuntu_installer_attach_ingress.channel
-    base     = var.ubuntu_installer_attach_ingress.base
-  }
-
-  depends_on = [juju_machine.landscape_server]
-
-  count = var.ubuntu_installer_attach_ingress != null && local.has_internal_haproxy ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 module "postgresql" {
@@ -130,26 +71,8 @@ resource "juju_application" "rabbitmq_server" {
   count = var.rabbitmq_server != null ? 1 : 0
 }
 
-resource "juju_application" "lb_certs" {
-  name        = var.lb_certs.app_name
-  model_uuid  = var.model_uuid
-  units       = var.lb_certs.units
-  constraints = var.lb_certs.constraints
-  config      = var.lb_certs.config
-
-  charm {
-    name     = "self-signed-certificates"
-    revision = var.lb_certs.revision
-    channel  = var.lb_certs.channel
-    base     = var.lb_certs.base
-  }
-
-  count = var.lb_certs != null && local.has_internal_haproxy ? 1 : 0
-}
-
 locals {
   has_modern_amqp_relations = try(module.landscape_server.requires.inbound_amqp, null) != null && try(module.landscape_server.requires.outbound_amqp, null) != null
-  has_internal_haproxy      = try(module.landscape_server.requires.load_balancer_certificates, null) != null
 }
 
 resource "juju_integration" "landscape_server_inbound_amqp" {
@@ -203,7 +126,6 @@ resource "juju_integration" "landscape_server_rabbitmq_server" {
   count = var.rabbitmq_server != null && !local.has_modern_amqp_relations ? 1 : 0
 }
 
-# Legacy HAProxy integration (pre-26.04 internal haproxy)
 resource "juju_integration" "landscape_server_haproxy" {
   model_uuid = var.model_uuid
 
@@ -212,89 +134,309 @@ resource "juju_integration" "landscape_server_haproxy" {
   }
 
   application {
-    name = module.haproxy[0].app_name
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && !local.has_internal_haproxy ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && !local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_tls_certificates" {
+resource "juju_integration" "landscape_server_appserver_haproxy_route_in_model" {
   model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = module.landscape_server.requires.load_balancer_certificates
+    endpoint = "appserver-haproxy-route"
   }
 
   application {
-    name     = juju_application.lb_certs[0].name
-    endpoint = "certificates"
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
   }
 
-  depends_on = [module.landscape_server, juju_application.lb_certs]
+  depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.lb_certs != null && local.has_internal_haproxy ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
-# Ingress configurator integrations (optional, for LBaaS)
-resource "juju_integration" "landscape_server_http_ingress" {
+resource "juju_integration" "landscape_server_pingserver_haproxy_route_in_model" {
   model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = module.landscape_server.requires.http_ingress
+    endpoint = "pingserver-haproxy-route"
   }
 
   application {
-    name     = juju_application.http_ingress[0].name
-    endpoint = "ingress"
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
   }
 
-  depends_on = [module.landscape_server, juju_application.http_ingress]
+  depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.http_ingress != null && local.has_internal_haproxy ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_hostagent_messenger_ingress" {
+resource "juju_integration" "landscape_server_message_server_haproxy_route_in_model" {
   model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = module.landscape_server.requires.hostagent_messenger_ingress
+    endpoint = "message-server-haproxy-route"
   }
 
   application {
-    name     = juju_application.hostagent_messenger_ingress[0].name
-    endpoint = "ingress"
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
   }
 
-  depends_on = [module.landscape_server, juju_application.hostagent_messenger_ingress]
+  depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.hostagent_messenger_ingress != null && local.has_internal_haproxy ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_ubuntu_installer_attach_ingress" {
+resource "juju_integration" "landscape_server_api_haproxy_route_in_model" {
   model_uuid = var.model_uuid
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = module.landscape_server.requires.ubuntu_installer_attach_ingress
+    endpoint = "api-haproxy-route"
   }
 
   application {
-    name     = juju_application.ubuntu_installer_attach_ingress[0].name
-    endpoint = "ingress"
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
   }
 
-  depends_on = [module.landscape_server, juju_application.ubuntu_installer_attach_ingress]
+  depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.ubuntu_installer_attach_ingress != null && local.has_internal_haproxy ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_package_upload_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "package-upload-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_repository_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "repository-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "hostagent-messenger-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "ubuntu-installer-attach-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route"
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "appserver-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [
+    module.landscape_server,
+    juju_integration.landscape_server_pingserver_haproxy_route_lbaas,
+    juju_integration.landscape_server_message_server_haproxy_route_lbaas,
+    juju_integration.landscape_server_api_haproxy_route_lbaas,
+    juju_integration.landscape_server_package_upload_haproxy_route_lbaas,
+    juju_integration.landscape_server_repository_haproxy_route_lbaas,
+    juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas,
+    juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas,
+  ]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_pingserver_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "pingserver-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_message_server_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "message-server-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_api_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "api-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_package_upload_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "package-upload-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_repository_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "repository-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "hostagent-messenger-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = "ubuntu-installer-attach-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 locals {
-  has_modern_pg_interface = try(module.landscape_server.requires.database, null) != null
+  has_modern_pg_interface    = can(module.landscape_server.requires.database)
+  has_haproxy_route          = coalesce(module.landscape_server.has_haproxy_route_interface, false)
+  enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
+  enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
 }
 
 
@@ -334,6 +476,56 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 
   count = var.postgresql != null && local.has_modern_pg_interface && var.pgbouncer == null ? 1 : 0
 
+}
+
+resource "juju_application" "haproxy_self_signed_certs" {
+  name        = var.haproxy_self_signed_certs.app_name
+  model_uuid  = var.model_uuid
+  units       = 1
+  constraints = var.haproxy_self_signed_certs.constraints
+
+  charm {
+    name     = "self-signed-certificates"
+    revision = var.haproxy_self_signed_certs.revision
+    channel  = var.haproxy_self_signed_certs.channel
+    base     = var.haproxy_self_signed_certs.base
+  }
+
+  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+}
+
+resource "juju_integration" "haproxy_certificates" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "certificates"
+  }
+
+  application {
+    name = juju_application.haproxy_self_signed_certs[0].name
+  }
+
+  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+
+  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+}
+
+resource "juju_integration" "haproxy_receive_ca_certs" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "receive-ca-certs"
+  }
+
+  application {
+    name = juju_application.haproxy_self_signed_certs[0].name
+  }
+
+  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+
+  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer" {
