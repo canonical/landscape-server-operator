@@ -1619,36 +1619,22 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(pkg_mock.ensure.call_count, len(LANDSCAPE_PACKAGES))
         self.assertEqual(self.harness.charm.unit.status, prev_status)
 
-    def test_action_upgrade_uses_configured_ppa(self):
-        event = Mock(spec_set=ActionEvent)
-        self.harness.charm._stored.running = False
-        self.harness.charm.charm_config = Mock(
-            landscape_ppa="ppa:landscape/self-hosted-beta",
-            http_proxy=None,
-            https_proxy=None,
-            no_proxy=None,
-        )
-
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_call_mock,
-        ):
-            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
-            self.harness.charm._upgrade(event)
-
-        check_call_mock.assert_any_call(
-            ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"], env=ANY
-        )
-
     def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
-        self.harness.charm.charm_config = Mock(
-            landscape_ppa="ppa:landscape/self-hosted-beta",
+        ppa = "ppa:landscape/self-hosted-beta"
+        mock_config = Mock(
+            landscape_ppa=ppa,
             http_proxy="http://proxy.example.com:3128",
             https_proxy="https://proxy.example.com:3128",
             no_proxy="localhost,127.0.0.1",
         )
+        type(mock_config).landscape_ppas = PropertyMock(
+            side_effect=lambda: [
+                p.strip() for p in mock_config.landscape_ppa.split(",") if p.strip()
+            ]
+        )
+        self.harness.charm.charm_config = mock_config
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
@@ -1661,8 +1647,7 @@ class TestCharm(unittest.TestCase):
         add_apt_call = next(
             c
             for c in check_call_mock.call_args_list
-            if c.args[0]
-            == ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"]
+            if c.args[0] == ["add-apt-repository", "-y", ppa]
         )
         env = add_apt_call.kwargs["env"]
         self.assertEqual(env["http_proxy"], "http://proxy.example.com:3128")
@@ -1948,6 +1933,77 @@ class TestCharm(unittest.TestCase):
         )
 
 
+class TestMultiplePPAs:
+    def test_install_adds_each_ppa(self):
+        ppas = [
+            "ppa:landscape/self-hosted-beta",
+            "ppa:canonical-python-maintainers/python-backports",
+        ]
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": ",".join(ppas)},
+            unit_status=MaintenanceStatus(),
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        for ppa in ppas:
+            check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+
+    def test_upgrade_adds_each_ppa(self):
+        ppas = [
+            "ppa:landscape/self-hosted-beta",
+            "ppa:canonical-python-maintainers/python-backports",
+        ]
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": ",".join(ppas)},
+            unit_status=MaintenanceStatus(),
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"running": False},
+                )
+            ],
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
+            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
+            ctx.run(ctx.on.action("upgrade"), state)
+
+        for ppa in ppas:
+            check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+
+    def test_install_single_ppa(self):
+        ppa = "ppa:landscape/self-hosted-beta"
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": ppa},
+            unit_status=MaintenanceStatus(),
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+
+
 # TODO fix from broken commit.
 @unittest.skip("Broken in `de29548e2b09c71db3a55f606ab318b5ea25550d`")
 class TestBootstrapAccount(unittest.TestCase):
@@ -1980,7 +2036,10 @@ class TestBootstrapAccount(unittest.TestCase):
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
         self.harness.update_config(
-            {"admin_email": "hello@ubuntu.com", "admin_name": "Hello Ubuntu"}
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+            }
         )
         self.assertIn("password required", self.log_mock.call_args.args[0])
         self.process_mock.assert_not_called()

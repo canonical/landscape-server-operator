@@ -32,6 +32,11 @@ class LandscapeCharmConfiguration(BaseModel):
 
     landscape_ppa: str
     landscape_ppa_key: str
+
+    @property
+    def landscape_ppas(self) -> list[str]:
+        return [p.strip() for p in self.landscape_ppa.split(",") if p.strip()]
+
     worker_counts: int
     license_file: str | None = None
     openid_provider_url: str | None = None

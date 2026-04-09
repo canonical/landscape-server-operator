@@ -23,7 +23,7 @@ applications:
     num_units: 2
     base: ubuntu@24.04
     options:
-      landscape_ppa: ppa:landscape/self-hosted-beta
+      landscape_ppa: "ppa:landscape/self-hosted-beta"
       min_install: True
       enable_hostagent_messenger: true
       enable_ubuntu_installer_attach: true
