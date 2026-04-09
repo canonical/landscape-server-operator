@@ -11,7 +11,7 @@ from pwd import struct_passwd
 from subprocess import CalledProcessError
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import ANY, call, DEFAULT, Mock, patch
+from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
 
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
