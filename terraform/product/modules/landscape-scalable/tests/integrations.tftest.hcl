@@ -249,17 +249,14 @@ run "test_legacy_postgres_interface" {
   }
 }
 
-run "test_internal_haproxy_true" {
+run "test_haproxy_route_integrations_created" {
   command = plan
 
   variables {
     landscape_server = {
       revision = 216
     }
-    http_ingress                    = {}
-    hostagent_messenger_ingress     = {}
-    ubuntu_installer_attach_ingress = {}
-    lb_certs                        = {}
+    haproxy_route_offer_url = "admin/lbaas:haproxy-route"
   }
 
   override_module {
@@ -267,190 +264,77 @@ run "test_internal_haproxy_true" {
     outputs = {
       app_name = "landscape-server"
       requires = {
-        load_balancer_certificates      = "load-balancer-certificates"
-        http_ingress                    = "http-ingress"
-        hostagent_messenger_ingress     = "hostagent-messenger-ingress"
-        ubuntu_installer_attach_ingress = "ubuntu-installer-attach-ingress"
-        inbound_amqp                    = "inbound-amqp"
-        outbound_amqp                   = "outbound-amqp"
-        database                        = "database"
-        db                              = "db"
-        application_dashboard           = "application-dashboard"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
+        inbound_amqp                          = "inbound-amqp"
+        outbound_amqp                         = "outbound-amqp"
+        database                              = "database"
+        db                                    = "db"
+        application_dashboard                 = "application-dashboard"
       }
+      has_haproxy_route_interface = true
     }
   }
 
   assert {
-    condition     = local.has_internal_haproxy == true
-    error_message = "has_internal_haproxy should be true when load_balancer_certificates exists"
+    condition     = length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 1
+    error_message = "appserver haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_pingserver_haproxy_route_lbaas) == 1
+    error_message = "pingserver haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_message_server_haproxy_route_lbaas) == 1
+    error_message = "message-server haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_api_haproxy_route_lbaas) == 1
+    error_message = "api haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_package_upload_haproxy_route_lbaas) == 1
+    error_message = "package-upload haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
+    error_message = "hostagent-messenger haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1
+    error_message = "ubuntu-installer-attach haproxy-route integration should be created"
   }
 
   assert {
     condition     = length(module.haproxy) == 0
-    error_message = "Legacy HAProxy module should not be deployed with internal haproxy"
-  }
-
-  assert {
-    condition     = length(juju_application.http_ingress) == 1
-    error_message = "HTTP ingress configurator should be deployed"
-  }
-
-  assert {
-    condition     = length(juju_application.hostagent_messenger_ingress) == 1
-    error_message = "Hostagent messenger ingress configurator should be deployed"
-  }
-
-  assert {
-    condition     = length(juju_application.ubuntu_installer_attach_ingress) == 1
-    error_message = "Ubuntu installer attach ingress configurator should be deployed"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_haproxy) == 0
-    error_message = "Legacy HAProxy integration should not be created with internal haproxy"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_http_ingress) == 1
-    error_message = "HTTP ingress integration should be created"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_ingress) == 1
-    error_message = "Hostagent messenger ingress integration should be created"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_ingress) == 1
-    error_message = "Ubuntu installer attach ingress integration should be created"
+    error_message = "Legacy HAProxy module should not be deployed when using haproxy-route"
   }
 }
 
-run "test_internal_haproxy_false" {
-  command = plan
-
-  variables {
-    landscape_server = {
-      revision = 215
-    }
-  }
-
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        website               = "website"
-        inbound_amqp          = "inbound-amqp"
-        outbound_amqp         = "outbound-amqp"
-        database              = "database"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
-
-  assert {
-    condition     = local.has_internal_haproxy == false
-    error_message = "has_internal_haproxy should be false when load_balancer_certificates doesn't exist"
-  }
-
-  assert {
-    condition     = length(module.haproxy) == 1
-    error_message = "Legacy HAProxy module should be deployed without internal haproxy"
-  }
-
-  assert {
-    condition     = length(juju_application.http_ingress) == 0
-    error_message = "Ingress configurators should not be deployed without internal haproxy"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_haproxy) == 1
-    error_message = "Legacy HAProxy integration should be created without internal haproxy"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_http_ingress) == 0
-    error_message = "Ingress integrations should not be created without internal haproxy"
-  }
-}
-
-run "test_tls_certificates_integration" {
+run "test_haproxy_route_integrations_skipped" {
   command = plan
 
   variables {
     landscape_server = {
       revision = 216
     }
-    lb_certs = {}
-  }
-
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        load_balancer_certificates      = "load-balancer-certificates"
-        http_ingress                    = "http-ingress"
-        hostagent_messenger_ingress     = "hostagent-messenger-ingress"
-        ubuntu_installer_attach_ingress = "ubuntu-installer-attach-ingress"
-        inbound_amqp                    = "inbound-amqp"
-        outbound_amqp                   = "outbound-amqp"
-        database                        = "database"
-        db                              = "db"
-        application_dashboard           = "application-dashboard"
-      }
-    }
+    haproxy_route_offer_url = null
   }
 
   assert {
-    condition     = length(juju_application.lb_certs) == 1
-    error_message = "lb_certs application should be deployed"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_tls_certificates) == 1
-    error_message = "TLS certificates integration should be created when lb_certs is specified"
-  }
-}
-
-run "test_tls_certificates_integration_skipped" {
-  command = plan
-
-  variables {
-    landscape_server = {
-      revision = 216
-    }
-    lb_certs = null
-  }
-
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        load_balancer_certificates      = "load-balancer-certificates"
-        http_ingress                    = "http-ingress"
-        hostagent_messenger_ingress     = "hostagent-messenger-ingress"
-        ubuntu_installer_attach_ingress = "ubuntu-installer-attach-ingress"
-        inbound_amqp                    = "inbound-amqp"
-        outbound_amqp                   = "outbound-amqp"
-        database                        = "database"
-        db                              = "db"
-        application_dashboard           = "application-dashboard"
-      }
-    }
-  }
-
-  assert {
-    condition     = length(juju_application.lb_certs) == 0
-    error_message = "lb_certs application should not be deployed when set to null"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_tls_certificates) == 0
-    error_message = "TLS certificates integration should not be created when lb_certs is null"
+    condition     = length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 0
+    error_message = "haproxy-route integrations should not be created when offer_url is null"
   }
 }
 

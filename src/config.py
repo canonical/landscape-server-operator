@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from pydantic import BaseModel, root_validator, validator
+from pydantic import BaseModel, field_validator, model_validator
 import yaml
 
 
@@ -20,9 +20,6 @@ class RedirectHTTPS(str, Enum):
     ALL = "all"
     NONE = "none"
     DEFAULT = "default"
-
-
-# NOTE: the charm currently uses Pydantic 1.10
 
 
 class LandscapeCharmConfiguration(BaseModel):
@@ -82,15 +79,19 @@ class LandscapeCharmConfiguration(BaseModel):
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
 
-    @validator("deployment_mode")
+    @field_validator("deployment_mode")
+    @classmethod
     def deployment_mode_safe_chars(cls, v):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", v):
-            raise ValueError(f"deployment_mode {v!r} must match [A-Za-z0-9_-]+")
+            raise ValueError(
+                f"deployment_mode {v!r} contains invalid characters. "
+                "Only letters, numbers, hyphens, and underscores are allowed."
+            )
 
         return v
 
-    @root_validator(skip_on_failure=True)
-    def openid_oidc_exclusive(cls, values):
+    @model_validator(mode="after")
+    def openid_oidc_exclusive(self):
         OPENID_CONFIGS = (
             "openid_provider_url",
             "openid_logout_url",
@@ -102,8 +103,8 @@ class LandscapeCharmConfiguration(BaseModel):
             "oidc_logout_url",
         )
 
-        openid = {v: values.get(v) for v in OPENID_CONFIGS}
-        oidc = {v: values.get(v) for v in OIDC_CONFIGS}
+        openid = self.model_dump(include=set(OPENID_CONFIGS))
+        oidc = self.model_dump(include=set(OIDC_CONFIGS))
 
         if any(openid.values()) and any(oidc.values()):
             raise ValueError(
@@ -111,41 +112,41 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"Received OpenID configuration: {openid} and "
                 f"OIDC configuration: {oidc}."
             )
-        return values
+        return self
 
-    @root_validator(skip_on_failure=True)
-    def openid_minimum_fields(cls, values):
+    @model_validator(mode="after")
+    def openid_minimum_fields(self):
         """
         If using either `openid_provider_url` or `openid_logout_url`, must provide both.
         """
         required_configs = ("openid_provider_url", "openid_logout_url")
-        fields = {v: values.get(v) for v in required_configs}
+        fields = self.model_dump(include=set(required_configs))
 
         if any(fields.values()) and not all(fields.values()):
             raise ValueError(
                 f"When using OpenID, must provide all of {required_configs}. "
                 f"Got {fields}."
             )
-        return values
+        return self
 
-    @root_validator(skip_on_failure=True)
-    def oidc_minimum_fields(cls, values):
+    @model_validator(mode="after")
+    def oidc_minimum_fields(self):
         """
         If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
         must provide all three.
         """
         required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
-        fields = {v: values.get(v) for v in required_configs}
+        fields = self.model_dump(include=set(required_configs))
 
         if any(fields.values()) and not all(fields.values()):
             raise ValueError(
                 f"When using OIDC, must provide all of {required_configs}. "
                 f"Got {fields}."
             )
-        return values
+        return self
 
-    @root_validator(skip_on_failure=True)
-    def haproxy_backend_port_validation(cls, values):
+    @model_validator(mode="after")
+    def haproxy_backend_port_validation(self):
         base_ports_with_workers = (
             "appserver_base_port",
             "pingserver_base_port",
@@ -157,11 +158,12 @@ class LandscapeCharmConfiguration(BaseModel):
             "hostagent_server_base_port",
             "ubuntu_installer_attach_base_port",
         )
-        worker_counts = values["worker_counts"]
+        worker_counts = self.worker_counts
         ports_used = []
         for service in base_ports_with_workers:
-            ports_used += list(range(values[service], values[service] + worker_counts))
-        ports_used += [values[service] for service in base_ports_without_workers]
+            val = getattr(self, service)
+            ports_used += list(range(val, val + worker_counts))
+        ports_used += [getattr(self, service) for service in base_ports_without_workers]
         overused_ports = [
             port for port, count in Counter(ports_used).items() if count > 1
         ]
@@ -171,7 +173,7 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"the following ports: {', '.join(map(str, overused_ports))}"
             )
 
-        return values
+        return self
 
 
 def get_config_defaults() -> dict[str, Any]:
@@ -188,7 +190,9 @@ def get_config_defaults() -> dict[str, Any]:
     return {key: configs[key]["default"] for key in configs}
 
 
-DEFAULT_CONFIGURATION = LandscapeCharmConfiguration.validate(get_config_defaults())
+DEFAULT_CONFIGURATION = LandscapeCharmConfiguration.model_validate(
+    get_config_defaults()
+)
 """
 A `LandscapeCharmConfiguration` populated with the defaults, for use as a fallback
 when the charm is deployed with invalid configuration.

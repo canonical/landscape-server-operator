@@ -6,7 +6,7 @@ The Landscape systems management tool helps you monitor, manage, and update your
 
 This charm will deploy Self-Hosted Landscape and needs to be connected to other charms to be fully functional. Example deployments are given below.
 
-See the full [Landscape documentation](https://ubuntu.com/landscape/docs) for more details.
+See the full [Landscape documentation](https://documentation.ubuntu.com/landscape/) for more details.
 
 ## Usage
 
