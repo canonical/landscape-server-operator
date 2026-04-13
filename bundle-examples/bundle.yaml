@@ -27,7 +27,7 @@ applications:
       landscape_ppa: "ppa:jansdhillon/test21,ppa:landscape/self-hosted-beta,ppa:canonical-python-maintainers/python-backports"
       min_install: true
       enable_hostagent_messenger: true
-      enable_ubuntu_installer_attach: false
+      enable_ubuntu_installer_attach: true
       root_url: "https://landscape-server-jammy.com/"
       additional_service_config: |
         [appserver]
