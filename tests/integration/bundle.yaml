@@ -1,4 +1,6 @@
 description: Landscape scalable integration testing
+model-config:
+  image-stream: daily
 applications:
   postgresql:
     channel: 16/stable
@@ -19,16 +21,24 @@ applications:
     options:
       consumer-timeout: 259200000
   landscape-server:
-    charm: ../../landscape-server_ubuntu@24.04-amd64.charm
+    charm: ../../landscape-server_ubuntu@26.04-amd64.charm
     num_units: 2
     base: ubuntu@24.04
     options:
-      landscape_ppa: ppa:landscape/self-hosted-beta
-      min_install: True
+      landscape_ppa: "ppa:jansdhillon/test21,ppa:landscape/self-hosted-beta,ppa:canonical-python-maintainers/python-backports"
+      min_install: true
       enable_hostagent_messenger: true
-      enable_ubuntu_installer_attach: true
-      root_url: https://landscape.local/
-      redirect_https: none
+      enable_ubuntu_installer_attach: false
+      root_url: "https://landscape-server-jammy.com/"
+      additional_service_config: |
+        [appserver]
+        openid_provider_url = https://login.ubuntu.com/
+        openid_logout_url = https://login.ubuntu.com/+logout
+        ubuntu_one_redirect_url = https://landscape-server-jammy.com/new_dashboard/handle-auth/ubuntu-one/
+        oidc_issuer = https://integrator-9417358.okta.com/
+        oidc_client_id = 0oawiqe4b0fhVZT3c697
+        oidc_client_secret = mMqpBNQ61aYgUSMcOnnexvO8xLg01bnP_CQHpSTT-8JNd7GtAw4ZLRzp9Ir2_83E
+    base: ubuntu@26.04
   haproxy:
     charm: ch:haproxy
     channel: 2.8/edge

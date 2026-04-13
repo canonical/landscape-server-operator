@@ -1568,32 +1568,12 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(pkg_mock.ensure.call_count, len(LANDSCAPE_PACKAGES))
         self.assertEqual(self.harness.charm.unit.status, prev_status)
 
-    def test_action_upgrade_uses_configured_ppa(self):
-        event = Mock(spec_set=ActionEvent)
-        self.harness.charm._stored.running = False
-        self.harness.charm.charm_config = Mock(
-            landscape_ppa="ppa:landscape/self-hosted-beta",
-            http_proxy=None,
-            https_proxy=None,
-            no_proxy=None,
-        )
-
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_call_mock,
-        ):
-            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
-            self.harness.charm._upgrade(event)
-
-        check_call_mock.assert_any_call(
-            ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"], env=ANY
-        )
-
     def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
-        self.harness.charm.charm_config = Mock(
-            landscape_ppa="ppa:landscape/self-hosted-beta",
+        ppa = "ppa:landscape/self-hosted-beta"
+        mock_config = Mock(
+            landscape_ppa=ppa,
             http_proxy="http://proxy.example.com:3128",
             https_proxy="https://proxy.example.com:3128",
             no_proxy="localhost,127.0.0.1",
