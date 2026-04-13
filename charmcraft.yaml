@@ -34,8 +34,13 @@ parts:
       - libssl-dev # Needed to build Python dependencies with Rust from source
       - pkg-config # Needed to build Python dependencies with Rust from source
       - software-properties-common
+
+    build-environment:
+      - UV_PYTHON: "3.12"
+      - UV_MANAGED_PYTHON: "no"
     override-build: |
       add-apt-repository -y ppa:canonical-python-maintainers/python-backports
+      apt-get install -y python3.12 python3.12-dev
       craftctl default
     after:
       - uv-deps

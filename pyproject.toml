@@ -2,8 +2,8 @@
 name = "landscape-server-charm"
 version = "0.1.0"
 description = "Juju charm for deploying and managing Landscape Server"
-requires-python = ">=3.10"
-dependencies = ["cosl==1.4.0", "ops==2.23.1", "pydantic==2.10.6"]
+requires-python = "==3.12.*"
+dependencies = ["cosl==1.4.0", "ops==2.23.1", "pydantic==2.9.2"]
 
 [dependency-groups]
 dev = [
@@ -24,7 +24,7 @@ integration = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py312"
 # Skip vendored dependencies
 extend-exclude = ["lib"]
 
