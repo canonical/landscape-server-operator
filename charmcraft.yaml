@@ -24,7 +24,7 @@ parts:
     build-packages:
       - curl
     override-build: |
-      curl -LsSf https://astral.sh/uv/0.10.8/install.sh | sh  # renovate: charmcraft-uv-latest
+      curl -LsSf https://astral.sh/uv/0.11.6/install.sh | sh  # renovate: charmcraft-uv-latest
       ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv
   charm:
     plugin: uv
@@ -34,12 +34,6 @@ parts:
       - libssl-dev # Needed to build Python dependencies with Rust from source
       - pkg-config # Needed to build Python dependencies with Rust from source
       - software-properties-common
-    stage-packages:
-      - python3.12
-      - python3.12-dev
-    build-environment:
-      - UV_PYTHON: "3.12"
-      - UV_MANAGED_PYTHON: "no"
     override-build: |
       add-apt-repository -y ppa:canonical-python-maintainers/python-backports
       craftctl default
