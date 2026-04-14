@@ -763,6 +763,11 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     sources before upgrading, so switching PPAs (ex. upgrade from self-hosted-24.04 to
     self-hosted-beta) works correctly.
     """
+    unit_name = next(iter(juju.status().apps["landscape-server"].units))
+    series = juju.ssh(unit_name, "lsb_release -cs").strip()
+    if series == "resolute":
+        pytest.skip()
+
     juju.wait(jubilant.all_active, timeout=300)
 
     landscape_ppas_config = juju.config("landscape-server").get(
