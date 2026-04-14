@@ -765,9 +765,11 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     """
     juju.wait(jubilant.all_active, timeout=300)
 
-    landscape_ppa = juju.config("landscape-server").get(
+    landscape_ppas_config = juju.config("landscape-server").get(
         "landscape_ppa", "ppa:landscape/self-hosted-beta"
     )
+    landscape_ppas = [p.strip() for p in landscape_ppas_config.split(",")]
+    landscape_ppa = landscape_ppas[0]
     ppa_slug = landscape_ppa.removeprefix("ppa:")
     old_ppa = "ppa:landscape/self-hosted-24.04"
 
@@ -795,7 +797,9 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
 
         juju.ssh(unit_name, f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/")
     finally:
-        juju.ssh(unit_name, f"sudo add-apt-repository -y {landscape_ppa}")
+        for ppa in landscape_ppas:
+            juju.ssh(unit_name, f"sudo add-apt-repository -y {ppa}")
+        juju.run(unit_name, "pause")
         juju.run(unit_name, "upgrade")
         juju.run(unit_name, "resume")
         juju.wait(jubilant.all_active, timeout=300)
