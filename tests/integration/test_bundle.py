@@ -212,6 +212,7 @@ def test_modern_database_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
             juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
 
             juju.integrate("landscape-server:database", "postgresql:database")
+            juju.wait(lambda status: has_modern_pg(juju), timeout=120)
 
         elif "database" not in initial_relations:
             juju.integrate("landscape-server:database", "postgresql:database")
@@ -241,6 +242,7 @@ def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
             )
             juju.wait(lambda status: not has_modern_pg(juju), timeout=120)
             juju.integrate("landscape-server:db", "postgresql:db-admin")
+            juju.wait(lambda status: has_legacy_pg(juju), timeout=120)
 
         elif "db" not in initial_relations:
             juju.integrate("landscape-server:db", "postgresql:db-admin")
@@ -406,7 +408,7 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
         assert status.apps["landscape-server"].app_status.current == "active"
 
         for name in status.apps["landscape-server"].units.keys():
-            with pytest.raises(Exception):
+            with pytest.raises(jubilant.CLIError):
                 juju.exec(
                     f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
                     unit=name,
