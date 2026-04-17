@@ -157,7 +157,7 @@ def wait_for_service(
     last_exc: jubilant.CLIError | None = None
     while time.monotonic() < deadline:
         try:
-            juju.ssh(unit, f"systemctl is-active {service}.service")
+            juju.exec(f"systemctl is-active {service}.service", unit=unit)
             return
         except jubilant.CLIError as e:
             last_exc = e

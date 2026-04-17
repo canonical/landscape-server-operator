@@ -12,6 +12,7 @@ import jubilant
 import pytest
 
 from charm import DEFAULT_SERVICES, LANDSCAPE_UBUNTU_INSTALLER_ATTACH, LEADER_SERVICES
+from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
@@ -203,21 +204,24 @@ def test_modern_database_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     status = juju.status()
     initial_relations = set(status.apps["landscape-server"].relations)
 
-    if "db" in initial_relations:
-        juju.remove_relation("landscape-server:db", "postgresql:db-admin", force=True)
-        juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
+    try:
+        if "db" in initial_relations:
+            juju.remove_relation(
+                "landscape-server:db", "postgresql:db-admin", force=True
+            )
+            juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
 
-        juju.integrate("landscape-server:database", "postgresql:database")
+            juju.integrate("landscape-server:database", "postgresql:database")
 
-    elif "database" not in initial_relations:
-        juju.integrate("landscape-server:database", "postgresql:database")
-        juju.wait(lambda status: has_modern_pg(juju), timeout=120)
+        elif "database" not in initial_relations:
+            juju.integrate("landscape-server:database", "postgresql:database")
+            juju.wait(lambda status: has_modern_pg(juju), timeout=120)
 
-    relations = set(juju.status().apps["landscape-server"].relations)
+        relations = set(juju.status().apps["landscape-server"].relations)
 
-    assert "database" in relations
-
-    restore_db_relations(juju, initial_relations)
+        assert "database" in relations
+    finally:
+        restore_db_relations(juju, initial_relations)
 
 
 def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -230,22 +234,23 @@ def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     status = juju.status()
     initial_relations = set(status.apps["landscape-server"].relations)
 
-    if "database" in initial_relations:
-        juju.remove_relation(
-            "landscape-server:database", "postgresql:database", force=True
-        )
-        juju.wait(lambda status: not has_modern_pg(juju), timeout=120)
-        juju.integrate("landscape-server:db", "postgresql:db-admin")
+    try:
+        if "database" in initial_relations:
+            juju.remove_relation(
+                "landscape-server:database", "postgresql:database", force=True
+            )
+            juju.wait(lambda status: not has_modern_pg(juju), timeout=120)
+            juju.integrate("landscape-server:db", "postgresql:db-admin")
 
-    elif "db" not in initial_relations:
-        juju.integrate("landscape-server:db", "postgresql:db-admin")
-        juju.wait(lambda status: has_legacy_pg(juju), timeout=120)
+        elif "db" not in initial_relations:
+            juju.integrate("landscape-server:db", "postgresql:db-admin")
+            juju.wait(lambda status: has_legacy_pg(juju), timeout=120)
 
-    relations = set(juju.status().apps["landscape-server"].relations)
+        relations = set(juju.status().apps["landscape-server"].relations)
 
-    assert "db" in relations
-
-    restore_db_relations(juju, initial_relations)
+        assert "db" in relations
+    finally:
+        restore_db_relations(juju, initial_relations)
 
 
 def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
@@ -301,12 +306,12 @@ def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
     host, port = stores["host"].split(":")
     password, user, dbname = stores["password"], stores["user"], stores["main"]
 
-    result = juju.ssh(
-        "landscape-server/leader",
+    result = juju.exec(
         f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
         ' -tAc "SELECT COUNT(*) FROM information_schema.tables'
         " WHERE table_schema = 'public' AND table_name = 'account';\"",
-    ).strip()
+        unit="landscape-server/leader",
+    ).stdout.strip()
 
     assert result == "1", (
         "Expected the 'account' table to exist in the landscape database, "
@@ -402,9 +407,9 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
 
         for name in status.apps["landscape-server"].units.keys():
             with pytest.raises(Exception):
-                juju.ssh(
-                    name,
+                juju.exec(
                     f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
+                    unit=name,
                 )
 
     finally:
@@ -763,6 +768,11 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     sources before upgrading, so switching PPAs (ex. upgrade from self-hosted-24.04 to
     self-hosted-beta) works correctly.
     """
+    if USE_HOST_JUJU_MODEL:
+        pytest.skip(
+            "test_upgrade_action_updates_ppa mutates PPA state and is not safe "
+            "to run against a live model. Run in a dedicated upgrade pipeline instead."
+        )
     juju.wait(jubilant.all_active, timeout=300)
 
     landscape_ppa = juju.config("landscape-server").get(
