@@ -811,3 +811,240 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
         juju.run(unit_name, "upgrade")
         juju.run(unit_name, "resume")
         juju.wait(jubilant.all_active, timeout=300)
+
+
+# ---------------------------------------------------------------------------
+# Service placement and port tests
+# ---------------------------------------------------------------------------
+
+_ALL_UNIT_PORTS = [8080, 8070, 8090, 9080]  # appserver, pingserver, message-server, api
+_LEADER_ONLY_PORTS = [9100, 9099]  # package-upload, package-search
+
+
+def test_leader_services_not_on_non_leaders(
+    juju: jubilant.Juju, lbaas: jubilant.Juju
+):
+    """
+    LEADER_SERVICES (package-search, package-upload) must NOT be active on
+    non-leader units. test_all_services_up only asserts the positive side;
+    this asserts the negative to catch misconfigured multi-unit deployments.
+    """
+    status = juju.status()
+    units = status.apps["landscape-server"].units
+
+    if len(units) <= 1:
+        pytest.skip("Need more than 1 unit to verify non-leader service placement")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    for name, unit_status in units.items():
+        if not unit_status.leader:
+            for service in LEADER_SERVICES:
+                with pytest.raises(jubilant.CLIError):
+                    juju.exec(
+                        f"systemctl is-active {service}.service",
+                        unit=name,
+                    )
+
+
+def test_service_ports_listening(juju: jubilant.Juju, lbaas: jubilant.Juju):
+    """
+    Verify that services are listening on the expected ports on the expected units.
+
+    All-unit services (appserver:8080, pingserver:8070, message-server:8090,
+    api:9080) must be open on every unit. Leader-only services
+    (package-upload:9100, package-search:9099) must be open only on the leader.
+
+    This guards against HAProxy charm config changes silently dropping backend
+    ports, which previously nearly brought down prod.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    status = juju.status()
+    units = status.apps["landscape-server"].units
+
+    for name, unit_status in units.items():
+        for port in _ALL_UNIT_PORTS:
+            output = juju.exec(f"ss -tlnH 'sport = :{port}'", unit=name)
+            assert str(port) in output, (
+                f"Expected port {port} to be listening on {name}, got: {output!r}"
+            )
+
+        for port in _LEADER_ONLY_PORTS:
+            output = juju.exec(f"ss -tlnH 'sport = :{port}'", unit=name)
+            if unit_status.leader:
+                assert str(port) in output, (
+                    f"Expected leader-only port {port} on leader {name}, "
+                    f"got: {output!r}"
+                )
+            else:
+                assert str(port) not in output, (
+                    f"Leader-only port {port} must not be open on non-leader {name}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# Destructive tests — skipped on live models
+# ---------------------------------------------------------------------------
+
+
+def test_leadership_change_service_follows(
+    juju: jubilant.Juju, lbaas: jubilant.Juju
+):
+    """
+    When the current leader unit is removed, a new leader is elected and
+    LEADER_SERVICES must start on that new leader while DEFAULT_SERVICES remain
+    active across all surviving units.
+
+    Skipped on live models because it removes a unit temporarily.
+    """
+    if USE_HOST_JUJU_MODEL:
+        pytest.skip(
+            "test_leadership_change_service_follows removes a unit; "
+            "skipped on live model."
+        )
+
+    status = juju.status()
+    units = status.apps["landscape-server"].units
+
+    if len(units) <= 1:
+        pytest.skip("Need more than 1 unit to test leadership change")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    leader_name = next(n for n, u in units.items() if u.leader)
+
+    try:
+        juju.cli("remove-unit", leader_name, "--no-wait")
+
+        def new_leader_active(status):
+            app_units = status.apps["landscape-server"].units
+            return any(
+                u.leader and u.workload_status.current == "active"
+                for u in app_units.values()
+            )
+
+        juju.wait(new_leader_active, timeout=600)
+
+        new_status = juju.status()
+        new_leader = next(
+            n
+            for n, u in new_status.apps["landscape-server"].units.items()
+            if u.leader
+        )
+
+        for service in LEADER_SERVICES:
+            wait_for_service(juju, new_leader, service)
+
+        for name in new_status.apps["landscape-server"].units:
+            for service in DEFAULT_SERVICES:
+                wait_for_service(juju, name, service)
+    finally:
+        juju.cli("add-unit", "landscape-server", "-n", "1")
+        juju.wait(jubilant.all_active, timeout=600)
+
+
+def test_scale_out_and_in(juju: jubilant.Juju, lbaas: jubilant.Juju):
+    """
+    Adding a unit brings it to active with all DEFAULT_SERVICES running and
+    LEADER_SERVICES absent. Removing it leaves the model healthy.
+
+    Skipped on live models.
+    """
+    if USE_HOST_JUJU_MODEL:
+        pytest.skip("test_scale_out_and_in adds/removes units; skipped on live model.")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    original_count = len(juju.status().apps["landscape-server"].units)
+
+    try:
+        juju.cli("add-unit", "landscape-server", "-n", "1")
+        juju.wait(jubilant.all_active, timeout=600)
+
+        status = juju.status()
+        units = status.apps["landscape-server"].units
+        assert len(units) == original_count + 1, (
+            "Expected one extra unit after scale-out"
+        )
+
+        new_unit = next(
+            n for n, u in units.items() if not u.leader and n not in {
+                nu for nu in units if units[nu].leader
+            }
+        )
+
+        for service in DEFAULT_SERVICES:
+            wait_for_service(juju, new_unit, service)
+
+        for service in LEADER_SERVICES:
+            with pytest.raises(jubilant.CLIError):
+                juju.exec(f"systemctl is-active {service}.service", unit=new_unit)
+
+        juju.cli("remove-unit", new_unit, "--no-wait")
+        juju.wait(jubilant.all_active, timeout=600)
+
+        assert (
+            len(juju.status().apps["landscape-server"].units) == original_count
+        ), "Unit count did not return to original after scale-in"
+    finally:
+        current = len(juju.status().apps["landscape-server"].units)
+        if current != original_count:
+            juju.cli(
+                "remove-unit",
+                sorted(juju.status().apps["landscape-server"].units)[-1],
+                "--no-wait",
+            )
+            juju.wait(jubilant.all_active, timeout=600)
+
+
+def test_postgresql_failover_services_recover(
+    juju: jubilant.Juju, lbaas: jubilant.Juju
+):
+    """
+    After a PostgreSQL leader failover, landscape-server services must recover
+    automatically without manual intervention and continue serving HTTP.
+
+    Skipped on live models; intended for a dedicated failover pipeline.
+    """
+    if USE_HOST_JUJU_MODEL:
+        pytest.skip(
+            "test_postgresql_failover_services_recover triggers a pg failover; "
+            "skipped on live model. Run in a dedicated failover pipeline."
+        )
+
+    pg_status = juju.status()
+    pg_apps = [a for a in pg_status.apps if a.startswith("postgresql")]
+    if not pg_apps:
+        pytest.skip("No postgresql app found in model")
+
+    pg_app = pg_apps[0]
+    pg_units = pg_status.apps[pg_app].units
+    pg_leader = next(
+        (n for n, u in pg_units.items() if u.leader), None
+    )
+    if pg_leader is None or len(pg_units) <= 1:
+        pytest.skip("Need a multi-unit postgresql with a leader to test failover")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    haproxy_ip = _haproxy_ip(juju, lbaas)
+
+    try:
+        juju.exec("sudo systemctl stop postgresql", unit=pg_leader)
+
+        juju.wait(jubilant.all_active, timeout=600)
+
+        status = juju.status()
+        for name in status.apps["landscape-server"].units:
+            for service in DEFAULT_SERVICES:
+                wait_for_service(juju, name, service)
+
+        session = get_session()
+        response = session.get(f"https://{haproxy_ip}/ping", verify=False, timeout=30)
+        assert response.status_code == 200, (
+            f"appserver /ping returned {response.status_code} after pg failover"
+        )
+    finally:
+        juju.exec("sudo systemctl start postgresql", unit=pg_leader)
+        juju.wait(jubilant.all_active, timeout=600)
