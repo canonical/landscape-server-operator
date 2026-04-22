@@ -92,10 +92,6 @@ options:
     description: |
       The initial account registration key. Note this value cannot be set more
       than once.
-  smtp_relay_host:
-    type: string
-    default: ""
-    description: The SMTP server used to deliver outgoing mail.
   http_proxy:
     type: string
     default:

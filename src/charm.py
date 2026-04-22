@@ -279,6 +279,9 @@ class LandscapeServerCharm(CharmBase):
         self.framework.observe(
             self.smtp.on.smtp_data_available, self._on_smtp_data_available
         )
+        self.framework.observe(
+            self.on.smtp_relation_broken, self._on_smtp_relation_broken
+        )
 
         # State
         self._stored.set_default(
@@ -445,10 +448,6 @@ class LandscapeServerCharm(CharmBase):
                 self.root_gid,
             )
             self.unit.status = WaitingStatus("Waiting on relations")
-
-        if self.charm_config.smtp_relay_host:
-            self.unit.status = MaintenanceStatus("Configuring SMTP relay host")
-            self._configure_smtp(self.charm_config.smtp_relay_host)
 
         self._configure_openid()
         self._configure_oidc()
@@ -1431,18 +1430,39 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = WaitingStatus("Waiting on relations")
 
     def _on_smtp_data_available(self, event: SmtpDataAvailableEvent) -> None:
-        relay_host = event.host
-        if event.port:
-            relay_host = f"{relay_host}:{event.port}"
+        relation_data = self.smtp.get_relation_data_from_relation(event.relation)
+        if relation_data is None:
+            return
+
+        relay_host = relation_data.host
+        if relation_data.port:
+            relay_host = f"{relay_host}:{relation_data.port}"
 
         self._configure_smtp(f"[{relay_host}]")
+        self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
 
-        if event.user and event.password:
-            sasl_passwd_line = f"[{relay_host}] {event.user}:{event.password}\n"
-            with open(POSTFIX_SASL_PASSWD, "w") as f:
+    def _on_smtp_relation_broken(self, _) -> None:
+        self._clear_sasl_passwd()
+
+    def _write_sasl_passwd(self, relay_host: str, user, password) -> None:
+        if user and password:
+            sasl_passwd_line = f"[{relay_host}] {user}:{password}\n"
+            fd = os.open(
+                POSTFIX_SASL_PASSWD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(fd, "w") as f:
                 f.write(sasl_passwd_line)
-            os.chmod(POSTFIX_SASL_PASSWD, 0o600)
             check_call(["postmap", POSTFIX_SASL_PASSWD])
+            os.chmod(f"{POSTFIX_SASL_PASSWD}.db", 0o600)
+        else:
+            self._clear_sasl_passwd()
+
+    def _clear_sasl_passwd(self) -> None:
+        for path in (POSTFIX_SASL_PASSWD, f"{POSTFIX_SASL_PASSWD}.db"):
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
 
     def _configure_oidc(self) -> None:
         if not self.charm_config.oidc_issuer:  # not doing OIDC
