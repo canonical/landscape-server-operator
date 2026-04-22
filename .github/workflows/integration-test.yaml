@@ -14,25 +14,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    name: Build charm
+    uses: ./.github/workflows/build.yaml
+    secrets: inherit
+
   integration-tests:
     name: Integration tests
+    needs: build
     runs-on: [self-hosted, large]
     timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Download charm artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packed-charm-*--platform-ubuntu-24.04-amd64
+          merge-multiple: true
+
       - name: Set up LXD and Juju
         uses: charmed-kubernetes/actions-operator@main
         with:
           provider: lxd
           juju-channel: 3/stable
-
-      - name: Install charmcraft
-        run: sudo snap install charmcraft --channel latest/edge --classic
-
-      - name: Build charm
-        run: charmcraft pack --platform ubuntu@24.04:amd64
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
