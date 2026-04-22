@@ -100,7 +100,7 @@ def bundle(juju: jubilant.Juju) -> None:
 
 def bundle_path() -> pathlib.Path:
     """
-    Return the path to the landscape-server integration test bundle.
+    Return the full absolute path to the landscape-server integration test bundle.
     """
     path = pathlib.Path(__file__).parent / BUNDLE_NAME
     assert path.exists(), f"{path} not found."
