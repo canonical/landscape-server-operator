@@ -620,7 +620,7 @@ class LandscapeServerCharm(CharmBase):
         try:
             secret = self.model.get_secret(id=secret_id)
             content = secret.get_content(refresh=True)
-        except SecretNotFoundError:
+        except (SecretNotFoundError, ModelError):
             logger.warning("GPG secret '%s' not found or not accessible", secret_id)
             self.unit.status = BlockedStatus("GPG secret not found or not accessible")
             return False
