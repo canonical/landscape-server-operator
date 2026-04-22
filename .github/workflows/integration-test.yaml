@@ -22,7 +22,7 @@ jobs:
   integration-tests:
     name: Integration tests
     needs: build
-    runs-on: [self-hosted, large]
+    runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - name: Checkout
@@ -31,7 +31,7 @@ jobs:
       - name: Download charm artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: ${{ needs.build.outputs.artifact-prefix }}-*--platform-ubuntu@24.04-amd64
+          pattern: packed-charm-*--platform-ubuntu-24.04-amd64
           merge-multiple: true
 
       - name: Set up LXD and Juju
