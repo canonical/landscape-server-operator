@@ -28,7 +28,7 @@ applications:
       enable_hostagent_messenger: true
       enable_ubuntu_installer_attach: true
       root_url: https://landscape.local/
-      redirect_https: none
+      redirect_https: default
   haproxy:
     charm: ch:haproxy
     channel: 2.8/edge
