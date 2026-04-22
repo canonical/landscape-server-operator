@@ -44,6 +44,4 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Run integration tests
-        run: |
-          juju add-model testing
-          uv run --group integration pytest -v --tb native tests/integration/test_bundle.py --model testing
+        run: uv run --group integration pytest -v --tb native tests/integration
