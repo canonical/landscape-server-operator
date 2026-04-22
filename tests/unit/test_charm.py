@@ -2160,3 +2160,78 @@ def test_action_get_service_conf(monkeypatch):
     assert ctx.action_results is not None
     assert "config" in ctx.action_results
     assert json.loads(ctx.action_results["config"]) == conf
+
+
+class TestSmtpIntegration(unittest.TestCase):
+    def setUp(self):
+        self.harness = Harness(LandscapeServerCharm)
+        self.harness.begin()
+        self.harness.charm._configure_smtp = Mock()
+
+    def tearDown(self):
+        self.harness.cleanup()
+
+    def test_smtp_data_available_no_credentials_calls_configure_smtp(self):
+        event = Mock()
+        event.host = "smtp.example.com"
+        event.port = 587
+        event.user = None
+        event.password = None
+
+        self.harness.charm._on_smtp_data_available(event)
+
+        self.harness.charm._configure_smtp.assert_called_once_with(
+            "[smtp.example.com:587]"
+        )
+
+    def test_smtp_data_available_no_port(self):
+        event = Mock()
+        event.host = "smtp.example.com"
+        event.port = None
+        event.user = None
+        event.password = None
+
+        self.harness.charm._on_smtp_data_available(event)
+
+        self.harness.charm._configure_smtp.assert_called_once_with("[smtp.example.com]")
+
+    def test_smtp_data_available_writes_sasl_passwd(self):
+        event = Mock()
+        event.host = "smtp.example.com"
+        event.port = 587
+        event.user = "myuser"
+        event.password = "secret"
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ) as mocks:
+                self.harness.charm._on_smtp_data_available(event)
+
+            with open(sasl_passwd_path) as f:
+                content = f.read()
+
+        self.assertEqual(content, "[smtp.example.com:587] myuser:secret\n")
+        mocks["check_call"].assert_called_once_with(["postmap", sasl_passwd_path])
+
+    def test_smtp_data_available_no_sasl_passwd_when_no_credentials(self):
+        event = Mock()
+        event.host = "smtp.example.com"
+        event.port = 587
+        event.user = None
+        event.password = None
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ) as mocks:
+                self.harness.charm._on_smtp_data_available(event)
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        mocks["check_call"].assert_not_called()
