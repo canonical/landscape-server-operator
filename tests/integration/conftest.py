@@ -4,6 +4,7 @@ Integration test fixtures.
 
 import os
 import pathlib
+import tempfile
 import uuid
 
 import jubilant
@@ -100,11 +101,28 @@ def bundle(juju: jubilant.Juju) -> None:
 
 def bundle_path() -> pathlib.Path:
     """
-    Return the full absolute path to the landscape-server integration test bundle.
+    Return the path to the landscape-server integration test bundle, with the
+    local charm path rewritten to an absolute path.
+
+    Juju copies the bundle YAML into its own snap temp directory before parsing,
+    so relative charm paths are resolved from there rather than from the original
+    bundle location. Writing an absolute path avoids this.
     """
-    path = pathlib.Path(__file__).parent / BUNDLE_NAME
-    assert path.exists(), f"{path} not found."
-    return path
+    src = pathlib.Path(__file__).parent / BUNDLE_NAME
+    assert src.exists(), f"{src} not found."
+
+    content = src.read_text()
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("charm:"):
+            charm_val = stripped[len("charm:"):].strip().strip('"').strip("'")
+            if charm_val and not charm_val.startswith(("ch:", "local:")):
+                abs_path = (src.parent / charm_val).resolve()
+                content = content.replace(charm_val, str(abs_path))
+
+    tmp = pathlib.Path(tempfile.mkstemp(suffix=".yaml")[1])
+    tmp.write_text(content)
+    return tmp
 
 
 @pytest.fixture(scope="module")
