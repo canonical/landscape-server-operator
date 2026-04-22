@@ -9,16 +9,35 @@ on:
     - cron: "0 15 * * SAT"
   workflow_dispatch:
 
+concurrency:
+  group: integration-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration-tests:
     name: Integration tests
-    uses: canonical/operator-workflows/.github/workflows/integration_test.yaml@main
-    secrets: inherit
-    with:
-      provider: lxd
-      juju-channel: 3/stable
-      self-hosted-runner: true
-      self-hosted-runner-label: large
-      charmcraft-channel: latest/edge
-      modules: '["test_bundle.py"]'
-      with-uv: true
+    runs-on: [self-hosted, large]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up LXD and Juju
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          provider: lxd
+          juju-channel: 3/stable
+
+      - name: Install charmcraft
+        run: sudo snap install charmcraft --channel latest/edge --classic
+
+      - name: Build charm
+        run: charmcraft pack --platform ubuntu@24.04:amd64
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Run integration tests
+        run: |
+          juju add-model testing
+          uv run --group integration pytest -v --tb native tests/integration/test_bundle.py --model testing
