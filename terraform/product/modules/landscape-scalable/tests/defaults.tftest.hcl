@@ -24,8 +24,8 @@ run "validate_channel_defaults" {
   }
 
   assert {
-    condition     = var.haproxy.channel == "latest/edge"
-    error_message = "HAProxy channel should default to 'latest/edge'"
+    condition     = var.haproxy.channel == "2.8/edge"
+    error_message = "HAProxy channel should default to '2.8/edge'"
   }
 
   assert {
@@ -72,8 +72,8 @@ run "validate_base_defaults" {
   }
 
   assert {
-    condition     = var.haproxy.base == "ubuntu@22.04"
-    error_message = "HAProxy base should default to 'ubuntu@22.04'"
+    condition     = var.haproxy.base == "ubuntu@24.04"
+    error_message = "HAProxy base should default to 'ubuntu@24.04'"
   }
 
   assert {
@@ -106,8 +106,8 @@ run "validate_config_defaults" {
   }
 
   assert {
-    condition     = lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
-    error_message = "HAProxy should use SELFSIGNED SSL cert by default"
+    condition     = length(var.haproxy.config) == 0
+    error_message = "HAProxy should default to empty config"
   }
 }
 

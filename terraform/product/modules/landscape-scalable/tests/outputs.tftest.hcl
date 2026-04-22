@@ -86,21 +86,16 @@ run "validate_self_signed_output" {
   }
 }
 
-run "validate_self_signed_false_with_custom_cert" {
+run "validate_self_signed_false_without_certs" {
   command = plan
 
   variables {
-    haproxy = {
-      config = {
-        ssl_cert = "custom-cert-content"
-        ssl_key  = "custom-key-content"
-      }
-    }
+    haproxy_self_signed_certs = null
   }
 
   assert {
     condition     = output.haproxy_self_signed == false
-    error_message = "With custom SSL cert/key, haproxy_self_signed should be false"
+    error_message = "Without self-signed-certificates deployed, haproxy_self_signed should be false"
   }
 }
 
@@ -168,17 +163,15 @@ run "validate_outputs_with_config" {
   }
 }
 
-run "validate_internal_haproxy_outputs" {
+run "validate_haproxy_route_outputs" {
   command = plan
 
   variables {
     landscape_server = {
       revision = 216
     }
-    http_ingress                    = {}
-    hostagent_messenger_ingress     = {}
-    ubuntu_installer_attach_ingress = {}
-    lb_certs                        = {}
+    haproxy                 = null
+    haproxy_route_offer_url = "admin/lbaas:haproxy-route"
   }
 
   override_module {
@@ -186,76 +179,24 @@ run "validate_internal_haproxy_outputs" {
     outputs = {
       app_name = "landscape-server"
       requires = {
-        load_balancer_certificates      = "load-balancer-certificates"
-        http_ingress                    = "http-ingress"
-        hostagent_messenger_ingress     = "hostagent-messenger-ingress"
-        ubuntu_installer_attach_ingress = "ubuntu-installer-attach-ingress"
-        inbound_amqp                    = "inbound-amqp"
-        outbound_amqp                   = "outbound-amqp"
-        database                        = "database"
-        db                              = "db"
-        application_dashboard           = "application-dashboard"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
+        inbound_amqp                          = "inbound-amqp"
+        outbound_amqp                         = "outbound-amqp"
+        database                              = "database"
+        db                                    = "db"
+        application_dashboard                 = "application-dashboard"
       }
     }
-  }
-
-  assert {
-    condition     = output.has_internal_haproxy == true
-    error_message = "has_internal_haproxy should be true for rev 216+"
   }
 
   assert {
     condition     = output.haproxy_self_signed == null
-    error_message = "haproxy_self_signed should be null with internal haproxy"
-  }
-
-  assert {
-    condition     = output.ingress_configurators_deployed == true
-    error_message = "ingress_configurators_deployed should be true when internal haproxy enabled"
-  }
-}
-
-run "validate_legacy_haproxy_outputs" {
-  command = plan
-
-  variables {
-    landscape_server = {
-      revision = 150
-    }
-  }
-
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
-
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-    }
-  }
-
-  assert {
-    condition     = output.has_internal_haproxy == false
-    error_message = "has_internal_haproxy should be false for legacy revisions"
-  }
-
-  assert {
-    condition     = output.haproxy_self_signed != null
-    error_message = "haproxy_self_signed should not be null for legacy deployments"
-  }
-
-  assert {
-    condition     = output.ingress_configurators_deployed == false
-    error_message = "ingress_configurators_deployed should be false without internal haproxy"
+    error_message = "haproxy_self_signed should be null when legacy haproxy is not deployed"
   }
 }

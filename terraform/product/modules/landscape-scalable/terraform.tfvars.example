@@ -1,8 +1,6 @@
-model = "landscape"
-
 landscape_server = {
   channel  = "25.10/edge"
-  revision = 209
+  revision = 278
   base     = "ubuntu@22.04"
   config = {
     min_install      = "true"
