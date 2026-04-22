@@ -622,25 +622,47 @@ class LandscapeServerCharm(CharmBase):
             self.unit.status = BlockedStatus("GPG secret not found or not accessible")
             return False
 
-        passphrase = content.get("passphrase")
-        private_key = content.get("private-key")
+        passphrase = content.get("gpg-passphrase")
+        private_key = content.get("gpg-private-key")
 
         if not passphrase or not private_key:
             logger.error(
                 "GPG secret is missing required fields: "
-                "'passphrase' and/or 'private-key'"
+                "'gpg-passphrase' and/or 'gpg-private-key'"
             )
             self.unit.status = BlockedStatus("GPG secret missing required fields")
             return False
 
-        landscape_uid = user_exists("landscape").pw_uid
+        landscape_user = user_exists("landscape")
+        landscape_uid = landscape_user.pw_uid
+        landscape_gid = landscape_user.pw_gid
 
         os.makedirs(GPG_HOME_DIR, mode=0o700, exist_ok=True)
-        os.chown(GPG_HOME_DIR, landscape_uid, self.root_gid)
+        # Enforce 0700 explicitly — makedirs is subject to umask
+        os.chmod(GPG_HOME_DIR, 0o700)
+        os.chown(GPG_HOME_DIR, landscape_uid, landscape_gid)
+
+        # Set umask to 0o177 so open() creates the file with 0o600 immediately,
+        # avoiding a window where it could be world-readable
+        old_umask = os.umask(0o177)
+        try:
+            with open(GPG_PASSPHRASE_FILE, "w") as fp:
+                fp.write(passphrase)
+        finally:
+            os.umask(old_umask)
+        os.chown(GPG_PASSPHRASE_FILE, landscape_uid, landscape_gid)
 
         try:
             subprocess.run(
-                ["gpg", "--homedir", GPG_HOME_DIR, "--batch", "--import"],
+                [
+                    "gpg",
+                    "--homedir",
+                    GPG_HOME_DIR,
+                    "--batch",
+                    "--passphrase-file",
+                    GPG_PASSPHRASE_FILE,
+                    "--import",
+                ],
                 input=private_key,
                 check=True,
                 text=True,
@@ -650,12 +672,6 @@ class LandscapeServerCharm(CharmBase):
             logger.error("Failed to import GPG private key: %s", e.stderr)
             self.unit.status = BlockedStatus("Failed to import GPG key")
             return False
-
-        os.makedirs(os.path.dirname(GPG_PASSPHRASE_FILE), exist_ok=True)
-        with open(GPG_PASSPHRASE_FILE, "w") as fp:
-            fp.write(passphrase)
-        os.chmod(GPG_PASSPHRASE_FILE, 0o640)
-        os.chown(GPG_PASSPHRASE_FILE, landscape_uid, self.root_gid)
 
         logger.info("GPG credentials configured successfully")
         return True
@@ -733,7 +749,8 @@ class LandscapeServerCharm(CharmBase):
 
         self._configure_gpg()
 
-        self.unit.status = ActiveStatus("Unit is ready")
+        if not isinstance(self.unit.status, BlockedStatus):
+            self.unit.status = ActiveStatus("Unit is ready")
 
         # Indicate that this install is a charm install.
         prepend_default_settings({"DEPLOYED_FROM": "charm"})
