@@ -57,6 +57,7 @@ from ops.model import (
     MaintenanceStatus,
     ModelError,
     Relation,
+    SecretNotFoundError,
     WaitingStatus,
 )
 from pydantic import ValidationError
@@ -97,6 +98,9 @@ BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
+
+GPG_HOME_DIR = "/etc/landscape/gpg"
+GPG_PASSPHRASE_FILE = "/etc/landscape/gpg-passphrase"
 
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
@@ -271,6 +275,9 @@ class LandscapeServerCharm(CharmBase):
         self.framework.observe(
             self.on.get_service_conf_action, self._on_get_service_conf_action
         )
+
+        # Secrets
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
 
         # State
         self._stored.set_default(
@@ -529,6 +536,8 @@ class LandscapeServerCharm(CharmBase):
             self._write_cookie_encryption_key(cookie_encryption_key)
             self._stored.cookie_encryption_key = cookie_encryption_key
 
+        self._configure_gpg()
+
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
 
@@ -593,6 +602,73 @@ class LandscapeServerCharm(CharmBase):
         logger.info("Writing cookie encryption key")
         update_service_conf({"api": {"cookie-encryption-key": cookie_encryption_key}})
 
+    def _configure_gpg(self) -> bool:
+        """Write GPG credentials from the configured Juju secret.
+
+        Writes the passphrase to GPG_PASSPHRASE_FILE and imports the private
+        key into GPG_HOME_DIR. Returns True when GPG was configured
+        successfully, False when no secret is configured. Sets a BlockedStatus
+        and returns False on error.
+        """
+        secret_id = self.charm_config.gpg_secret_id
+        if not secret_id:
+            return False
+
+        try:
+            secret = self.model.get_secret(id=secret_id)
+            content = secret.get_content(refresh=True)
+        except SecretNotFoundError:
+            logger.error("GPG secret '%s' not found or not accessible", secret_id)
+            self.unit.status = BlockedStatus("GPG secret not found or not accessible")
+            return False
+
+        passphrase = content.get("passphrase")
+        private_key = content.get("private-key")
+
+        if not passphrase or not private_key:
+            logger.error(
+                "GPG secret is missing required fields: "
+                "'passphrase' and/or 'private-key'"
+            )
+            self.unit.status = BlockedStatus("GPG secret missing required fields")
+            return False
+
+        landscape_uid = user_exists("landscape").pw_uid
+
+        os.makedirs(GPG_HOME_DIR, mode=0o700, exist_ok=True)
+        os.chown(GPG_HOME_DIR, landscape_uid, self.root_gid)
+
+        try:
+            subprocess.run(
+                ["gpg", "--homedir", GPG_HOME_DIR, "--batch", "--import"],
+                input=private_key,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error("Failed to import GPG private key: %s", e.stderr)
+            self.unit.status = BlockedStatus("Failed to import GPG key")
+            return False
+
+        os.makedirs(os.path.dirname(GPG_PASSPHRASE_FILE), exist_ok=True)
+        with open(GPG_PASSPHRASE_FILE, "w") as fp:
+            fp.write(passphrase)
+        os.chmod(GPG_PASSPHRASE_FILE, 0o640)
+        os.chown(GPG_PASSPHRASE_FILE, landscape_uid, self.root_gid)
+
+        logger.info("GPG credentials configured successfully")
+        return True
+
+    def _on_secret_changed(self, event) -> None:
+        """Re-configure GPG credentials when the GPG secret is rotated."""
+        secret_id = self.charm_config.gpg_secret_id
+        if not secret_id or event.secret.id != secret_id:
+            return
+
+        if self._configure_gpg():
+            self._update_ready_status(restart_services=True)
+
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
@@ -654,6 +730,8 @@ class LandscapeServerCharm(CharmBase):
             write_license_file(
                 license_file, user_exists("landscape").pw_uid, self.root_gid
             )
+
+        self._configure_gpg()
 
         self.unit.status = ActiveStatus("Unit is ready")
 
