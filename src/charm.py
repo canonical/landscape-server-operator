@@ -99,8 +99,8 @@ AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistrat
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
 
-GPG_HOME_DIR = "/etc/landscape/gpg"
-GPG_PASSPHRASE_FILE = "/etc/landscape/gpg-passphrase"
+GPG_HOME_DIR = "/etc/landscape-server/gpg"
+GPG_PASSPHRASE_FILE = "/etc/landscape-server/gpg-passphrase.txt"
 
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
