@@ -31,7 +31,7 @@ jobs:
       - name: Download charm artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: packed-charm-*--platform-ubuntu-24.04-amd64
+          pattern: ${{ needs.build.outputs.artifact-prefix }}-*--platform-ubuntu@24.04-amd64
           merge-multiple: true
 
       - name: Set up LXD and Juju
