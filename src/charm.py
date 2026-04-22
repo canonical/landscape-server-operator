@@ -38,6 +38,7 @@ from charms.operator_libs_linux.v1.systemd import (
     service_running,
     SystemdError,
 )
+from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -92,6 +93,7 @@ DPKG_RECONFIGURE = "/usr/sbin/dpkg-reconfigure"
 LSCTL = "/usr/bin/lsctl"
 NRPE_D_DIR = "/etc/nagios/nrpe.d"
 POSTFIX_CF = "/etc/postfix/main.cf"
+POSTFIX_SASL_PASSWD = "/etc/postfix/sasl_passwd"
 SCHEMA_SCRIPT = "/usr/bin/landscape-schema"
 BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
@@ -270,6 +272,12 @@ class LandscapeServerCharm(CharmBase):
         )
         self.framework.observe(
             self.on.get_service_conf_action, self._on_get_service_conf_action
+        )
+
+        # SMTP
+        self.smtp = SmtpRequires(self)
+        self.framework.observe(
+            self.smtp.on.smtp_data_available, self._on_smtp_data_available
         )
 
         # State
@@ -1421,6 +1429,20 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = BlockedStatus("postfix configuration failed")
         else:
             self.unit.status = WaitingStatus("Waiting on relations")
+
+    def _on_smtp_data_available(self, event: SmtpDataAvailableEvent) -> None:
+        relay_host = event.host
+        if event.port:
+            relay_host = f"{relay_host}:{event.port}"
+
+        self._configure_smtp(f"[{relay_host}]")
+
+        if event.user and event.password:
+            sasl_passwd_line = f"[{relay_host}] {event.user}:{event.password}\n"
+            with open(POSTFIX_SASL_PASSWD, "w") as f:
+                f.write(sasl_passwd_line)
+            os.chmod(POSTFIX_SASL_PASSWD, 0o600)
+            check_call(["postmap", POSTFIX_SASL_PASSWD])
 
     def _configure_oidc(self) -> None:
         if not self.charm_config.oidc_issuer:  # not doing OIDC
