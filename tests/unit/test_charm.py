@@ -2465,4 +2465,3 @@ class TestSmtpIntegration(unittest.TestCase):
         """_on_smtp_relation_broken does not raise if sasl files don't exist."""
         with patch("charm.POSTFIX_SASL_PASSWD", "/nonexistent/sasl_passwd"):
             self.harness.charm._on_smtp_relation_broken(Mock())
-
