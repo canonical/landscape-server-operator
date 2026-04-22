@@ -2156,7 +2156,7 @@ class TestSmtpIntegration(unittest.TestCase):
         self.harness.charm._on_smtp_data_available(event)
 
         self.harness.charm._configure_smtp.assert_called_once_with(
-            "[smtp.example.com:587]"
+            "[smtp.example.com]:587"
         )
 
     def test_smtp_data_available_no_port(self):
@@ -2184,7 +2184,7 @@ class TestSmtpIntegration(unittest.TestCase):
                 content = f.read()
             file_mode = oct(os.stat(sasl_passwd_path).st_mode & 0o777)
 
-        self.assertEqual(content, "[smtp.example.com:587] myuser:secret\n")
+        self.assertEqual(content, "[smtp.example.com]:587 myuser:secret\n")
         self.assertEqual(file_mode, oct(0o600))
         mocks["check_call"].assert_called_once_with(["postmap", sasl_passwd_path])
 
