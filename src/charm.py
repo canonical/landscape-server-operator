@@ -1432,21 +1432,27 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
     def _on_smtp_data_available(self, event: SmtpDataAvailableEvent) -> None:
         relation_data = self.smtp.get_relation_data_from_relation(event.relation)
         if relation_data is None:
+            logger.warning("smtp_data_available fired but relation data is empty")
             return
 
-        relay_host = relation_data.host
-        if relation_data.port:
-            relay_host = f"{relay_host}:{relation_data.port}"
+        host = relation_data.host
+        # Bracket bare hostnames and IPv4 addresses; IPv6 literals are already bracketed
+        if not host.startswith("["):
+            host = f"[{host}]"
+        relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
 
-        self._configure_smtp(f"[{relay_host}]")
+        logger.info("Configuring SMTP relay: %s", relay_host)
+        self._configure_smtp(relay_host)
         self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
 
     def _on_smtp_relation_broken(self, _) -> None:
         self._clear_sasl_passwd()
 
-    def _write_sasl_passwd(self, relay_host: str, user, password) -> None:
-        if user and password:
-            sasl_passwd_line = f"[{relay_host}] {user}:{password}\n"
+    def _write_sasl_passwd(
+        self, relay_host: str, user: str | None, password: str | None
+    ) -> None:
+        if user is not None and password is not None:
+            sasl_passwd_line = f"{relay_host} {user}:{password}\n"
             fd = os.open(
                 POSTFIX_SASL_PASSWD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
             )
@@ -1454,6 +1460,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 f.write(sasl_passwd_line)
             check_call(["postmap", POSTFIX_SASL_PASSWD])
             os.chmod(f"{POSTFIX_SASL_PASSWD}.db", 0o600)
+            logger.info("SMTP SASL credentials written to %s", POSTFIX_SASL_PASSWD)
         else:
             self._clear_sasl_passwd()
 
@@ -1461,6 +1468,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         for path in (POSTFIX_SASL_PASSWD, f"{POSTFIX_SASL_PASSWD}.db"):
             try:
                 os.unlink(path)
+                logger.info("Removed stale SMTP SASL file %s", path)
             except FileNotFoundError:
                 pass
 
