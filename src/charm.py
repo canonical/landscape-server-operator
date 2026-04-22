@@ -612,6 +612,7 @@ class LandscapeServerCharm(CharmBase):
         """
         secret_id = self.charm_config.gpg_secret_id
         if not secret_id:
+            logger.debug("gpg_secret_id not configured, skipping GPG setup")
             return False
 
         self.unit.status = MaintenanceStatus("Configuring GPG credentials")
