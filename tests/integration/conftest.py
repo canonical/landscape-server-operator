@@ -5,22 +5,15 @@ Integration test fixtures.
 import os
 import pathlib
 import tempfile
-import uuid
 
 import jubilant
 import pytest
-
-from tests.integration.helpers import has_haproxy_route_provider
 
 BUNDLE_NAME = "bundle.yaml"
 """
 The name of the bundle used for integration testing.
 """
-
-
 WAIT_TIMEOUT_SECONDS = 60 * 20  # Landscape takes a long time to deploy.
-
-
 USE_HOST_JUJU_MODEL = os.getenv("LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL", False)
 """
 If `True`, return a reference the current Juju model on the host instead of a temporary
@@ -37,8 +30,6 @@ LBAAS_MODEL_NAME = os.getenv("LBAAS_MODEL_NAME", "lbaas")
 """
 Name of the LBaaS model to use when `USE_HOST_LBAAS_MODEL` is `True`.
 """
-
-
 @pytest.fixture(scope="module")
 def host_juju():
     """
@@ -51,8 +42,6 @@ def host_juju():
     re-deploy the bundle in between attempts.
     """
     yield _host_juju()
-
-
 def _host_juju():
     juju = jubilant.Juju()
     expected_applications = {
@@ -66,8 +55,6 @@ def _host_juju():
         assert app in model_applications
 
     return juju
-
-
 @pytest.fixture(scope="module")
 def juju():
     """
@@ -79,8 +66,6 @@ def juju():
     else:
         with jubilant.temp_model() as juju:
             yield juju
-
-
 @pytest.fixture(scope="module")
 def bundle(juju: jubilant.Juju) -> None:
     """
@@ -97,8 +82,6 @@ def bundle(juju: jubilant.Juju) -> None:
             successes=5,  # Landscape can take a while to come up, fully active.
             delay=5.0,
         )
-
-
 def bundle_path() -> pathlib.Path:
     """
     Return the path to the landscape-server integration test bundle, with the
@@ -123,43 +106,27 @@ def bundle_path() -> pathlib.Path:
     tmp = pathlib.Path(tempfile.mkstemp(suffix=".yaml")[1])
     tmp.write_text(content)
     return tmp
-
-
 @pytest.fixture(scope="module")
-def lbaas(juju: jubilant.Juju):
+def lbaas(juju: jubilant.Juju, bundle: None):
     """
-    Set up external HAProxy in a separate model for LBaaS testing.
-
-    This fixture can either:
-    - Return the existing juju model if USE_HOST_JUJU_MODEL is True
-        (haproxy already local)
-    - Use an existing lbaas model (if USE_HOST_LBAAS_MODEL is True)
-    - Create a temporary model and deploy haproxy + self-signed-certificates
+    Provide a reference to the HAProxy model for tests that need it.
 
     Environment variables:
-    - LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL: Return local model directly
-        (haproxy co-deployed)
-    - LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL: Set to use existing lbaas deployment
-    - LBAAS_MODEL_NAME: Name of the lbaas model (default: "lbaas")
+    - LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL: Yield local model directly when haproxy
+        is co-deployed.
+    - LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL: Use an existing separate lbaas model.
+    - LBAAS_MODEL_NAME: Name of the lbaas model (default: "lbaas").
+
+    Yields None when no separate lbaas model is configured; tests that require a
+    distinct lbaas model skip themselves via their own `lbaas is None` guards.
     """
-    if (
-        USE_HOST_JUJU_MODEL
-        and not USE_HOST_LBAAS_MODEL
-        and "haproxy" in juju.status().apps
-    ):
+    if USE_HOST_JUJU_MODEL and not USE_HOST_LBAAS_MODEL and "haproxy" in juju.status().apps:
         yield juju
         return
-
-    status = juju.status()
-    app_status = status.apps.get("landscape-server")
-
-    if not app_status or not has_haproxy_route_provider(juju, "landscape-server"):
-        pytest.skip("HAProxy route not configured, skipping...")
 
     if USE_HOST_LBAAS_MODEL:
         lbaas_model = LBAAS_MODEL_NAME
         lbaas_juju = jubilant.Juju(model=lbaas_model)
-
         try:
             lbaas_status = lbaas_juju.status()
             assert "haproxy" in lbaas_status.apps, "haproxy not found in lbaas model"
@@ -167,71 +134,6 @@ def lbaas(juju: jubilant.Juju):
             pytest.fail(
                 f"Failed to connect to existing lbaas model '{lbaas_model}': {e}"
             )
-
         yield lbaas_juju
     else:
-        lbaas_model = str(uuid.uuid4())
-
-        juju.add_model(lbaas_model)
-        lbaas_juju = jubilant.Juju(model=lbaas_model)
-
-        try:
-            lbaas_juju.deploy("haproxy", channel="2.8/edge")
-            lbaas_juju.config(
-                "haproxy",
-                values={"external-hostname": "landscape.local", "enable-hsts": "false"},
-            )
-            lbaas_juju.deploy("self-signed-certificates", channel="1/stable")
-            lbaas_juju.wait(jubilant.all_active, timeout=600)
-
-            lbaas_juju.integrate(
-                "haproxy:certificates", "self-signed-certificates:certificates"
-            )
-            lbaas_juju.integrate(
-                "haproxy:receive-ca-certs", "self-signed-certificates:send-ca-cert"
-            )
-            lbaas_juju.wait(jubilant.all_active, timeout=300)
-
-            lbaas_juju.offer("haproxy", endpoint="haproxy-route")
-
-            offer_app_name = "lbaas-haproxy"
-            juju.consume(f"admin/{lbaas_model}.haproxy", offer_app_name)
-
-            juju.integrate(
-                f"{offer_app_name}:haproxy-route",
-                "landscape-server:appserver-haproxy-route",
-            )
-            juju.wait(
-                lambda status: has_haproxy_route_provider(
-                    juju, "appserver-haproxy-route"
-                ),
-                timeout=300,
-            )
-
-            juju.integrate(
-                f"{offer_app_name}:haproxy-route",
-                "landscape-server:hostagent-messenger-haproxy-route",
-            )
-            juju.wait(
-                lambda status: has_haproxy_route_provider(
-                    juju, "hostagent-messenger-haproxy-route"
-                ),
-                timeout=300,
-            )
-
-            juju.integrate(
-                f"{offer_app_name}:haproxy-route",
-                "landscape-server:ubuntu-installer-attach-haproxy-route",
-            )
-            juju.wait(
-                lambda status: has_haproxy_route_provider(
-                    juju, "ubuntu-installer-attach-haproxy-route"
-                ),
-                timeout=300,
-            )
-
-            juju.wait(jubilant.all_active, timeout=600)
-
-            yield lbaas_juju
-        finally:
-            juju.destroy_model(lbaas_model, destroy_storage=True, force=True)
+        yield None
