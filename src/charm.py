@@ -750,8 +750,7 @@ class LandscapeServerCharm(CharmBase):
             write_license_file(
                 license_file, user_exists("landscape").pw_uid, self.root_gid
             )
-
-        self.unit.status = ActiveStatus("Unit is ready")
+            self.unit.status = WaitingStatus("Waiting on relations")
 
         # Indicate that this install is a charm install.
         prepend_default_settings({"DEPLOYED_FROM": "charm"})
