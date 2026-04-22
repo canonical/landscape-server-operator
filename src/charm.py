@@ -614,11 +614,13 @@ class LandscapeServerCharm(CharmBase):
         if not secret_id:
             return False
 
+        self.unit.status = MaintenanceStatus("Configuring GPG credentials")
+
         try:
             secret = self.model.get_secret(id=secret_id)
             content = secret.get_content(refresh=True)
         except SecretNotFoundError:
-            logger.error("GPG secret '%s' not found or not accessible", secret_id)
+            logger.warning("GPG secret '%s' not found or not accessible", secret_id)
             self.unit.status = BlockedStatus("GPG secret not found or not accessible")
             return False
 
@@ -626,7 +628,7 @@ class LandscapeServerCharm(CharmBase):
         private_key = content.get("gpg-private-key")
 
         if not passphrase or not private_key:
-            logger.error(
+            logger.warning(
                 "GPG secret is missing required fields: "
                 "'gpg-passphrase' and/or 'gpg-private-key'"
             )
@@ -674,6 +676,7 @@ class LandscapeServerCharm(CharmBase):
             return False
 
         logger.info("GPG credentials configured successfully")
+        self.unit.status = WaitingStatus("Waiting on relations")
         return True
 
     def _on_secret_changed(self, event) -> None:
@@ -747,13 +750,12 @@ class LandscapeServerCharm(CharmBase):
                 license_file, user_exists("landscape").pw_uid, self.root_gid
             )
 
-        self._configure_gpg()
-
-        if not isinstance(self.unit.status, BlockedStatus):
-            self.unit.status = ActiveStatus("Unit is ready")
+        self.unit.status = ActiveStatus("Unit is ready")
 
         # Indicate that this install is a charm install.
         prepend_default_settings({"DEPLOYED_FROM": "charm"})
+
+        self._configure_gpg()
 
         self._update_ready_status()
 
