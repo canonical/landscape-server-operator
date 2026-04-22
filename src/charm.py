@@ -21,6 +21,16 @@ from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
+from charmlibs import apt
+from charmlibs.apt import PackageError, PackageNotFoundError
+from charmlibs.passwd import group_exists, user_exists
+from charmlibs.systemd import (
+    service_pause,
+    service_reload,
+    service_resume,
+    service_running,
+    SystemdError,
+)
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -28,16 +38,6 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
-from charms.operator_libs_linux.v0 import apt
-from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
-from charms.operator_libs_linux.v0.passwd import group_exists, user_exists
-from charms.operator_libs_linux.v1.systemd import (
-    service_pause,
-    service_reload,
-    service_resume,
-    service_running,
-    SystemdError,
-)
 from ops import main, Port
 from ops.charm import (
     ActionEvent,

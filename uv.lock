@@ -49,6 +49,36 @@ wheels = [
 ]
 
 [[package]]
+name = "charmlibs-apt"
+version = "1.0.0.post0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fd/58/33e87779fdbcf62a3b34e3444d7175c1168b4b2726cc29c98849c09ac086/charmlibs_apt-1.0.0.post0.tar.gz", hash = "sha256:9c2e0b3c1f553ebcaae99c9aad72e15383aec56677a8dd3f6479dc6f084189a6", size = 31942, upload-time = "2025-10-15T02:40:29.521Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/92/4db19cd8bc94db51a115f7a2e3c46d96b991ca7ebe27207beac9a6570bc6/charmlibs_apt-1.0.0.post0-py3-none-any.whl", hash = "sha256:958e84719eb1feff539f058dc6c7af648c53c88b9ebe7c6157ec8d2bdf5fbfc6", size = 19287, upload-time = "2025-10-15T02:40:27.756Z" },
+]
+
+[[package]]
+name = "charmlibs-passwd"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/b3/220b6aa7bed9b189723db0231dec128e5a4e9bc69266f225b36a790eee0b/charmlibs_passwd-1.0.1.tar.gz", hash = "sha256:e108456b040b2af29a0db6e273a0609fb1719043ae3c4c7926c37f0ce2990ce7", size = 16233, upload-time = "2026-03-16T22:43:49.686Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/12/d994526c5e42185305411d5a880f441db0fc6b3dd576346186c93c5ad2f7/charmlibs_passwd-1.0.1-py3-none-any.whl", hash = "sha256:77d68d99791531ca24250cf8bfa3129dc21847d006bd987dcdfc95055679289f", size = 5020, upload-time = "2026-03-16T22:43:48.306Z" },
+]
+
+[[package]]
+name = "charmlibs-systemd"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/3d/234da07da24ec5ae37184e6b05eeccb994f4e786829cd8efe15b3dff45ee/charmlibs_systemd-1.0.0.tar.gz", hash = "sha256:947e93b076e105509b190020ec16de051e9015c1eb12904192fb39489e0e1caa", size = 15746, upload-time = "2025-11-26T21:32:08.399Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/2e/5fe4d18e52df0fedbf4c4a9e1f6fe0f93f11611a670afb26f808cfd44208/charmlibs_systemd-1.0.0-py3-none-any.whl", hash = "sha256:37d4022e28f70f7a2a54fbff7c5694d25dc62dbb8680feffabde8c324a432199", size = 4904, upload-time = "2025-11-26T21:32:07.103Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.7"
 source = { registry = "https://pypi.org/simple" }
@@ -409,6 +439,9 @@ name = "landscape-server-charm"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "charmlibs-apt" },
+    { name = "charmlibs-passwd" },
+    { name = "charmlibs-systemd" },
     { name = "cosl" },
     { name = "ops" },
     { name = "pydantic" },
@@ -433,6 +466,9 @@ integration = [
 
 [package.metadata]
 requires-dist = [
+    { name = "charmlibs-apt", specifier = "==1.0.0.post0" },
+    { name = "charmlibs-passwd", specifier = "==1.0.1" },
+    { name = "charmlibs-systemd", specifier = "==1.0.0" },
     { name = "cosl", specifier = "==1.4.0" },
     { name = "ops", specifier = "==2.23.1" },
     { name = "pydantic", specifier = "==2.9.2" },

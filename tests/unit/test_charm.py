@@ -13,8 +13,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
 
-from charms.operator_libs_linux.v0 import apt
-from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
+from charmlibs import apt
+from charmlibs.apt import PackageError, PackageNotFoundError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (

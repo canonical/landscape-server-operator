@@ -15,7 +15,7 @@ from string import ascii_letters, digits
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from charms.operator_libs_linux.v1.systemd import daemon_reload
+from charmlibs.systemd import daemon_reload
 
 from database import get_postgres_owner_role_from_version, PostgresRoles
 from helpers import migrate_service_conf
