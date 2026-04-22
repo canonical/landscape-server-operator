@@ -30,6 +30,8 @@ LBAAS_MODEL_NAME = os.getenv("LBAAS_MODEL_NAME", "lbaas")
 """
 Name of the LBaaS model to use when `USE_HOST_LBAAS_MODEL` is `True`.
 """
+
+
 @pytest.fixture(scope="module")
 def host_juju():
     """
@@ -42,6 +44,8 @@ def host_juju():
     re-deploy the bundle in between attempts.
     """
     yield _host_juju()
+
+
 def _host_juju():
     juju = jubilant.Juju()
     expected_applications = {
@@ -55,6 +59,8 @@ def _host_juju():
         assert app in model_applications
 
     return juju
+
+
 @pytest.fixture(scope="module")
 def juju():
     """
@@ -66,6 +72,8 @@ def juju():
     else:
         with jubilant.temp_model() as juju:
             yield juju
+
+
 @pytest.fixture(scope="module")
 def bundle(juju: jubilant.Juju) -> None:
     """
@@ -82,6 +90,8 @@ def bundle(juju: jubilant.Juju) -> None:
             successes=5,  # Landscape can take a while to come up, fully active.
             delay=5.0,
         )
+
+
 def bundle_path() -> pathlib.Path:
     """
     Return the path to the landscape-server integration test bundle, with the
@@ -98,7 +108,7 @@ def bundle_path() -> pathlib.Path:
     for line in content.splitlines():
         stripped = line.strip()
         if stripped.startswith("charm:"):
-            charm_val = stripped[len("charm:"):].strip().strip('"').strip("'")
+            charm_val = stripped[len("charm:") :].strip().strip('"').strip("'")
             if charm_val and not charm_val.startswith(("ch:", "local:")):
                 abs_path = (src.parent / charm_val).resolve()
                 content = content.replace(charm_val, str(abs_path))
@@ -106,6 +116,8 @@ def bundle_path() -> pathlib.Path:
     tmp = pathlib.Path(tempfile.mkstemp(suffix=".yaml")[1])
     tmp.write_text(content)
     return tmp
+
+
 @pytest.fixture(scope="module")
 def lbaas(juju: jubilant.Juju, bundle: None):
     """
@@ -120,7 +132,8 @@ def lbaas(juju: jubilant.Juju, bundle: None):
     Yields None when no separate lbaas model is configured; tests that require a
     distinct lbaas model skip themselves via their own `lbaas is None` guards.
     """
-    if USE_HOST_JUJU_MODEL and not USE_HOST_LBAAS_MODEL and "haproxy" in juju.status().apps:
+    haproxy_in_local_model = "haproxy" in juju.status().apps
+    if USE_HOST_JUJU_MODEL and not USE_HOST_LBAAS_MODEL and haproxy_in_local_model:
         yield juju
         return
 
