@@ -3,7 +3,12 @@ name = "landscape-server-charm"
 version = "0.1.0"
 description = "Juju charm for deploying and managing Landscape Server"
 requires-python = ">=3.10"
-dependencies = ["cosl==1.4.0", "ops==2.23.1", "pydantic==2.9.2"]
+dependencies = [
+    "cosl==1.4.0",
+    "email-validator>=2",
+    "ops==2.23.1",
+    "pydantic==2.9.2",
+]
 
 [dependency-groups]
 dev = [

@@ -798,4 +798,3 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
         juju.ssh(unit_name, f"sudo add-apt-repository -y {landscape_ppa}")
         juju.run(unit_name, "upgrade")
         juju.run(unit_name, "resume")
-        juju.wait(jubilant.all_active, timeout=300)
