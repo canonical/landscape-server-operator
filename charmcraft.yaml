@@ -13,6 +13,8 @@ charm-libs:
     version: "0"
   - lib: haproxy.haproxy_route
     version: "1"
+  - lib: operator_libs_linux.snap
+    version: "2"
 
 parts:
   # "uv-deps" is a magic part name charmcraft uses to satisfy the uv plugin's

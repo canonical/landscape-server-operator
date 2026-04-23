@@ -38,6 +38,7 @@ from charms.operator_libs_linux.v1.systemd import (
     service_running,
     SystemdError,
 )
+from charms.operator_libs_linux.v2 import snap
 from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (
@@ -106,6 +107,7 @@ LANDSCAPE_PACKAGES = (
     "landscape-client",
     "landscape-common",
 )
+LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
@@ -415,6 +417,19 @@ class LandscapeServerCharm(CharmBase):
             return
 
         try:
+            snap.ensure(
+                LANDSCAPE_OUTBOX_SNAP,
+                snap.SnapState.Latest.value,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as e:
+            self.unit.status = MaintenanceStatus(
+                "Failed to refresh landscape-outbox snap."
+            )
+            logger.exception(e)
+            return
+
+        try:
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
@@ -652,6 +667,16 @@ class LandscapeServerCharm(CharmBase):
         except (PackageNotFoundError, PackageError, CalledProcessError) as exc:
             logger.error("Failed to install packages")
             raise exc  # This will trigger juju's exponential retry
+
+        self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
+        try:
+            snap.add(
+                LANDSCAPE_OUTBOX_SNAP,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as exc:
+            logger.error("Failed to install landscape-outbox snap")
+            raise exc
 
         # Write the license file, if it exists.
         license_file = self.charm_config.license_file
