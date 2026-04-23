@@ -15,6 +15,7 @@ from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
 
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
+from charms.operator_libs_linux.v2.snap import SnapError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (
@@ -32,6 +33,7 @@ from charm import (
     DEFAULT_SERVICES,
     get_modified_env_vars,
     HASH_ID_DATABASES,
+    LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LandscapeServerCharm,
@@ -358,6 +360,40 @@ class TestOnConfigChanged:
         state_out = ctx.run(event, leader_state)
 
         assert expected_port in state_out.opened_ports
+
+    def test_outbox_snap_ensure_called(self, snap_fixture):
+        """Config-changed calls snap.ensure for landscape-outbox."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"outbox_snap_channel": "latest/edge"})
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel="latest/edge",
+        )
+
+    def test_outbox_snap_ensure_default_channel(self, snap_fixture):
+        """Config-changed uses the default channel when not overridden."""
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel="latest/stable",
+        )
+
+    def test_outbox_snap_ensure_failure_sets_maintenance(self, snap_fixture):
+        """If snap.ensure fails, the unit enters maintenance status."""
+        snap_fixture.ensure.side_effect = SnapError("refresh failed")
+
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        state_out = ctx.run(ctx.on.config_changed(), state)
+
+        assert isinstance(state_out.unit_status, MaintenanceStatus)
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
@@ -814,6 +850,7 @@ class TestCharm(unittest.TestCase):
             "charm",
             check_call=DEFAULT,
             apt=DEFAULT,
+            snap=DEFAULT,
             prepend_default_settings=DEFAULT,
             update_service_conf=DEFAULT,
         )
@@ -832,6 +869,10 @@ class TestCharm(unittest.TestCase):
         mocks["apt"].add_package.assert_called_once_with(
             ["landscape-server", "landscape-hashids"],
             update_cache=True,
+        )
+        mocks["snap"].add.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            channel="latest/stable",
         )
         status = harness.charm.unit.status
         self.assertIsInstance(status, WaitingStatus)
