@@ -40,6 +40,12 @@ jobs:
           provider: lxd
           juju-channel: 3/stable
 
+      - name: Enable LXD container internet access
+        run: |
+          sudo sysctl -w net.ipv4.ip_forward=1
+          IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
+          sudo iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
