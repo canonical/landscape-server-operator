@@ -1,4 +1,4 @@
-# © 2025 Canonical Ltd.
+# © 2026 Canonical Ltd.
 
 # The following outputs are meant to conform with Canonical's standards for
 # charm modules in a Terraform ecosystem (CC008).
