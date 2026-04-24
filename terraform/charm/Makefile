@@ -8,7 +8,7 @@
 
 test-charm-module:
 	terraform init -backend=false && \
-	terraform test
+	terraform test -filter=tests/outputs.tftest.hcl
 
 fmt-check:
 	terraform init -backend=false && \

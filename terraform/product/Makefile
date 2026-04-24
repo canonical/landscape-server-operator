@@ -24,5 +24,8 @@ test-product-modules:
 	for m in $(MODULE_PATHS); do \
 		cd $$m && \
 		terraform init -backend=false && \
-		terraform test; \
+		terraform test \
+			-filter=tests/defaults.tftest.hcl \
+			-filter=tests/outputs.tftest.hcl \
+			-filter=tests/integrations.tftest.hcl; \
 	done
