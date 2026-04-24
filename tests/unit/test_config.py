@@ -34,8 +34,6 @@ def test_defaults():
     assert config.admin_password is None
     assert config.registration_key is None
 
-    assert config.smtp_relay_host == ""
-
     assert config.http_proxy is None
     assert config.https_proxy is None
     assert config.no_proxy is None

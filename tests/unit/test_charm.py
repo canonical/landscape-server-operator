@@ -1405,42 +1405,6 @@ class TestCharm(unittest.TestCase):
             }
         )
 
-    @patch("charm.update_service_conf")
-    def test_on_config_changed_no_smtp_change(self, _):
-        self.harness.charm._update_ready_status = Mock()
-        self.harness.charm._configure_smtp = Mock()
-
-        peer_relation_id = self.harness.add_relation("replicas", "landscape-server")
-        self.harness.update_relation_data(
-            peer_relation_id, "landscape-server", {"leader-ip": "test"}
-        )
-
-        with patch.object(
-            self.harness.charm, "_provide_all_haproxy_route_requirements"
-        ):
-            self.harness.update_config({"smtp_relay_host": ""})
-
-        self.harness.charm._configure_smtp.assert_not_called()
-        self.assertEqual(self.harness.charm._update_ready_status.call_count, 2)
-
-    @patch("charm.update_service_conf")
-    def test_on_config_changed_smtp_change(self, _):
-        self.harness.charm._update_ready_status = Mock()
-        self.harness.charm._configure_smtp = Mock()
-
-        peer_relation_id = self.harness.add_relation("replicas", "landscape-server")
-        self.harness.update_relation_data(
-            peer_relation_id, "landscape-server", {"leader-ip": "test"}
-        )
-
-        with patch.object(
-            self.harness.charm, "_provide_all_haproxy_route_requirements"
-        ):
-            self.harness.update_config({"smtp_relay_host": "smtp.example.com"})
-
-        self.harness.charm._configure_smtp.assert_called_once_with("smtp.example.com")
-        self.assertEqual(self.harness.charm._update_ready_status.call_count, 2)
-
     def test_configure_smtp_relay_host(self):
         mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
         with open(mock_postfix_cf, "w") as mock_postfix_cf_file:
@@ -2160,3 +2124,142 @@ def test_action_get_service_conf(monkeypatch):
     assert ctx.action_results is not None
     assert "config" in ctx.action_results
     assert json.loads(ctx.action_results["config"]) == conf
+
+
+class TestSmtpIntegration(unittest.TestCase):
+    def setUp(self):
+        self.harness = Harness(LandscapeServerCharm)
+        self.harness.begin()
+        self.harness.charm._configure_smtp = Mock()
+
+    def tearDown(self):
+        self.harness.cleanup()
+
+    def _make_event(self, relation_data):
+        event = Mock()
+        self.harness.charm.smtp.get_relation_data_from_relation = Mock(
+            return_value=relation_data
+        )
+        return event
+
+    def _make_relation_data(self, host, port, user=None, password=None):
+        data = Mock()
+        data.host = host
+        data.port = port
+        data.user = user
+        data.password = password
+        return data
+
+    def test_smtp_data_available_no_credentials_calls_configure_smtp(self):
+        event = self._make_event(self._make_relation_data("smtp.example.com", 587))
+
+        self.harness.charm._on_smtp_data_available(event)
+
+        self.harness.charm._configure_smtp.assert_called_once_with(
+            "[smtp.example.com]:587"
+        )
+
+    def test_smtp_data_available_no_port(self):
+        event = self._make_event(self._make_relation_data("smtp.example.com", None))
+
+        self.harness.charm._on_smtp_data_available(event)
+
+        self.harness.charm._configure_smtp.assert_called_once_with("[smtp.example.com]")
+
+    def test_smtp_data_available_writes_sasl_passwd(self):
+        event = self._make_event(
+            self._make_relation_data("smtp.example.com", 587, "myuser", "secret")
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ) as mocks:
+                self.harness.charm._on_smtp_data_available(event)
+
+            with open(sasl_passwd_path) as f:
+                content = f.read()
+            file_mode = oct(os.stat(sasl_passwd_path).st_mode & 0o777)
+
+        self.assertEqual(content, "[smtp.example.com]:587 myuser:secret\n")
+        self.assertEqual(file_mode, oct(0o600))
+        mocks["check_call"].assert_called_once_with(["postmap", sasl_passwd_path])
+
+    def test_smtp_data_available_password_id_resolved(self):
+        """Credentials provided via Juju secret (password_id) are written correctly."""
+        event = self._make_event(
+            self._make_relation_data(
+                "smtp.example.com", 587, "myuser", "resolved-secret"
+            )
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ):
+                self.harness.charm._on_smtp_data_available(event)
+
+            with open(sasl_passwd_path) as f:
+                content = f.read()
+
+        self.assertIn("resolved-secret", content)
+
+    def test_smtp_data_available_no_sasl_passwd_when_no_credentials(self):
+        event = self._make_event(self._make_relation_data("smtp.example.com", 587))
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ) as mocks:
+                self.harness.charm._on_smtp_data_available(event)
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        mocks["check_call"].assert_not_called()
+
+    def test_smtp_data_available_clears_stale_sasl_files_when_credentials_removed(self):
+        """Stale sasl files are deleted when credentials are no longer present."""
+        event = self._make_event(self._make_relation_data("smtp.example.com", 587))
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            sasl_db_path = sasl_passwd_path + ".db"
+            open(sasl_passwd_path, "w").close()
+            open(sasl_db_path, "w").close()
+
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ):
+                self.harness.charm._on_smtp_data_available(event)
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        self.assertFalse(os.path.exists(sasl_db_path))
+
+    def test_smtp_relation_broken_clears_sasl_files(self):
+        """Sasl files are removed when the smtp relation is broken."""
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            sasl_db_path = sasl_passwd_path + ".db"
+            open(sasl_passwd_path, "w").close()
+            open(sasl_db_path, "w").close()
+
+            with patch("charm.POSTFIX_SASL_PASSWD", sasl_passwd_path):
+                self.harness.charm._on_smtp_relation_broken(Mock())
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        self.assertFalse(os.path.exists(sasl_db_path))
+
+    def test_smtp_relation_broken_tolerates_missing_files(self):
+        """_on_smtp_relation_broken does not raise if sasl files don't exist."""
+        with patch("charm.POSTFIX_SASL_PASSWD", "/nonexistent/sasl_passwd"):
+            self.harness.charm._on_smtp_relation_broken(Mock())

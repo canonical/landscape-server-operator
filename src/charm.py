@@ -38,6 +38,7 @@ from charms.operator_libs_linux.v1.systemd import (
     service_running,
     SystemdError,
 )
+from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -92,6 +93,7 @@ DPKG_RECONFIGURE = "/usr/sbin/dpkg-reconfigure"
 LSCTL = "/usr/bin/lsctl"
 NRPE_D_DIR = "/etc/nagios/nrpe.d"
 POSTFIX_CF = "/etc/postfix/main.cf"
+POSTFIX_SASL_PASSWD = "/etc/postfix/sasl_passwd"
 SCHEMA_SCRIPT = "/usr/bin/landscape-schema"
 BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
@@ -272,6 +274,15 @@ class LandscapeServerCharm(CharmBase):
             self.on.get_service_conf_action, self._on_get_service_conf_action
         )
 
+        # SMTP
+        self.smtp = SmtpRequires(self)
+        self.framework.observe(
+            self.smtp.on.smtp_data_available, self._on_smtp_data_available
+        )
+        self.framework.observe(
+            self.on.smtp_relation_broken, self._on_smtp_relation_broken
+        )
+
         # State
         self._stored.set_default(
             ready={
@@ -437,10 +448,6 @@ class LandscapeServerCharm(CharmBase):
                 self.root_gid,
             )
             self.unit.status = WaitingStatus("Waiting on relations")
-
-        if self.charm_config.smtp_relay_host:
-            self.unit.status = MaintenanceStatus("Configuring SMTP relay host")
-            self._configure_smtp(self.charm_config.smtp_relay_host)
 
         self._configure_openid()
         self._configure_oidc()
@@ -1421,6 +1428,49 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = BlockedStatus("postfix configuration failed")
         else:
             self.unit.status = WaitingStatus("Waiting on relations")
+
+    def _on_smtp_data_available(self, event: SmtpDataAvailableEvent) -> None:
+        relation_data = self.smtp.get_relation_data_from_relation(event.relation)
+        if relation_data is None:
+            logger.warning("smtp_data_available fired but relation data is empty")
+            return
+
+        host = relation_data.host
+        # Bracket bare hostnames and IPv4 addresses; IPv6 literals are already bracketed
+        if not host.startswith("["):
+            host = f"[{host}]"
+        relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
+
+        logger.info("Configuring SMTP relay: %s", relay_host)
+        self._configure_smtp(relay_host)
+        self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
+
+    def _on_smtp_relation_broken(self, _) -> None:
+        self._clear_sasl_passwd()
+
+    def _write_sasl_passwd(
+        self, relay_host: str, user: str | None, password: str | None
+    ) -> None:
+        if user is not None and password is not None:
+            sasl_passwd_line = f"{relay_host} {user}:{password}\n"
+            fd = os.open(
+                POSTFIX_SASL_PASSWD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(fd, "w") as f:
+                f.write(sasl_passwd_line)
+            check_call(["postmap", POSTFIX_SASL_PASSWD])
+            os.chmod(f"{POSTFIX_SASL_PASSWD}.db", 0o600)
+            logger.info("SMTP SASL credentials written to %s", POSTFIX_SASL_PASSWD)
+        else:
+            self._clear_sasl_passwd()
+
+    def _clear_sasl_passwd(self) -> None:
+        for path in (POSTFIX_SASL_PASSWD, f"{POSTFIX_SASL_PASSWD}.db"):
+            try:
+                os.unlink(path)
+                logger.info("Removed stale SMTP SASL file %s", path)
+            except FileNotFoundError:
+                pass
 
     def _configure_oidc(self) -> None:
         if not self.charm_config.oidc_issuer:  # not doing OIDC
