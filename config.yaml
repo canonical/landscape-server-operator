@@ -270,7 +270,7 @@ options:
       Port for ubuntu-installer-attach service worker to use on each unit.
   outbox_snap_channel:
     type: string
-    default: latest/stable
+    default: latest/edge
     description: |
       Snap channel from which to install the landscape-outbox snap.
       Changing this value will refresh the installed snap to the

@@ -30,6 +30,7 @@ from ops.testing import (
 )
 
 from charm import (
+    DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
     HASH_ID_DATABASES,
@@ -382,7 +383,7 @@ class TestOnConfigChanged:
         snap_fixture.ensure.assert_called_once_with(
             LANDSCAPE_OUTBOX_SNAP,
             "latest",
-            channel="latest/stable",
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
         )
 
     def test_outbox_snap_ensure_failure_sets_maintenance(self, snap_fixture):
@@ -872,7 +873,7 @@ class TestCharm(unittest.TestCase):
         )
         mocks["snap"].add.assert_called_once_with(
             LANDSCAPE_OUTBOX_SNAP,
-            channel="latest/stable",
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
         )
         status = harness.charm.unit.status
         self.assertIsInstance(status, WaitingStatus)

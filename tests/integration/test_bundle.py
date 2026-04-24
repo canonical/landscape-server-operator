@@ -11,7 +11,13 @@ from urllib.parse import urlparse
 import jubilant
 import pytest
 
-from charm import DEFAULT_SERVICES, LANDSCAPE_UBUNTU_INSTALLER_ATTACH, LEADER_SERVICES
+from charm import (
+    DEFAULT_SERVICES,
+    DEFAULT_OUTBOX_SNAP_CHANNEL,
+    LANDSCAPE_OUTBOX_SNAP,
+    LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
+    LEADER_SERVICES,
+)
 from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
@@ -258,14 +264,14 @@ def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
 
     pg_relations = set(juju.status().apps["pgbouncer"].relations)
     assert "database" in pg_relations, "pgbouncer should have a `database` relation"
-    assert "backend-database" in pg_relations, (
-        "pgbouncer should have a `backend-database` relation to PostgreSQL"
-    )
+    assert (
+        "backend-database" in pg_relations
+    ), "pgbouncer should have a `backend-database` relation to PostgreSQL"
 
     ls_relations = set(juju.status().apps["landscape-server"].relations)
-    assert "database" in ls_relations, (
-        "landscape-server should be related via the `database` endpoint"
-    )
+    assert (
+        "database" in ls_relations
+    ), "landscape-server should be related via the `database` endpoint"
 
 
 def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
@@ -279,9 +285,9 @@ def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
     assert result.status == "completed"
 
     config = json.loads(result.results["config"])
-    assert "stores" in config, (
-        f"Expected 'stores' section in service.conf, got: {list(config)}"
-    )
+    assert (
+        "stores" in config
+    ), f"Expected 'stores' section in service.conf, got: {list(config)}"
 
 
 def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
@@ -540,9 +546,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         hostagent_data = get_relation_data("hostagent-messenger-haproxy-route")
 
-        assert hostagent_data.get("external_grpc_port") == "6554", (
-            "Expected external_grpc_port 6554, "
-        )
+        assert (
+            hostagent_data.get("external_grpc_port") == "6554"
+        ), "Expected external_grpc_port 6554, "
         f"got {hostagent_data.get('external_grpc_port')}"
         assert hostagent_data.get("service", "").startswith(
             "landscape-hostagent-messenger-"
@@ -550,9 +556,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
 
-        assert installer_data.get("external_grpc_port") == "50051", (
-            "Expected external_grpc_port 50051, "
-        )
+        assert (
+            installer_data.get("external_grpc_port") == "50051"
+        ), "Expected external_grpc_port 50051, "
         f"got {installer_data.get('external_grpc_port')}"
         assert installer_data.get("service", "").startswith(
             "landscape-ubuntu-installer-attach-"
@@ -602,9 +608,9 @@ def test_lbaas_http_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=False,
         )
-        assert response.status_code == 200, (
-            f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -636,9 +642,9 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             timeout=10,
             headers={"Host": hostname},
         )
-        assert response.status_code == 200, (
-            f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
 
 
 def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -798,3 +804,42 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
         juju.ssh(unit_name, f"sudo add-apt-repository -y {landscape_ppa}")
         juju.run(unit_name, "upgrade")
         juju.run(unit_name, "resume")
+
+
+def test_outbox_snap_installed(juju: jubilant.Juju):
+    """
+    The landscape-outbox snap is installed and running on every unit and tracks
+    the channel specified in the configuration.
+
+    The landscape-outbox snap refreshes to the specified channel when the
+    `outbox_snap_channel` config is changed.
+    """
+
+    # Default deployment should work out-of-the-box
+    juju.wait(jubilant.all_active, timeout=300)
+    status = juju.status()
+    units = status.apps["landscape-server"].units
+
+    channel = juju.config("landscape-server")["outbox_snap_channel"]
+
+    for unit in units:
+        output = juju.ssh(unit, f"snap list {LANDSCAPE_OUTBOX_SNAP}")
+        assert LANDSCAPE_OUTBOX_SNAP in output
+        assert str(channel) in output
+
+    # Refreshing to an invalid channel should fail
+    fake_channel = "recent/stable"
+    juju.config("landscape-server", values={"outbox_snap_channel": f"{fake_channel}"})
+    juju.wait(jubilant.any_maintenance, timeout=60)
+    app = juju.status().apps["landscape-server"]
+
+    assert app.is_maintenance
+    assert "Failed to refresh landscape-outbox snap" in app.app_status.message
+
+    # Best-effort restore for other tests
+    # TODO better context management for config-related tests
+    juju.config(
+        "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
+    )
+    app = juju.status().apps["landscape-server"]
+    juju.wait(jubilant.all_active, timeout=300)
