@@ -265,14 +265,14 @@ def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
 
     pg_relations = set(juju.status().apps["pgbouncer"].relations)
     assert "database" in pg_relations, "pgbouncer should have a `database` relation"
-    assert (
-        "backend-database" in pg_relations
-    ), "pgbouncer should have a `backend-database` relation to PostgreSQL"
+    assert "backend-database" in pg_relations, (
+        "pgbouncer should have a `backend-database` relation to PostgreSQL"
+    )
 
     ls_relations = set(juju.status().apps["landscape-server"].relations)
-    assert (
-        "database" in ls_relations
-    ), "landscape-server should be related via the `database` endpoint"
+    assert "database" in ls_relations, (
+        "landscape-server should be related via the `database` endpoint"
+    )
 
 
 def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
@@ -286,9 +286,9 @@ def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
     assert result.status == "completed"
 
     config = json.loads(result.results["config"])
-    assert (
-        "stores" in config
-    ), f"Expected 'stores' section in service.conf, got: {list(config)}"
+    assert "stores" in config, (
+        f"Expected 'stores' section in service.conf, got: {list(config)}"
+    )
 
 
 def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
@@ -547,9 +547,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         hostagent_data = get_relation_data("hostagent-messenger-haproxy-route")
 
-        assert (
-            hostagent_data.get("external_grpc_port") == "6554"
-        ), "Expected external_grpc_port 6554, "
+        assert hostagent_data.get("external_grpc_port") == "6554", (
+            "Expected external_grpc_port 6554, "
+        )
         f"got {hostagent_data.get('external_grpc_port')}"
         assert hostagent_data.get("service", "").startswith(
             "landscape-hostagent-messenger-"
@@ -557,9 +557,9 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
 
         installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
 
-        assert (
-            installer_data.get("external_grpc_port") == "50051"
-        ), "Expected external_grpc_port 50051, "
+        assert installer_data.get("external_grpc_port") == "50051", (
+            "Expected external_grpc_port 50051, "
+        )
         f"got {installer_data.get('external_grpc_port')}"
         assert installer_data.get("service", "").startswith(
             "landscape-ubuntu-installer-attach-"
@@ -609,9 +609,9 @@ def test_lbaas_http_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             headers={"Host": hostname},
             allow_redirects=False,
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTP /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -643,9 +643,9 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
             timeout=10,
             headers={"Host": hostname},
         )
-        assert (
-            response.status_code == 200
-        ), f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        assert response.status_code == 200, (
+            f"Expected status code 200 for HTTPS /{route}, got {response.status_code}"
+        )
 
 
 def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juju):
