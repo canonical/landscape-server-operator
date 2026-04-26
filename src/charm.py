@@ -21,6 +21,7 @@ from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
+from charmlibs import snap
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -38,7 +39,6 @@ from charms.operator_libs_linux.v1.systemd import (
     service_running,
     SystemdError,
 )
-from charms.operator_libs_linux.v2 import snap
 from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (

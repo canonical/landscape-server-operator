@@ -13,9 +13,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
 
+from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
-from charms.operator_libs_linux.v2.snap import SnapError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (

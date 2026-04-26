@@ -49,6 +49,18 @@ wheels = [
 ]
 
 [[package]]
+name = "charmlibs-snap"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/c1/376fc9b55f632e0578a3b1720a3a5a6570fcdb57caac3e41b49bf435ebb9/charmlibs_snap-1.0.1.tar.gz", hash = "sha256:07a13935909ea4b82c74b8e890b311894bcab2dd1c447246ee392bfd02a74f9c", size = 29324, upload-time = "2025-11-04T13:02:10.525Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/eb/630987d299b92fc6a17455878e9365e1c08b89bd34a022e9a7b7e5a2d1ec/charmlibs_snap-1.0.1-py3-none-any.whl", hash = "sha256:42bae5f55f6dbee014c94f8ab95eef3e249d4903f02412bef05ac5b324aa2783", size = 15359, upload-time = "2025-11-04T13:02:09.235Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.7"
 source = { registry = "https://pypi.org/simple" }
@@ -431,6 +443,7 @@ name = "landscape-server-charm"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "charmlibs-snap" },
     { name = "cosl" },
     { name = "email-validator" },
     { name = "ops" },
@@ -456,6 +469,7 @@ integration = [
 
 [package.metadata]
 requires-dist = [
+    { name = "charmlibs-snap", specifier = "~=1.0" },
     { name = "cosl", specifier = "==1.4.0" },
     { name = "email-validator", specifier = ">=2" },
     { name = "ops", specifier = "==2.23.1" },
