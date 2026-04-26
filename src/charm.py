@@ -753,6 +753,7 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call([LSCTL, "restart"], env=get_modified_env_vars())
+            check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
             self.unit.status = ActiveStatus("Unit is ready")
             return True
         except CalledProcessError as e:

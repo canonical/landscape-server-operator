@@ -6,6 +6,7 @@ NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 """
 
 import json
+import re
 from urllib.parse import urlparse
 
 import jubilant
@@ -823,9 +824,12 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
     channel = juju.config("landscape-server")["outbox_snap_channel"]
 
     for unit in units:
-        output = juju.ssh(unit, f"snap list {LANDSCAPE_OUTBOX_SNAP}")
-        assert LANDSCAPE_OUTBOX_SNAP in output
-        assert str(channel) in output
+        snap_list = juju.ssh(unit, f"snap list {LANDSCAPE_OUTBOX_SNAP}")
+        assert LANDSCAPE_OUTBOX_SNAP in snap_list
+        assert str(channel) in snap_list
+
+        snap_services = juju.ssh(unit, f"snap services {LANDSCAPE_OUTBOX_SNAP}")
+        assert re.search(r"\bactive\b", snap_services)
 
     # Refreshing to an invalid channel should fail
     fake_channel = "recent/stable"
