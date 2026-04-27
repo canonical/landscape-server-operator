@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, Mock
 import pytest
 import scenario
 
-from charm import LANDSCAPE_OUTBOX_SNAP
 import settings_files
 
 
