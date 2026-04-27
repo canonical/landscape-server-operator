@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
 
+from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
 from ops.charm import ActionEvent
@@ -29,9 +30,11 @@ from ops.testing import (
 )
 
 from charm import (
+    DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
     HASH_ID_DATABASES,
+    LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LandscapeServerCharm,
@@ -358,6 +361,40 @@ class TestOnConfigChanged:
         state_out = ctx.run(event, leader_state)
 
         assert expected_port in state_out.opened_ports
+
+    def test_outbox_snap_ensure_called(self, snap_fixture):
+        """Config-changed calls snap.ensure for landscape-outbox."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"outbox_snap_channel": "latest/edge"})
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel="latest/edge",
+        )
+
+    def test_outbox_snap_ensure_default_channel(self, snap_fixture):
+        """Config-changed uses the default channel when not overridden."""
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
+        )
+
+    def test_outbox_snap_ensure_failure_sets_maintenance(self, snap_fixture):
+        """If snap.ensure fails, the unit enters maintenance status."""
+        snap_fixture.ensure.side_effect = SnapError("refresh failed")
+
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        state_out = ctx.run(ctx.on.config_changed(), state)
+
+        assert isinstance(state_out.unit_status, MaintenanceStatus)
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
@@ -814,6 +851,7 @@ class TestCharm(unittest.TestCase):
             "charm",
             check_call=DEFAULT,
             apt=DEFAULT,
+            snap=DEFAULT,
             prepend_default_settings=DEFAULT,
             update_service_conf=DEFAULT,
         )
@@ -832,6 +870,10 @@ class TestCharm(unittest.TestCase):
         mocks["apt"].add_package.assert_called_once_with(
             ["landscape-server", "landscape-hashids"],
             update_cache=True,
+        )
+        mocks["snap"].add.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
         )
         status = harness.charm.unit.status
         self.assertIsInstance(status, WaitingStatus)
@@ -1450,10 +1492,16 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_pause(self):
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
+        ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._pause(Mock())
 
         check_call_mock.assert_called_once_with([LSCTL, "stop"], env=ANY)
+        outbox_snap.stop.assert_called_once()
         self.assertFalse(self.harness.charm._stored.running)
 
     def test_action_pause_CalledProcessError(self):
@@ -1476,13 +1524,17 @@ class TestCharm(unittest.TestCase):
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
         ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._resume(event)
 
         run_mock.assert_called_once_with(
             [LSCTL, "start"], capture_output=True, text=True, env=ANY
         )
         check_call_mock.assert_called_once_with([LSCTL, "status"], env=ANY)
+        outbox_snap.start.assert_called_once()
         self.harness.charm._update_ready_status.assert_called_once()
         self.assertTrue(self.harness.charm._stored.running)
         event.log.assert_called_once()
