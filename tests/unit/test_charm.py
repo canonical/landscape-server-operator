@@ -1492,10 +1492,16 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_pause(self):
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
+        ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._pause(Mock())
 
         check_call_mock.assert_called_once_with([LSCTL, "stop"], env=ANY)
+        outbox_snap.stop.assert_called_once()
         self.assertFalse(self.harness.charm._stored.running)
 
     def test_action_pause_CalledProcessError(self):
@@ -1518,13 +1524,17 @@ class TestCharm(unittest.TestCase):
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
         ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._resume(event)
 
         run_mock.assert_called_once_with(
             [LSCTL, "start"], capture_output=True, text=True, env=ANY
         )
         check_call_mock.assert_called_once_with([LSCTL, "status"], env=ANY)
+        outbox_snap.start.assert_called_once()
         self.harness.charm._update_ready_status.assert_called_once()
         self.assertTrue(self.harness.charm._stored.running)
         event.log.assert_called_once()

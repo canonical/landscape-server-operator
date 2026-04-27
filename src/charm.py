@@ -1623,8 +1623,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         try:
             check_call([LSCTL, "stop"], env=get_modified_env_vars())
-        except CalledProcessError as e:
-            logger.error("Stopping services failed with return code %d", e.returncode)
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].stop()
+        except (CalledProcessError, snap.SnapError) as e:
+            logger.error("Stopping services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to stop services")
             event.fail("Failed to stop services")
         else:
@@ -1644,9 +1645,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 env=get_modified_env_vars(),
             )
             check_call([LSCTL, "status"], env=get_modified_env_vars())
-        except CalledProcessError as e:
-            logger.error("Starting services failed with return code %d", e.returncode)
-            logger.error("Failed to start services: %s", start_result.stdout)
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].start()
+        except (CalledProcessError, snap.SnapError) as e:
+            logger.error("Starting services failed: %s", e)
+            logger.error("lsctl start output: %s", start_result.stdout)
             self.unit.status = MaintenanceStatus("Stopping services")
             subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
             self.unit.status = BlockedStatus("Failed to start services")

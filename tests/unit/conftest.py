@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 import scenario
 
+from charm import LANDSCAPE_OUTBOX_SNAP
 import settings_files
 
 
@@ -151,6 +152,10 @@ class FakeSnapModule:
     def __init__(self):
         self.add = MagicMock()
         self.ensure = MagicMock()
+        self._snap_instance = MagicMock()
+        self.SnapCache = MagicMock(
+            return_value={LANDSCAPE_OUTBOX_SNAP: self._snap_instance}
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -158,4 +163,5 @@ def snap_fixture(monkeypatch: pytest.MonkeyPatch):
     fake_snap = FakeSnapModule()
     monkeypatch.setattr("charm.snap.add", fake_snap.add)
     monkeypatch.setattr("charm.snap.ensure", fake_snap.ensure)
+    monkeypatch.setattr("charm.snap.SnapCache", fake_snap.SnapCache)
     return fake_snap
