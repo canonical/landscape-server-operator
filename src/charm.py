@@ -1623,15 +1623,23 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         try:
             check_call([LSCTL, "stop"], env=get_modified_env_vars())
-            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].stop()
-        except (CalledProcessError, snap.SnapError) as e:
+        except CalledProcessError as e:
             logger.error("Stopping services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to stop services")
             event.fail("Failed to stop services")
-        else:
-            self.unit.status = MaintenanceStatus("Services stopped")
-            self._stored.running = False
-            self._stored.paused = True
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].stop()
+        except snap.SnapError as e:
+            logger.error("Failed to stop landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to stop landscape-outbox snap")
+            event.fail(f"Failed to stop landscape-outbox snap: {str(e)}")
+            return
+
+        self.unit.status = MaintenanceStatus("Services stopped")
+        self._stored.running = False
+        self._stored.paused = True
 
     def _resume(self, event: ActionEvent):
         self.unit.status = MaintenanceStatus("Starting services")
@@ -1645,19 +1653,27 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 env=get_modified_env_vars(),
             )
             check_call([LSCTL, "status"], env=get_modified_env_vars())
-            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].start()
-        except (CalledProcessError, snap.SnapError) as e:
+        except CalledProcessError as e:
             logger.error("Starting services failed: %s", e)
             logger.error("lsctl start output: %s", start_result.stdout)
             self.unit.status = MaintenanceStatus("Stopping services")
             subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
             self.unit.status = BlockedStatus("Failed to start services")
             event.fail(f"Failed to start services: {start_result.stdout}")
-        else:
-            self._stored.running = True
-            self._stored.paused = False
-            self.unit.status = ActiveStatus("Unit is ready")
-            self._update_ready_status()
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].start()
+        except snap.SnapError as e:
+            logger.error("Failed to start landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to start landscape-outbox snap")
+            event.fail(f"Failed to start landscape-outbox snap: {str(e)}")
+            return
+
+        self._stored.running = True
+        self._stored.paused = False
+        self.unit.status = ActiveStatus("Unit is ready")
+        self._update_ready_status()
 
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()
