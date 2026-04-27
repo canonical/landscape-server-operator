@@ -845,5 +845,4 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
     juju.config(
         "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
     )
-    app = juju.status().apps["landscape-server"]
     juju.wait(jubilant.all_active, timeout=300)
