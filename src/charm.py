@@ -12,6 +12,8 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
+from pathlib import Path
+
 from dataclasses import asdict
 from functools import cached_property
 import json
@@ -447,9 +449,9 @@ class LandscapeServerCharm(CharmBase):
         self._set_ports()
 
         # Update additional configuration
-        update_service_conf(
-            {"global": {"deployment-mode": self.charm_config.deployment_mode}}
-        )
+        update_service_conf({
+            "global": {"deployment-mode": self.charm_config.deployment_mode}
+        })
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
 
@@ -538,9 +540,9 @@ class LandscapeServerCharm(CharmBase):
                 logger.info("Generating new random cookie encryption key")
                 cookie_encryption_key = generate_cookie_encryption_key()
                 peer_relation = self.model.get_relation("replicas")
-                peer_relation.data[self.app].update(
-                    {"cookie-encryption-key": cookie_encryption_key}
-                )
+                peer_relation.data[self.app].update({
+                    "cookie-encryption-key": cookie_encryption_key
+                })
 
         if (secret_token) and (secret_token != self._stored.secret_token):
             self._write_secret_token(secret_token)
@@ -622,6 +624,15 @@ class LandscapeServerCharm(CharmBase):
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
+        # Create /sbin symlinks for fuse mount helpers, missing on
+        # resolute LXD images
+        # where /sbin and /usr/sbin are not merged, causing snapd's
+        # syscheck to fail.
+        for helper in ["mount.fuse", "mount.fuse3"]:
+            src = Path(f"/usr/sbin/{helper}")
+            dst = Path(f"/sbin/{helper}")
+            if src.exists() and not dst.exists():
+                dst.symlink_to(src)
 
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
@@ -649,15 +660,13 @@ class LandscapeServerCharm(CharmBase):
 
             if self.charm_config.min_install:
                 logger.info("Not installing hashids..")
-                check_call(
-                    [
-                        "apt",
-                        "install",
-                        LANDSCAPE_SERVER,
-                        "--no-install-recommends",
-                        "-y",
-                    ]
-                )
+                check_call([
+                    "apt",
+                    "install",
+                    LANDSCAPE_SERVER,
+                    "--no-install-recommends",
+                    "-y",
+                ])
             else:
                 # Explicitly ensure cache is up-to-date after adding the PPA.
                 apt.add_package(
@@ -731,23 +740,19 @@ class LandscapeServerCharm(CharmBase):
         deployment_mode = self.charm_config.deployment_mode
         is_standalone = deployment_mode == "standalone"
 
-        update_default_settings(
-            {
-                "RUN_ALL": "no",
-                "RUN_APISERVER": str(self.charm_config.worker_counts),
-                "RUN_ASYNC_FRONTEND": "yes",
-                "RUN_JOBHANDLER": "yes",
-                "RUN_APPSERVER": str(self.charm_config.worker_counts),
-                "RUN_MSGSERVER": str(self.charm_config.worker_counts),
-                "RUN_PINGSERVER": str(self.charm_config.worker_counts),
-                "RUN_CRON": "yes" if is_leader else "no",
-                "RUN_PACKAGESEARCH": "yes" if is_leader else "no",
-                "RUN_PACKAGEUPLOADSERVER": (
-                    "yes" if is_leader and is_standalone else "no"
-                ),
-                "RUN_PPPA_PROXY": "no",
-            }
-        )
+        update_default_settings({
+            "RUN_ALL": "no",
+            "RUN_APISERVER": str(self.charm_config.worker_counts),
+            "RUN_ASYNC_FRONTEND": "yes",
+            "RUN_JOBHANDLER": "yes",
+            "RUN_APPSERVER": str(self.charm_config.worker_counts),
+            "RUN_MSGSERVER": str(self.charm_config.worker_counts),
+            "RUN_PINGSERVER": str(self.charm_config.worker_counts),
+            "RUN_CRON": "yes" if is_leader else "no",
+            "RUN_PACKAGESEARCH": "yes" if is_leader else "no",
+            "RUN_PACKAGEUPLOADSERVER": ("yes" if is_leader and is_standalone else "no"),
+            "RUN_PPPA_PROXY": "no",
+        })
 
         logger.info("Starting services")
 
@@ -1032,12 +1037,10 @@ class LandscapeServerCharm(CharmBase):
         self._stored.ready[relation_name] = False
         self.unit.status = MaintenanceStatus(f"Setting up {relation_name} connection")
 
-        event.relation.data[self.unit].update(
-            {
-                "username": AMQP_USERNAME,
-                "vhost": VHOSTS[relation_name],
-            }
-        )
+        event.relation.data[self.unit].update({
+            "username": AMQP_USERNAME,
+            "vhost": VHOSTS[relation_name],
+        })
 
     def _amqp_relation_changed(self, event):
         unit_data = event.relation.data[event.unit]
@@ -1064,14 +1067,12 @@ class LandscapeServerCharm(CharmBase):
             )
             return
 
-        update_service_conf(
-            {
-                "broker": {
-                    "host": hostname,
-                    "password": password,
-                }
+        update_service_conf({
+            "broker": {
+                "host": hostname,
+                "password": password,
             }
-        )
+        })
 
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status()
@@ -1242,11 +1243,9 @@ class LandscapeServerCharm(CharmBase):
             },
         }
 
-        relation.data[self.unit].update(
-            {
-                "monitors": yaml.safe_dump(monitors),
-            }
-        )
+        relation.data[self.unit].update({
+            "monitors": yaml.safe_dump(monitors),
+        })
 
         if not os.path.exists(NRPE_D_DIR):
             logger.debug("NRPE directories not ready")
@@ -1303,15 +1302,13 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         else:
             icon_data = None
 
-        event.relation.data[self.app].update(
-            {
-                "name": "Landscape",
-                "url": root_url,
-                "subtitle": subtitle,
-                "group": group,
-                "icon": icon_data,
-            }
-        )
+        event.relation.data[self.app].update({
+            "name": "Landscape",
+            "url": root_url,
+            "subtitle": subtitle,
+            "group": group,
+            "icon": icon_data,
+        })
 
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
@@ -1324,13 +1321,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             ip = str(self.model.get_binding(peer_relation).network.bind_address)
             peer_relation.data[self.app].update({"leader-ip": ip})
 
-            update_service_conf(
-                {
-                    "package-search": {
-                        "host": "localhost",
-                    },
-                }
-            )
+            update_service_conf({
+                "package-search": {
+                    "host": "localhost",
+                },
+            })
 
         self._leader_changed()
 
@@ -1347,13 +1342,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             leader_ip = peer_relation.data[self.app].get("leader-ip")
 
             if leader_ip:
-                update_service_conf(
-                    {
-                        "package-search": {
-                            "host": leader_ip,
-                        },
-                    }
-                )
+                update_service_conf({
+                    "package-search": {
+                        "host": leader_ip,
+                    },
+                })
 
         self._leader_changed()
 
@@ -1405,13 +1398,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         if not self.unit.is_leader():
             if leader_ip_value:
-                update_service_conf(
-                    {
-                        "package-search": {
-                            "host": leader_ip_value,
-                        },
-                    }
-                )
+                update_service_conf({
+                    "package-search": {
+                        "host": leader_ip_value,
+                    },
+                })
 
         self._leader_changed()
 
@@ -1524,14 +1515,12 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return
 
         self.unit.status = MaintenanceStatus("Configuring OpenID")
-        update_service_conf(
-            {
-                "landscape": {
-                    "openid-provider-url": self.charm_config.openid_provider_url,
-                    "openid-logout-url": self.charm_config.openid_logout_url,
-                },
-            }
-        )
+        update_service_conf({
+            "landscape": {
+                "openid-provider-url": self.charm_config.openid_provider_url,
+                "openid-logout-url": self.charm_config.openid_logout_url,
+            },
+        })
         self.unit.status = WaitingStatus("Waiting on relations")
 
     def _bootstrap_account(self):
