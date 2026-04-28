@@ -5,7 +5,9 @@ options:
   landscape_ppa:
     type: string
     default: "ppa:landscape/self-hosted-beta"
-    description: The PPA from which Landscape Server will be installed.
+    description: |
+      Comma-separated list of PPAs from which Landscape Server will be installed.
+      Each entry is passed to add-apt-repository.
   landscape_ppa_key:
     type: string
     default: ""

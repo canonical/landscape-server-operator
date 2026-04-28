@@ -16,7 +16,6 @@ from dataclasses import asdict
 from functools import cached_property
 import json
 import os
-from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
@@ -624,16 +623,6 @@ class LandscapeServerCharm(CharmBase):
                 check_call(
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
-
-            # Create /sbin symlinks for fuse mount helpers, missing on
-            # resolute LXD images
-            # where /sbin and /usr/sbin are not merged, causing snapd's
-            # syscheck to fail.
-            for helper in ["mount.fuse", "mount.fuse3"]:
-                src = Path(f"/usr/sbin/{helper}")
-                dst = Path(f"/sbin/{helper}")
-                if src.exists() and not dst.exists():
-                    dst.symlink_to(src)
 
             if self.charm_config.min_install:
                 logger.info("Not installing hashids..")

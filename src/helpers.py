@@ -38,15 +38,12 @@ def migrate_service_conf() -> None:
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=60,
                 env=get_modified_env_vars(),
             )
         except subprocess.CalledProcessError as e:
             logger.error(
                 "Migrating service.conf failed with return code %s", e.returncode
             )
-            logger.error("Failed to migrate service.conf: %s", e.stderr)
-        except subprocess.TimeoutExpired:
-            logger.error("migrate-service-conf timed out")
+            logger.error("Failed to migrate service.conf: %s", migrate_result)
         else:
             logger.info("Migrated service.conf: %s", migrate_result)
