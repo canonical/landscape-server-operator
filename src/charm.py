@@ -16,7 +16,6 @@ from dataclasses import asdict
 from functools import cached_property
 import json
 import os
-from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
@@ -623,6 +622,7 @@ class LandscapeServerCharm(CharmBase):
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
+
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
             try:
