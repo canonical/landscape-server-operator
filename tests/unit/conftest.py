@@ -2,6 +2,7 @@ from configparser import ConfigParser
 import subprocess
 from unittest.mock import MagicMock, Mock
 
+from ops.testing import Resource
 import pytest
 import scenario
 
@@ -16,6 +17,19 @@ class ConfigReader:
         config = ConfigParser()
         config.read(self.tempfile)
         return config
+
+
+@pytest.fixture
+def empty_deb_resource(tmp_path) -> Resource:
+    """An empty landscape-server-deb resource representing 'not attached'.
+
+    Scenario requires all metadata resources to be present in State. Pass this
+    fixture when testing the normal PPA install path to satisfy that requirement
+    without triggering the local-deb code path.
+    """
+    empty = tmp_path / "landscape-server.deb"
+    empty.write_bytes(b"")
+    return Resource(name="landscape-server-deb", path=empty)
 
 
 @pytest.fixture(autouse=True)

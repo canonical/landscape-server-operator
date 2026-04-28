@@ -69,3 +69,13 @@ provides:
 peers:
   replicas:
     interface: landscape-replica
+
+resources:
+  landscape-server-deb:
+    type: file
+    filename: landscape-server.deb
+    description: |
+      Optional local .deb file for landscape-server. When provided, this package
+      is installed via `apt install` instead of being pulled from the PPA. The
+      configured PPA is still added first so that all dependencies are available.
+      Attach with: juju attach-resource landscape-server landscape-server-deb=<path>

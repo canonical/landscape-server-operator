@@ -1867,7 +1867,7 @@ class TestCharm(unittest.TestCase):
 
 
 class TestMultiplePPAs:
-    def test_install_adds_each_ppa(self):
+    def test_install_adds_each_ppa(self, empty_deb_resource):
         ppas = [
             "ppa:landscape/self-hosted-beta",
             "ppa:canonical-python-maintainers/python-backports",
@@ -1876,6 +1876,7 @@ class TestMultiplePPAs:
         state = State(
             config={"landscape_ppa": ",".join(ppas)},
             unit_status=MaintenanceStatus(),
+            resources=[empty_deb_resource],
         )
 
         with (
@@ -1917,12 +1918,13 @@ class TestMultiplePPAs:
         for ppa in ppas:
             check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
-    def test_install_single_ppa(self):
+    def test_install_single_ppa(self, empty_deb_resource):
         ppa = "ppa:landscape/self-hosted-beta"
         ctx = Context(LandscapeServerCharm)
         state = State(
             config={"landscape_ppa": ppa},
             unit_status=MaintenanceStatus(),
+            resources=[empty_deb_resource],
         )
 
         with (
@@ -1935,6 +1937,117 @@ class TestMultiplePPAs:
             ctx.run(ctx.on.install(), state)
 
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+
+
+class TestDebResourceInstall:
+    """landscape-server-deb resource — local .deb install path."""
+
+    def test_install_with_deb_resource_uses_local_deb(self, tmp_path):
+        from ops.testing import Resource
+
+        deb_file = tmp_path / "landscape-server.deb"
+        deb_file.write_bytes(b"\x00" * 100)  # non-empty file
+
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
+            unit_status=MaintenanceStatus(),
+            resources=[Resource(name="landscape-server-deb", path=deb_file)],
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        # PPA must still be added for dependencies
+        check_call_mock.assert_any_call(
+            ["add-apt-repository", "-y", "ppa:landscape/self-hosted-beta"], env=ANY
+        )
+        # landscape-server installed from the local deb, not via apt.add_package
+        calls = [str(c) for c in check_call_mock.call_args_list]
+        assert any("landscape-server.deb" in c for c in calls)
+        # landscape-server itself must NOT be fetched through apt
+        for call_args in apt_mock.add_package.call_args_list:
+            assert "landscape-server" not in call_args.args[0]
+
+    def test_install_without_deb_resource_uses_ppa(self, empty_deb_resource):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
+            unit_status=MaintenanceStatus(),
+            resources=[empty_deb_resource],
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_called_once_with(
+            ["landscape-server", "landscape-hashids"], update_cache=True
+        )
+
+    def test_install_with_deb_resource_still_installs_hashids(self, tmp_path):
+        from ops.testing import Resource
+
+        deb_file = tmp_path / "landscape-server.deb"
+        deb_file.write_bytes(b"\x00" * 100)
+
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
+            unit_status=MaintenanceStatus(),
+            resources=[Resource(name="landscape-server-deb", path=deb_file)],
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_called_once_with(
+            ["landscape-hashids"], update_cache=False
+        )
+
+    def test_install_with_deb_resource_min_install_skips_hashids(self, tmp_path):
+        from ops.testing import Resource
+
+        deb_file = tmp_path / "landscape-server.deb"
+        deb_file.write_bytes(b"\x00" * 100)
+
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "landscape_ppa": "ppa:landscape/self-hosted-beta",
+                "min_install": True,
+            },
+            unit_status=MaintenanceStatus(),
+            resources=[Resource(name="landscape-server-deb", path=deb_file)],
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_not_called()
 
 
 # TODO fix from broken commit.
