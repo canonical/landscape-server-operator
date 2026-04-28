@@ -92,10 +92,6 @@ options:
     description: |
       The initial account registration key. Note this value cannot be set more
       than once.
-  smtp_relay_host:
-    type: string
-    default: ""
-    description: The SMTP server used to deliver outgoing mail.
   http_proxy:
     type: string
     default:
@@ -272,3 +268,10 @@ options:
     default: 53354
     description: |
       Port for ubuntu-installer-attach service worker to use on each unit.
+  outbox_snap_channel:
+    type: string
+    default: latest/edge
+    description: |
+      Snap channel from which to install the landscape-outbox snap.
+      Changing this value will refresh the installed snap to the
+      specified channel.

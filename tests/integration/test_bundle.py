@@ -6,12 +6,19 @@ NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 """
 
 import json
+import re
 from urllib.parse import urlparse
 
 import jubilant
 import pytest
 
-from charm import DEFAULT_SERVICES, LANDSCAPE_UBUNTU_INSTALLER_ATTACH, LEADER_SERVICES
+from charm import (
+    DEFAULT_OUTBOX_SNAP_CHANNEL,
+    DEFAULT_SERVICES,
+    LANDSCAPE_OUTBOX_SNAP,
+    LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
+    LEADER_SERVICES,
+)
 from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
@@ -807,4 +814,44 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
         juju.run(unit_name, "pause")
         juju.run(unit_name, "upgrade")
         juju.run(unit_name, "resume")
-        juju.wait(jubilant.all_active, timeout=300)
+
+
+def test_outbox_snap_installed(juju: jubilant.Juju):
+    """
+    The landscape-outbox snap is installed and running on every unit and tracks
+    the channel specified in the configuration.
+
+    The landscape-outbox snap refreshes to the specified channel when the
+    `outbox_snap_channel` config is changed.
+    """
+
+    # Default deployment should work out-of-the-box
+    juju.wait(jubilant.all_active, timeout=300)
+    status = juju.status()
+    units = status.apps["landscape-server"].units
+
+    channel = juju.config("landscape-server")["outbox_snap_channel"]
+
+    for unit in units:
+        snap_list = juju.ssh(unit, f"snap list {LANDSCAPE_OUTBOX_SNAP}")
+        assert LANDSCAPE_OUTBOX_SNAP in snap_list
+        assert str(channel) in snap_list
+
+        snap_services = juju.ssh(unit, f"snap services {LANDSCAPE_OUTBOX_SNAP}")
+        assert re.search(r"\bactive\b", snap_services)
+
+    # Refreshing to an invalid channel should fail
+    fake_channel = "recent/stable"
+    juju.config("landscape-server", values={"outbox_snap_channel": f"{fake_channel}"})
+    juju.wait(jubilant.any_maintenance, timeout=60)
+    app = juju.status().apps["landscape-server"]
+
+    assert app.is_maintenance
+    assert "Failed to refresh landscape-outbox snap" in app.app_status.message
+
+    # Best-effort restore for other tests
+    # TODO better context management for config-related tests
+    juju.config(
+        "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
+    )
+    juju.wait(jubilant.all_active, timeout=300)
