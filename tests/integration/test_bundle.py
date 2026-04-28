@@ -855,3 +855,68 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
         "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
     )
     juju.wait(jubilant.all_active, timeout=300)
+
+
+def test_deb_resource_install(juju: jubilant.Juju, tmp_path):
+    """
+    When a local landscape-server .deb is attached as a resource, the charm
+    installs it directly instead of fetching from the PPA.
+
+    The test:
+      1. Repackages the already-installed landscape-server into a local .deb via
+         dpkg-repack (no Launchpad build needed).
+      2. Attaches it with `juju attach-resource`.
+      3. Waits for the unit to settle and verifies the install hook logged the
+         local-deb path.
+      4. Confirms the package is still installed and all services are up.
+    """
+    import subprocess
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit_name = next(iter(juju.status().apps["landscape-server"].units))
+
+    # Repack the installed package into a local .deb.
+    juju.ssh(unit_name, "sudo apt-get install -y dpkg-repack")
+    juju.ssh(
+        unit_name,
+        "cd /tmp && sudo dpkg-repack landscape-server "
+        "&& sudo chmod 644 /tmp/landscape-server_*.deb",
+    )
+
+    local_deb = tmp_path / "landscape-server.deb"
+    subprocess.run(
+        ["juju", "scp", f"{unit_name}:/tmp/landscape-server_*.deb", str(local_deb)],
+        check=True,
+    )
+    assert local_deb.stat().st_size > 0, "Repackaged .deb is empty"
+
+    # Attach the resource; Juju will queue a resource-changed hook.
+    subprocess.run(
+        [
+            "juju",
+            "attach-resource",
+            "landscape-server",
+            f"landscape-server-deb={local_deb}",
+        ],
+        check=True,
+    )
+    juju.wait(jubilant.all_active, timeout=600)
+
+    # Verify the install hook logged the local-deb path.
+    debug_log = subprocess.run(
+        ["juju", "debug-log", "--replay", "--include", unit_name, "--limit", "1000"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "Installing landscape-server from local deb" in debug_log, (
+        "Expected charm to log local-deb install path"
+    )
+
+    # Package must still be installed.
+    pkg_status = juju.ssh(unit_name, "dpkg -l landscape-server")
+    assert "ii" in pkg_status
+
+    # All services must still be up.
+    for service in DEFAULT_SERVICES:
+        wait_for_service(juju, unit_name, service)
