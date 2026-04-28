@@ -22,7 +22,7 @@ applications:
     charm: ../landscape-server_ubuntu@26.04-amd64.charm
     num_units: 1
     options:
-      landscape_ppa: "ppa:jansdhillon/test21,ppa:landscape/self-hosted-beta,ppa:canonical-python-maintainers/python-backports"
+      landscape_ppa: "ppa:jansdhillon/test22,ppa:landscape/self-hosted-beta"
       min_install: true
       enable_hostagent_messenger: true
       enable_ubuntu_installer_attach: true
