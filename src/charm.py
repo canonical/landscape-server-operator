@@ -624,7 +624,14 @@ class LandscapeServerCharm(CharmBase):
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
 
-            if self.charm_config.min_install:
+            local_deb = self._get_landscape_server_deb_resource()
+            if local_deb is not None:
+                logger.info(f"Installing landscape-server from local deb: {local_deb}")
+                check_call(["apt", "install", "-y", str(local_deb)])
+                if not self.charm_config.min_install:
+                    apt.add_package(["landscape-hashids"], update_cache=False)
+                    check_call(["apt-mark", "hold", "landscape-hashids"])
+            elif self.charm_config.min_install:
                 logger.info("Not installing hashids..")
                 check_call(
                     [
@@ -1579,6 +1586,16 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self._stored.paused = False
             self.unit.status = ActiveStatus("Unit is ready")
             self._update_ready_status()
+
+    def _get_landscape_server_deb_resource(self):
+        """Return path to an attached landscape-server .deb resource, or None."""
+        try:
+            path = self.model.resources.fetch("landscape-server-deb")
+        except ModelError:
+            return None
+        if path.stat().st_size == 0:
+            return None
+        return path
 
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()
