@@ -129,6 +129,7 @@ No modules.
 | Name | Description |
 |------|-------------|
 | <a name="output_app_name"></a> [app\_name](#output\_app\_name) | Name of the deployed application. |
+| <a name="output_has_haproxy_route_interface"></a> [has\_haproxy\_route\_interface](#output\_has\_haproxy\_route\_interface) | Indicates whether the deployed revision uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint. |
 | <a name="output_provides"></a> [provides](#output\_provides) | Map of integration endpoints this charm provides (`cos-agent`, `data`, `hosted`, `nrpe-external-master`, `website`). |
-| <a name="output_requires"></a> [requires](#output\_requires) | Map of integration endpoints this charm requires (`application-dashboard`, `db` or `db`/`database`, `amqp` or `inbound-amqp`/`outbound-amqp`, haproxy-route relations for 26.04+, `website` for external HAProxy on older revisions). |
+| <a name="output_requires"></a> [requires](#output\_requires) | Map of integration endpoints this charm requires. |
 <!-- END_TF_DOCS -->
