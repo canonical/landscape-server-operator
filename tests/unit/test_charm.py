@@ -1967,7 +1967,7 @@ class TestDebResourceInstall:
         for call_args in apt_mock.add_package.call_args_list:
             assert "landscape-server" not in call_args.args[0]
 
-    def test_local_deb_installs_hashids(self, tmp_path):
+    def test_local_deb_uses_no_install_recommends(self, tmp_path):
         from ops.testing import Resource
 
         deb = tmp_path / "landscape-server.deb"
@@ -1980,17 +1980,20 @@ class TestDebResourceInstall:
         )
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
+            patch("charm.check_call") as check_call_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
             apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
-        apt_mock.add_package.assert_called_once_with(
-            ["landscape-hashids"], update_cache=False
+        calls = [str(c) for c in check_call_mock.call_args_list]
+        assert any(
+            "--no-install-recommends" in c and "landscape-server.deb" in c
+            for c in calls
         )
+        apt_mock.add_package.assert_not_called()
 
-    def test_local_deb_min_install_skips_hashids(self, tmp_path):
+    def test_local_deb_min_install_also_uses_no_install_recommends(self, tmp_path):
         from ops.testing import Resource
 
         deb = tmp_path / "landscape-server.deb"
@@ -2006,12 +2009,17 @@ class TestDebResourceInstall:
         )
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
+            patch("charm.check_call") as check_call_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
             apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
+        calls = [str(c) for c in check_call_mock.call_args_list]
+        assert any(
+            "--no-install-recommends" in c and "landscape-server.deb" in c
+            for c in calls
+        )
         apt_mock.add_package.assert_not_called()
 
 
