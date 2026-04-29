@@ -22,6 +22,7 @@ from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
+from charmlibs import snap
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -39,6 +40,7 @@ from charms.operator_libs_linux.v1.systemd import (
     service_running,
     SystemdError,
 )
+from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -93,6 +95,7 @@ DPKG_RECONFIGURE = "/usr/sbin/dpkg-reconfigure"
 LSCTL = "/usr/bin/lsctl"
 NRPE_D_DIR = "/etc/nagios/nrpe.d"
 POSTFIX_CF = "/etc/postfix/main.cf"
+POSTFIX_SASL_PASSWD = "/etc/postfix/sasl_passwd"
 SCHEMA_SCRIPT = "/usr/bin/landscape-schema"
 BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
@@ -105,6 +108,8 @@ LANDSCAPE_PACKAGES = (
     "landscape-client",
     "landscape-common",
 )
+LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
+DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/edge"  # TODO update when stable is released.
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
@@ -273,6 +278,15 @@ class LandscapeServerCharm(CharmBase):
             self.on.get_service_conf_action, self._on_get_service_conf_action
         )
 
+        # SMTP
+        self.smtp = SmtpRequires(self)
+        self.framework.observe(
+            self.smtp.on.smtp_data_available, self._on_smtp_data_available
+        )
+        self.framework.observe(
+            self.on.smtp_relation_broken, self._on_smtp_relation_broken
+        )
+
         # State
         self._stored.set_default(
             ready={
@@ -405,6 +419,19 @@ class LandscapeServerCharm(CharmBase):
             return
 
         try:
+            snap.ensure(
+                LANDSCAPE_OUTBOX_SNAP,
+                snap.SnapState.Latest.value,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as e:
+            self.unit.status = MaintenanceStatus(
+                "Failed to refresh landscape-outbox snap."
+            )
+            logger.exception(e)
+            return
+
+        try:
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
@@ -438,10 +465,6 @@ class LandscapeServerCharm(CharmBase):
                 self.root_gid,
             )
             self.unit.status = WaitingStatus("Waiting on relations")
-
-        if self.charm_config.smtp_relay_host:
-            self.unit.status = MaintenanceStatus("Configuring SMTP relay host")
-            self._configure_smtp(self.charm_config.smtp_relay_host)
 
         self._configure_openid()
         self._configure_oidc()
@@ -654,6 +677,16 @@ class LandscapeServerCharm(CharmBase):
             logger.error("Failed to install packages")
             raise exc  # This will trigger juju's exponential retry
 
+        self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
+        try:
+            snap.add(
+                LANDSCAPE_OUTBOX_SNAP,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as exc:
+            logger.error("Failed to install landscape-outbox snap")
+            raise exc
+
         # Write the license file, if it exists.
         license_file = self.charm_config.license_file
 
@@ -728,6 +761,7 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call([LSCTL, "restart"], env=get_modified_env_vars())
+            check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
             self.unit.status = ActiveStatus("Unit is ready")
             return True
         except CalledProcessError as e:
@@ -1430,6 +1464,49 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         else:
             self.unit.status = WaitingStatus("Waiting on relations")
 
+    def _on_smtp_data_available(self, event: SmtpDataAvailableEvent) -> None:
+        relation_data = self.smtp.get_relation_data_from_relation(event.relation)
+        if relation_data is None:
+            logger.warning("smtp_data_available fired but relation data is empty")
+            return
+
+        host = relation_data.host
+        # Bracket bare hostnames and IPv4 addresses; IPv6 literals are already bracketed
+        if not host.startswith("["):
+            host = f"[{host}]"
+        relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
+
+        logger.info("Configuring SMTP relay: %s", relay_host)
+        self._configure_smtp(relay_host)
+        self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
+
+    def _on_smtp_relation_broken(self, _) -> None:
+        self._clear_sasl_passwd()
+
+    def _write_sasl_passwd(
+        self, relay_host: str, user: str | None, password: str | None
+    ) -> None:
+        if user is not None and password is not None:
+            sasl_passwd_line = f"{relay_host} {user}:{password}\n"
+            fd = os.open(
+                POSTFIX_SASL_PASSWD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(fd, "w") as f:
+                f.write(sasl_passwd_line)
+            check_call(["postmap", POSTFIX_SASL_PASSWD])
+            os.chmod(f"{POSTFIX_SASL_PASSWD}.db", 0o600)
+            logger.info("SMTP SASL credentials written to %s", POSTFIX_SASL_PASSWD)
+        else:
+            self._clear_sasl_passwd()
+
+    def _clear_sasl_passwd(self) -> None:
+        for path in (POSTFIX_SASL_PASSWD, f"{POSTFIX_SASL_PASSWD}.db"):
+            try:
+                os.unlink(path)
+                logger.info("Removed stale SMTP SASL file %s", path)
+            except FileNotFoundError:
+                pass
+
     def _configure_oidc(self) -> None:
         if not self.charm_config.oidc_issuer:  # not doing OIDC
             return
@@ -1555,13 +1632,22 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         try:
             check_call([LSCTL, "stop"], env=get_modified_env_vars())
         except CalledProcessError as e:
-            logger.error("Stopping services failed with return code %d", e.returncode)
+            logger.error("Stopping services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to stop services")
             event.fail("Failed to stop services")
-        else:
-            self.unit.status = MaintenanceStatus("Services stopped")
-            self._stored.running = False
-            self._stored.paused = True
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].stop()
+        except snap.SnapError as e:
+            logger.error("Failed to stop landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to stop landscape-outbox snap")
+            event.fail(f"Failed to stop landscape-outbox snap: {str(e)}")
+            return
+
+        self.unit.status = MaintenanceStatus("Services stopped")
+        self._stored.running = False
+        self._stored.paused = True
 
     def _resume(self, event: ActionEvent):
         self.unit.status = MaintenanceStatus("Starting services")
@@ -1576,17 +1662,26 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             )
             check_call([LSCTL, "status"], env=get_modified_env_vars())
         except CalledProcessError as e:
-            logger.error("Starting services failed with return code %d", e.returncode)
-            logger.error("Failed to start services: %s", start_result.stdout)
+            logger.error("Starting services failed: %s", e)
+            logger.error("lsctl start output: %s", start_result.stdout)
             self.unit.status = MaintenanceStatus("Stopping services")
             subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
             self.unit.status = BlockedStatus("Failed to start services")
             event.fail(f"Failed to start services: {start_result.stdout}")
-        else:
-            self._stored.running = True
-            self._stored.paused = False
-            self.unit.status = ActiveStatus("Unit is ready")
-            self._update_ready_status()
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].start()
+        except snap.SnapError as e:
+            logger.error("Failed to start landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to start landscape-outbox snap")
+            event.fail(f"Failed to start landscape-outbox snap: {str(e)}")
+            return
+
+        self._stored.running = True
+        self._stored.paused = False
+        self.unit.status = ActiveStatus("Unit is ready")
+        self._update_ready_status()
 
     def _get_landscape_server_deb_resource(self) -> Path | None:
         """Return path to an attached landscape-server .deb resource, or None."""

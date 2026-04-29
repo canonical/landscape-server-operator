@@ -48,7 +48,6 @@ class LandscapeCharmConfiguration(BaseModel):
     admin_name: str | None = None
     admin_password: str | None = None
     registration_key: str | None = None
-    smtp_relay_host: str
     http_proxy: str | None = None
     https_proxy: str | None = None
     no_proxy: str | None = None
@@ -78,6 +77,7 @@ class LandscapeCharmConfiguration(BaseModel):
     package_upload_base_port: int
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
+    outbox_snap_channel: str
 
     @field_validator("deployment_mode")
     @classmethod

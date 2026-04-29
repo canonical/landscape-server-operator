@@ -11,6 +11,10 @@ maintainers:
 summary: Charm for installing and using Self-Hosted Landscape Server.
 
 requires:
+  smtp:
+    interface: smtp
+    limit: 1
+    optional: true
   database:
     interface: postgresql_client
   db:

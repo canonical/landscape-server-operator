@@ -154,3 +154,17 @@ def empty_deb_resource(tmp_path):
     empty = tmp_path / "landscape-server.deb"
     empty.write_bytes(b"")
     return Resource(name="landscape-server-deb", path=empty)
+
+
+class FakeSnapModule:
+    def __init__(self):
+        self.add = MagicMock()
+        self.ensure = MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def snap_fixture(monkeypatch: pytest.MonkeyPatch):
+    fake_snap = FakeSnapModule()
+    monkeypatch.setattr("charm.snap.add", fake_snap.add)
+    monkeypatch.setattr("charm.snap.ensure", fake_snap.ensure)
+    return fake_snap
