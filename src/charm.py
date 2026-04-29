@@ -16,7 +16,7 @@ from dataclasses import asdict
 from functools import cached_property
 import json
 import os
-import pathlib
+from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
@@ -1587,7 +1587,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = ActiveStatus("Unit is ready")
             self._update_ready_status()
 
-    def _get_landscape_server_deb_resource(self) -> "pathlib.Path | None":
+    def _get_landscape_server_deb_resource(self) -> Path | None:
         """Return path to an attached landscape-server .deb resource, or None."""
         try:
             path = self.model.resources.fetch("landscape-server-deb")

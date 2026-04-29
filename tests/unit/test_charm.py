@@ -1924,7 +1924,7 @@ class TestMultiplePPAs:
 
 
 class TestDebResourceInstall:
-    def test_ppa_path_used_when_no_resource(self, empty_deb_resource):
+    def test_ppa_path_used_when_empty_resource(self, empty_deb_resource):
         ctx = Context(LandscapeServerCharm)
         state = State(
             config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
@@ -1962,34 +1962,8 @@ class TestDebResourceInstall:
         ):
             apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
-        calls = [str(c) for c in check_call_mock.call_args_list]
-        assert any("landscape-server.deb" in c for c in calls)
-        for call_args in apt_mock.add_package.call_args_list:
-            assert "landscape-server" not in call_args.args[0]
-
-    def test_local_deb_uses_no_install_recommends(self, tmp_path):
-        from ops.testing import Resource
-
-        deb = tmp_path / "landscape-server.deb"
-        deb.write_bytes(b"\x00" * 100)
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
-            unit_status=MaintenanceStatus(),
-            resources=[Resource(name="landscape-server-deb", path=deb)],
-        )
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_call_mock,
-            patch("charm.prepend_default_settings"),
-            patch("charm.update_service_conf"),
-        ):
-            apt_mock.add_package.return_value = None
-            ctx.run(ctx.on.install(), state)
-        calls = [str(c) for c in check_call_mock.call_args_list]
-        assert any(
-            "--no-install-recommends" in c and "landscape-server.deb" in c
-            for c in calls
+        check_call_mock.assert_any_call(
+            ["apt", "install", "-y", "--no-install-recommends", str(deb)]
         )
         apt_mock.add_package.assert_not_called()
 
@@ -2015,10 +1989,8 @@ class TestDebResourceInstall:
         ):
             apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
-        calls = [str(c) for c in check_call_mock.call_args_list]
-        assert any(
-            "--no-install-recommends" in c and "landscape-server.deb" in c
-            for c in calls
+        check_call_mock.assert_any_call(
+            ["apt", "install", "-y", "--no-install-recommends", str(deb)]
         )
         apt_mock.add_package.assert_not_called()
 
