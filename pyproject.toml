@@ -30,7 +30,7 @@ integration = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py310"
 # Skip vendored dependencies
 extend-exclude = ["lib"]
 
