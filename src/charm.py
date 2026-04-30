@@ -109,7 +109,7 @@ LANDSCAPE_PACKAGES = (
     "landscape-common",
 )
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
-DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/edge"  # TODO update when stable is released.
+DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
