@@ -22,3 +22,4 @@ jobs:
     uses: canonical/data-platform-workflows/.github/workflows/build_charm.yaml@v49.0.1
     with:
       charmcraft-snap-channel: latest/edge
+      cache: false
