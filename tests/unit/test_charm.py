@@ -2139,9 +2139,13 @@ class TestGetModifiedEnvVars(unittest.TestCase):
     def test_removes_juju_python(self):
         """Removes any python paths that contain `juju`"""
 
-        pythonpath = "/var/lib/juju/python3:/usr/lib/python3:/usr/lib/juju/python3.10"
+        fake_syspath = [
+            "/var/lib/juju/python3",
+            "/usr/lib/python3",
+            "/usr/lib/juju/python3.10",
+        ]
 
-        with patch.dict(os.environ, {"PYTHONPATH": pythonpath}):
+        with patch("src.helpers.sys.path", fake_syspath):
             modified = get_modified_env_vars()["PYTHONPATH"]
 
         self.assertNotIn("/var/lib/juju/python3", modified)

@@ -8,7 +8,7 @@ dependencies = [
     "cosl==1.4.0",
     "email-validator>=2",
     "ops==2.23.1",
-    "pydantic==2.9.2",
+    "pydantic==2.13.0",
 ]
 
 [dependency-groups]

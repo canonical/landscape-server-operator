@@ -16,6 +16,7 @@ from dataclasses import asdict
 from functools import cached_property
 import json
 import os
+from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
@@ -108,7 +109,7 @@ LANDSCAPE_PACKAGES = (
     "landscape-common",
 )
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
-DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/edge"  # TODO update when stable is released.
+DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
@@ -622,6 +623,14 @@ class LandscapeServerCharm(CharmBase):
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
+        # Create /sbin symlinks for fuse mount helpers, missing on
+        # resolute where /sbin and /usr/sbin are not merged,
+        # causing snapd's syscheck to fail.
+        for helper in ["mount.fuse", "mount.fuse3"]:
+            src = Path(f"/usr/sbin/{helper}")
+            dst = Path(f"/sbin/{helper}")
+            if src.exists() and not dst.exists():
+                dst.symlink_to(src)
 
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
