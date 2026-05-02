@@ -258,9 +258,9 @@ def test_bootstrap_account_created_with_modern_database(
         f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
         " -tAc 'SELECT email FROM person;'",
     )
-    assert (
-        admin_email in result
-    ), f"Admin {admin_email} not found in person table after bootstrap. "
+    assert admin_email in result, (
+        f"Admin {admin_email} not found in person table after bootstrap. "
+    )
 
 
 def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
