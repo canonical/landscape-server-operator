@@ -238,21 +238,19 @@ def test_bootstrap_account_created_with_modern_database(
     if not has_modern_pg(juju):
         pytest.skip("Modern database relation not active")
 
-    admin_email = juju.config("landscape-server").get("admin_email")
-    if not admin_email:
-        pytest.skip("admin_email not configured")
+    config = juju.config("landscape-server")
+    if not all(config.get(k) for k in ("admin_email", "admin_name", "admin_password")):
+        pytest.skip(
+            "admin_email, admin_name, and admin_password must all be configured"
+        )
+    admin_email = config["admin_email"]
 
     juju.wait(jubilant.all_active, timeout=300)
 
-    conf = juju.ssh(
-        "landscape-server/leader",
-        "sudo awk -F' = ' '/^\\[stores\\]/{f=1} /^\\[/{if(!/^\\[stores\\]/)f=0} "
-        "f && /^host/{h=$2} f && /^password/{pw=$2} "
-        "f && /^user/{u=$2} f && /^main/{m=$2} "
-        "END{print h,pw,u,m}' /etc/landscape/service.conf",
-    ).split()
-    host, port = conf[0].split(":")
-    password, user, dbname = conf[1], conf[2], conf[3]
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    stores = json.loads(result.results["config"])["stores"]
+    host, port = stores["host"].split(":")
+    password, user, dbname = stores["password"], stores["user"], stores["main"]
     result = juju.ssh(
         "landscape-server/leader",
         f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
