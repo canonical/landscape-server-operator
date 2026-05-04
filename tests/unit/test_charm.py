@@ -1999,6 +1999,18 @@ class TestBootstrapAccount(unittest.TestCase):
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
+    def test_bootstrap_account_skips_when_no_root_url_and_no_leader_ip(self, _):
+        """If neither root_url nor leader_ip is available, skip bootstrap."""
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
+        self.assertEqual(len(self._bootstrap_calls()), 0)
+
+    @patch("charm.update_service_conf")
     def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
         self.harness.charm._stored.leader_ip = "10.0.0.1"
         self.harness.update_config(

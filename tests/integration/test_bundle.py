@@ -243,6 +243,8 @@ def test_bootstrap_account_created_with_modern_database(
         pytest.skip(
             "admin_email, admin_name, and admin_password must all be configured"
         )
+    if not config.get("root_url"):
+        pytest.skip("root_url must be configured for bootstrap-account")
     admin_email = config["admin_email"]
 
     juju.wait(jubilant.all_active, timeout=300)

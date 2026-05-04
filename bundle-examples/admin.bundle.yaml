@@ -27,6 +27,7 @@ applications:
       admin_email: john@example.com
       admin_name: John Smith
       admin_password: pwd
+      root_url: https://landscape.local/
     base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy

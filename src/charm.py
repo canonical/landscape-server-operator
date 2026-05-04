@@ -1568,6 +1568,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["root_url"] = self.charm_config.root_url
         if not karg["root_url"] and self._stored.leader_ip:
             karg["root_url"] = "https://" + self._stored.leader_ip
+        if not karg["root_url"]:
+            logger.warning("Skipping bootstrap: root_url not yet available")
+            return
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
 
