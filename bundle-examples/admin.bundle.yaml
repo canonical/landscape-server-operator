@@ -1,4 +1,4 @@
-description: Landscape Scalable Dev with in-model HAProxy
+description: Landscape Scalable Dev bootstrapped with an initial admin
 applications:
   postgresql:
     channel: 16/stable
