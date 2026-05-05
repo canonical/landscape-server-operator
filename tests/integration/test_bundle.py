@@ -828,15 +828,11 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
 
     unit_name = next(iter(juju.status().apps["landscape-server"].units))
 
-    landscape_ppas = [p.strip() for p in landscape_ppa.split(",") if p.strip()]
-
     try:
         juju.ssh(
             unit_name,
             f"sudo add-apt-repository -y {old_ppa} && "
-            + " && ".join(
-                f"sudo add-apt-repository -y --remove {ppa}" for ppa in landscape_ppas
-            ),
+            f"sudo add-apt-repository -y --remove {landscape_ppa}",
         )
         try:
             juju.ssh(unit_name, f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/")
