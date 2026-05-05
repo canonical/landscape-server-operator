@@ -183,6 +183,19 @@ options:
     description: |
       A cookie encryption key used for API authentication flows. The value should be
       32 url-safe, base64 encoded bytes. If not set, one will be generated securely.
+  gpg_secret_id:
+    type: string
+    default:
+    description: |
+      Juju secret URI (e.g. secret:xxxx) containing the GPG credentials used by
+      Landscape Server to sign repository metadata. The secret must contain two fields:
+        - gpg-passphrase: the GPG key passphrase
+        - gpg-private-key: the ASCII-armored GPG private key
+      The secret must be granted to the landscape-server application before setting
+      this option. When set, the charm writes the passphrase to
+      <gpg_home_dir>/gpg-passphrase.txt and imports the private key into
+      <gpg_home_dir> (default: /var/lib/landscape-server/gnupg) on install and
+      whenever the secret is rotated.
   min_install:
     type: boolean
     default: False

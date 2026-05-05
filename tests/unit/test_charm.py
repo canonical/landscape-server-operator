@@ -8,10 +8,11 @@ from grp import struct_group
 import json
 import os
 from pwd import struct_passwd
+import subprocess
 from subprocess import CalledProcessError
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
+from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
 
 from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
@@ -24,6 +25,7 @@ from ops.testing import (
     MaintenanceStatus,
     PeerRelation,
     Relation,
+    Secret,
     State,
     StoredState,
     TCPPort,
@@ -34,6 +36,8 @@ from charm import (
     DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
+    GPG_HOME_DIR_DEFAULT,
+    GPG_SERVICE_CONF_SECTIONS,
     HASH_ID_DATABASES,
     LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
@@ -2196,6 +2200,209 @@ def test_action_get_service_conf(monkeypatch):
     assert ctx.action_results is not None
     assert "config" in ctx.action_results
     assert json.loads(ctx.action_results["config"]) == conf
+
+
+class TestGPGConfiguration:
+    """Tests for GPG credential management via Juju secrets."""
+
+    GPG_SECRET_ID = "secret:test-gpg-secret-id"
+    PASSPHRASE = "my-test-passphrase"
+    PRIVATE_KEY = (
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\ntest"
+        "\n-----END PGP PRIVATE KEY BLOCK-----"
+    )
+    GPG_HOME_DIR = GPG_HOME_DIR_DEFAULT
+    GPG_PASSPHRASE_FILE = os.path.join(GPG_HOME_DIR_DEFAULT, "gpg-passphrase.txt")
+
+    def _make_gpg_secret(self, secret_id=None):
+        return Secret(
+            id=secret_id or self.GPG_SECRET_ID,
+            tracked_content={
+                "gpg-passphrase": self.PASSPHRASE,
+                "gpg-private-key": self.PRIVATE_KEY,
+            },
+        )
+
+    def test_no_secret_configured_skips_gpg(self, replicas_network_state):
+        """When gpg_secret_id is not set, _configure_gpg does nothing."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(**replicas_network_state)
+
+        with patch("charm.os.makedirs") as mock_makedirs:
+            state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        mock_makedirs.assert_not_called()
+        assert not isinstance(state_out.unit_status, BlockedStatus)
+
+    def test_secret_not_found_sets_blocked(self, replicas_network_state):
+        """When the secret does not exist, the unit enters BlockedStatus."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, BlockedStatus)
+        assert "not found" in state_out.unit_status.message
+
+    def test_secret_missing_fields_sets_blocked(self, replicas_network_state):
+        """When the secret exists but lacks required fields, BlockedStatus is set."""
+        ctx = Context(LandscapeServerCharm)
+        incomplete_secret = Secret(
+            id=self.GPG_SECRET_ID,
+            tracked_content={"gpg-passphrase": self.PASSPHRASE},
+        )
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[incomplete_secret],
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, BlockedStatus)
+        assert "missing required fields" in state_out.unit_status.message
+
+    def test_gpg_import_failure_sets_blocked(self, replicas_network_state):
+        """When gpg --import fails, BlockedStatus is set."""
+        ctx = Context(LandscapeServerCharm)
+        secret = self._make_gpg_secret()
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[secret],
+        )
+        mock_landscape = Mock()
+        mock_landscape.pw_uid = 1000
+        mock_landscape.pw_gid = 1001
+
+        with (
+            patch("charm.os.makedirs"),
+            patch("charm.os.umask", return_value=0o022),
+            patch("charm.user_exists", return_value=mock_landscape),
+            patch("charm.subprocess.run") as mock_run,
+            patch("builtins.open", mock_open()),
+        ):
+            mock_run.side_effect = subprocess.CalledProcessError(
+                1, "gpg", stderr="bad key"
+            )
+            state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, BlockedStatus)
+        assert "Failed to import GPG key" in state_out.unit_status.message
+
+    def test_gpg_configured_successfully(self, replicas_network_state):
+        """When credentials are valid, files are written with correct permissions."""
+        ctx = Context(LandscapeServerCharm)
+        secret = self._make_gpg_secret()
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[secret],
+        )
+        mock_landscape = Mock()
+        mock_landscape.pw_uid = 1000
+        mock_landscape.pw_gid = 1001
+
+        with (
+            patch("charm.os.makedirs") as mock_makedirs,
+            patch("charm.os.umask", return_value=0o022) as mock_umask,
+            patch("charm.user_exists", return_value=mock_landscape),
+            patch("charm.subprocess.run") as mock_run,
+            patch("charm.update_service_conf") as mock_update_service_conf,
+            patch("builtins.open", mock_open()) as mock_file,
+        ):
+            mock_run.return_value = subprocess.CompletedProcess([], 0)
+            ctx.run(ctx.on.config_changed(), state_in)
+
+        mock_makedirs.assert_called_once_with(
+            self.GPG_HOME_DIR, mode=0o700, exist_ok=True
+        )
+        mock_umask.assert_any_call(0o177)
+        mock_file.assert_any_call(self.GPG_PASSPHRASE_FILE, "w")
+        mock_run.assert_called_once_with(
+            [
+                "gpg",
+                "--homedir",
+                self.GPG_HOME_DIR,
+                "--batch",
+                "--passphrase-file",
+                self.GPG_PASSPHRASE_FILE,
+                "--import",
+            ],
+            input=self.PRIVATE_KEY,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        expected_gpg_conf = {
+            section: {
+                "gpg-home-path": self.GPG_HOME_DIR,
+                "gpg-passphrase-path": self.GPG_PASSPHRASE_FILE,
+            }
+            for section in GPG_SERVICE_CONF_SECTIONS
+        }
+        mock_update_service_conf.assert_any_call(expected_gpg_conf)
+
+    def test_secret_changed_ignores_different_secret(self, replicas_network_state):
+        """secret-changed for an unrelated secret ID is ignored."""
+        ctx = Context(LandscapeServerCharm)
+        other_secret = Secret(
+            id="secret:other-secret-id",
+            tracked_content={"key": "value"},
+        )
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[other_secret],
+        )
+
+        with patch("charm.os.makedirs") as mock_makedirs:
+            ctx.run(ctx.on.secret_changed(other_secret), state_in)
+
+        mock_makedirs.assert_not_called()
+
+    def test_secret_changed_reconfigures_gpg(self, replicas_network_state):
+        """secret-changed for the GPG secret triggers reconfiguration."""
+        ctx = Context(LandscapeServerCharm)
+        secret = self._make_gpg_secret()
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[secret],
+        )
+        mock_landscape = Mock()
+        mock_landscape.pw_uid = 1000
+        mock_landscape.pw_gid = 1001
+
+        with (
+            patch("charm.os.makedirs"),
+            patch("charm.os.umask", return_value=0o022),
+            patch("charm.user_exists", return_value=mock_landscape),
+            patch("charm.subprocess.run") as mock_run,
+            patch("charm.update_service_conf"),
+            patch("builtins.open", mock_open()),
+        ):
+            mock_run.return_value = subprocess.CompletedProcess([], 0)
+            ctx.run(ctx.on.secret_changed(secret), state_in)
+
+        mock_run.assert_called_once_with(
+            [
+                "gpg",
+                "--homedir",
+                self.GPG_HOME_DIR,
+                "--batch",
+                "--passphrase-file",
+                self.GPG_PASSPHRASE_FILE,
+                "--import",
+            ],
+            input=self.PRIVATE_KEY,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
 
 
 class TestSmtpIntegration(unittest.TestCase):
