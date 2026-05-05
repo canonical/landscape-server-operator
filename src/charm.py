@@ -725,13 +725,10 @@ class LandscapeServerCharm(CharmBase):
         return True
 
     def _on_secret_changed(self, event) -> None:
-        """Re-configure GPG credentials when the GPG secret is rotated."""
-        secret_id = self.charm_config.gpg_secret_id
-        if not secret_id or event.secret.id != secret_id:
-            return
-
-        if self._configure_gpg():
-            self._update_ready_status(restart_services=True)
+        """Handle secret-changed for any secret this charm tracks."""
+        if event.secret.id == self.charm_config.gpg_secret_id:
+            if self._configure_gpg():
+                self._update_ready_status(restart_services=True)
 
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()

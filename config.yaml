@@ -192,9 +192,10 @@ options:
         - gpg-passphrase: the GPG key passphrase
         - gpg-private-key: the ASCII-armored GPG private key
       The secret must be granted to the landscape-server application before setting
-      this option. When set, the charm writes /etc/landscape/gpg-passphrase and
-      imports the private key into /etc/landscape/gpg on install and whenever the
-      secret is rotated.
+      this option. When set, the charm writes the passphrase to
+      <gpg_home_dir>/gpg-passphrase.txt and imports the private key into
+      <gpg_home_dir> (default: /var/lib/landscape-server/gnupg) on install and
+      whenever the secret is rotated.
   min_install:
     type: boolean
     default: False
