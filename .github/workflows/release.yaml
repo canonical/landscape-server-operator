@@ -1,5 +1,5 @@
 # Copyright 2026 Canonical Ltd.
-name: Release `main` to `25.10/edge` channel on Charmhub
+name: Release `main` to `26.04/edge` channel on Charmhub
 
 on:
     push:
@@ -35,7 +35,7 @@ jobs:
 
         uses: canonical/data-platform-workflows/.github/workflows/release_charm_edge.yaml@v35.0.2
         with:
-            track: "25.10"
+            track: "26.04"
             artifact-prefix: ${{ needs.build.outputs.artifact-prefix }}
 
         secrets:

@@ -78,6 +78,7 @@ class LandscapeCharmConfiguration(BaseModel):
     package_upload_base_port: int
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
+    outbox_snap_channel: str
 
     @field_validator("deployment_mode")
     @classmethod

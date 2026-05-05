@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
 
+from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
 from ops.charm import ActionEvent
@@ -31,11 +32,14 @@ from ops.testing import (
 )
 
 from charm import (
+    BOOTSTRAP_ACCOUNT_SCRIPT,
+    DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
     GPG_HOME_DIR_DEFAULT,
     GPG_SERVICE_CONF_SECTIONS,
     HASH_ID_DATABASES,
+    LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LandscapeServerCharm,
@@ -362,6 +366,40 @@ class TestOnConfigChanged:
         state_out = ctx.run(event, leader_state)
 
         assert expected_port in state_out.opened_ports
+
+    def test_outbox_snap_ensure_called(self, snap_fixture):
+        """Config-changed calls snap.ensure for landscape-outbox."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"outbox_snap_channel": "latest/edge"})
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel="latest/edge",
+        )
+
+    def test_outbox_snap_ensure_default_channel(self, snap_fixture):
+        """Config-changed uses the default channel when not overridden."""
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
+        )
+
+    def test_outbox_snap_ensure_failure_sets_maintenance(self, snap_fixture):
+        """If snap.ensure fails, the unit enters maintenance status."""
+        snap_fixture.ensure.side_effect = SnapError("refresh failed")
+
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        state_out = ctx.run(ctx.on.config_changed(), state)
+
+        assert isinstance(state_out.unit_status, MaintenanceStatus)
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
@@ -818,6 +856,7 @@ class TestCharm(unittest.TestCase):
             "charm",
             check_call=DEFAULT,
             apt=DEFAULT,
+            snap=DEFAULT,
             prepend_default_settings=DEFAULT,
             update_service_conf=DEFAULT,
         )
@@ -836,6 +875,10 @@ class TestCharm(unittest.TestCase):
         mocks["apt"].add_package.assert_called_once_with(
             ["landscape-server", "landscape-hashids"],
             update_cache=True,
+        )
+        mocks["snap"].add.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
         )
         status = harness.charm.unit.status
         self.assertIsInstance(status, WaitingStatus)
@@ -1454,10 +1497,16 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_pause(self):
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
+        ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._pause(Mock())
 
         check_call_mock.assert_called_once_with([LSCTL, "stop"], env=ANY)
+        outbox_snap.stop.assert_called_once()
         self.assertFalse(self.harness.charm._stored.running)
 
     def test_action_pause_CalledProcessError(self):
@@ -1480,13 +1529,17 @@ class TestCharm(unittest.TestCase):
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
         ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._resume(event)
 
         run_mock.assert_called_once_with(
             [LSCTL, "start"], capture_output=True, text=True, env=ANY
         )
         check_call_mock.assert_called_once_with([LSCTL, "status"], env=ANY)
+        outbox_snap.start.assert_called_once()
         self.harness.charm._update_ready_status.assert_called_once()
         self.assertTrue(self.harness.charm._stored.running)
         event.log.assert_called_once()
@@ -1889,15 +1942,13 @@ class TestMultiplePPAs:
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
 
-# TODO fix from broken commit.
-@unittest.skip("Broken in `de29548e2b09c71db3a55f606ab318b5ea25550d`")
 class TestBootstrapAccount(unittest.TestCase):
     def setUp(self):
         self.harness = Harness(LandscapeServerCharm)
         self.addCleanup(self.harness.cleanup)
 
         self.harness.model.get_binding = Mock(
-            return_value=Mock(bind_address="123.123.123.123")
+            return_value=Mock(network=Mock(bind_address="123.123.123.123"))
         )
         self.harness.add_relation("replicas", "landscape-server")
         self.harness.set_leader()
@@ -1907,16 +1958,22 @@ class TestBootstrapAccount(unittest.TestCase):
         grp_mock = patch("charm.group_exists").start()
         grp_mock.return_value = Mock(spec_set=struct_group, gr_gid=1000)
 
-        self.process_mock = patch("subprocess.run").start()
+        self.process_mock = patch("charm.subprocess.run").start()
         self.log_mock = patch("charm.logger.error").start()
         self.log_info_mock = patch("charm.logger.info").start()
 
-        env_mock = patch("os.environ").start()
-        env_mock.copy.return_value = {}
+        patch("os.environ.copy", return_value={}).start()
 
         self.addCleanup(patch.stopall)
 
         self.harness.begin()
+
+    def _bootstrap_calls(self):
+        return [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and c.args[0][0] == BOOTSTRAP_ACCOUNT_SCRIPT
+        ]
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
@@ -1926,8 +1983,10 @@ class TestBootstrapAccount(unittest.TestCase):
                 "admin_name": "Hello Ubuntu",
             }
         )
-        self.assertIn("password required", self.log_mock.call_args.args[0])
-        self.process_mock.assert_not_called()
+        self.log_mock.assert_any_call(
+            "Admin email, name, and password required for bootstrap account"
+        )
+        self.assertEqual(self._bootstrap_calls(), [])
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_password_redacted(self, _):
@@ -1944,6 +2003,18 @@ class TestBootstrapAccount(unittest.TestCase):
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
+    def test_bootstrap_account_skips_when_no_root_url_and_no_leader_ip(self, _):
+        """If neither root_url nor leader_ip is available, skip bootstrap."""
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
+        self.assertEqual(len(self._bootstrap_calls()), 0)
+
+    @patch("charm.update_service_conf")
     def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
         self.harness.charm._stored.leader_ip = "10.0.0.1"
         self.harness.update_config(
@@ -1953,9 +2024,11 @@ class TestBootstrapAccount(unittest.TestCase):
                 "admin_password": "password",
             }
         )
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
         self.assertIn(
             "https://10.0.0.1",
-            self.process_mock.call_args.args[0],
+            calls[0].args[0],
         )
 
     @patch("charm.update_service_conf")
@@ -1971,15 +2044,14 @@ class TestBootstrapAccount(unittest.TestCase):
                 "root_url": config_root_url,
             }
         )
-        self.assertIn(config_root_url, self.process_mock.call_args.args[0])
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertIn(config_root_url, calls[0].args[0])
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_runs_once_with_correct_args(self, _):
-        """
-        Test that bootstrap account runs with correct args and that it can't
-        run again after a successful run
-        """
-        self.process_mock.return_value.returncode = 0  # Success
+    def test_bootstrap_account_runs_once_and_not_again_on_success(self, _):
+        """bootstrap-account runs once on success and does not run again."""
+        self.process_mock.return_value.returncode = 0
         admin_email = "hello@ubuntu.com"
         admin_name = "Hello Ubuntu"
         admin_password = "password"
@@ -1991,6 +2063,8 @@ class TestBootstrapAccount(unittest.TestCase):
             "root_url": root_url,
         }
         self.harness.update_config(config)
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
         self.assertEqual(
             [
                 "/opt/canonical/landscape/bootstrap-account",
@@ -2003,33 +2077,27 @@ class TestBootstrapAccount(unittest.TestCase):
                 "--root_url",
                 root_url,
             ],
-            self.process_mock.call_args.args[0],
+            calls[0].args[0],
         )
         self.harness.update_config(config)
-        self.process_mock.assert_called_once()
+        self.assertEqual(len(self._bootstrap_calls()), 1)
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_runs_twice_if_error(self, _):
-        """
-        If there's an error ensure that bootstrap account runs again and not
-        a third time if successful
-        """
-        self.process_mock.return_value.returncode = 1  # Error here
-        admin_email = "hello@ubuntu.com"
-        admin_name = "Hello Ubuntu"
-        admin_password = "password"
-        root_url = "https://www.landscape.com"
+    def test_bootstrap_account_retries_after_generic_error(self, _):
+        """After a generic error, bootstrap runs again on the next config-changed."""
+        self.process_mock.return_value.returncode = 1
+        self.process_mock.return_value.stderr = "some transient error"
         config = {
-            "admin_email": admin_email,
-            "admin_name": admin_name,
-            "admin_password": admin_password,
-            "root_url": root_url,
+            "admin_email": "hello@ubuntu.com",
+            "admin_name": "Hello Ubuntu",
+            "admin_password": "password",
+            "root_url": "https://www.landscape.com",
         }
         self.harness.update_config(config)
         self.process_mock.return_value.returncode = 0
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
-        self.assertEqual(self.process_mock.call_count, 2)
+        self.assertEqual(len(self._bootstrap_calls()), 2)
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_cannot_run_if_already_bootstrapped(
@@ -2054,7 +2122,7 @@ class TestBootstrapAccount(unittest.TestCase):
         self.harness.update_config(config)
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
-        self.process_mock.assert_called_once()
+        self.assertEqual(len(self._bootstrap_calls()), 1)
 
     @patch("subprocess.run")
     def test_hash_id_databases(self, run_mock):

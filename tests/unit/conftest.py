@@ -145,3 +145,17 @@ def apt_fixture(monkeypatch: pytest.MonkeyPatch):
         "charms.operator_libs_linux.v0.apt.remove_package", remove_package_mock
     )
     return add_package_mock, remove_package_mock
+
+
+class FakeSnapModule:
+    def __init__(self):
+        self.add = MagicMock()
+        self.ensure = MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def snap_fixture(monkeypatch: pytest.MonkeyPatch):
+    fake_snap = FakeSnapModule()
+    monkeypatch.setattr("charm.snap.add", fake_snap.add)
+    monkeypatch.setattr("charm.snap.ensure", fake_snap.ensure)
+    return fake_snap

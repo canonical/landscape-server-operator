@@ -16,11 +16,13 @@ from dataclasses import asdict
 from functools import cached_property
 import json
 import os
+from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
+from charmlibs import snap
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -69,6 +71,7 @@ from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
     grant_role,
+    PgHbaNotReadyError,
 )
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
@@ -126,6 +129,8 @@ LANDSCAPE_PACKAGES = (
     "landscape-client",
     "landscape-common",
 )
+LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
+DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
@@ -437,6 +442,19 @@ class LandscapeServerCharm(CharmBase):
             return
 
         try:
+            snap.ensure(
+                LANDSCAPE_OUTBOX_SNAP,
+                snap.SnapState.Latest.value,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as e:
+            self.unit.status = MaintenanceStatus(
+                "Failed to refresh landscape-outbox snap."
+            )
+            logger.exception(e)
+            return
+
+        try:
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
@@ -733,6 +751,14 @@ class LandscapeServerCharm(CharmBase):
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
+        # Create /sbin symlinks for fuse mount helpers, missing on
+        # resolute where /sbin and /usr/sbin are not merged,
+        # causing snapd's syscheck to fail.
+        for helper in ["mount.fuse", "mount.fuse3"]:
+            src = Path(f"/usr/sbin/{helper}")
+            dst = Path(f"/sbin/{helper}")
+            if src.exists() and not dst.exists():
+                dst.symlink_to(src)
 
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
@@ -779,6 +805,16 @@ class LandscapeServerCharm(CharmBase):
         except (PackageNotFoundError, PackageError, CalledProcessError) as exc:
             logger.error("Failed to install packages")
             raise exc  # This will trigger juju's exponential retry
+
+        self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
+        try:
+            snap.add(
+                LANDSCAPE_OUTBOX_SNAP,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as exc:
+            logger.error("Failed to install landscape-outbox snap")
+            raise exc
 
         # Write the license file, if it exists.
         license_file = self.charm_config.license_file
@@ -855,6 +891,7 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call([LSCTL, "restart"], env=get_modified_env_vars())
+            check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
             self.unit.status = ActiveStatus("Unit is ready")
             return True
         except CalledProcessError as e:
@@ -1100,15 +1137,17 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call(call, env=get_modified_env_vars())
-            self._bootstrap_account()
-            self._set_autoregistration()
-            return True
         except CalledProcessError as e:
             logger.error(
                 "Landscape Server schema update failed with return code %d",
                 e.returncode,
             )
             self.unit.status = BlockedStatus("Failed to update database schema")
+            return False
+
+        self._bootstrap_account()
+        self._set_autoregistration()
+        return True
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
@@ -1656,6 +1695,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["root_url"] = self.charm_config.root_url
         if not karg["root_url"] and self._stored.leader_ip:
             karg["root_url"] = "https://" + self._stored.leader_ip
+        if not karg["root_url"]:
+            logger.warning("Skipping bootstrap: root_url not yet available")
+            return
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
 
@@ -1684,6 +1726,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if "DuplicateAccountError" in result.stderr:
                 logger.error("Cannot bootstrap b/c account is already there!")
                 self._stored.account_bootstrapped = True
+            elif "no pg_hba.conf entry" in result.stderr:
+                # Patroni regenerates pg_hba.conf asynchronously after the
+                # landscape role is created by the schema script. Raise so
+                # Juju retries the hook once Patroni has reloaded.
+                raise PgHbaNotReadyError(result.stderr)
             else:
                 logger.error(result.stderr)
         else:
@@ -1725,13 +1772,22 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         try:
             check_call([LSCTL, "stop"], env=get_modified_env_vars())
         except CalledProcessError as e:
-            logger.error("Stopping services failed with return code %d", e.returncode)
+            logger.error("Stopping services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to stop services")
             event.fail("Failed to stop services")
-        else:
-            self.unit.status = MaintenanceStatus("Services stopped")
-            self._stored.running = False
-            self._stored.paused = True
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].stop()
+        except snap.SnapError as e:
+            logger.error("Failed to stop landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to stop landscape-outbox snap")
+            event.fail(f"Failed to stop landscape-outbox snap: {str(e)}")
+            return
+
+        self.unit.status = MaintenanceStatus("Services stopped")
+        self._stored.running = False
+        self._stored.paused = True
 
     def _resume(self, event: ActionEvent):
         self.unit.status = MaintenanceStatus("Starting services")
@@ -1746,17 +1802,26 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             )
             check_call([LSCTL, "status"], env=get_modified_env_vars())
         except CalledProcessError as e:
-            logger.error("Starting services failed with return code %d", e.returncode)
-            logger.error("Failed to start services: %s", start_result.stdout)
+            logger.error("Starting services failed: %s", e)
+            logger.error("lsctl start output: %s", start_result.stdout)
             self.unit.status = MaintenanceStatus("Stopping services")
             subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
             self.unit.status = BlockedStatus("Failed to start services")
             event.fail(f"Failed to start services: {start_result.stdout}")
-        else:
-            self._stored.running = True
-            self._stored.paused = False
-            self.unit.status = ActiveStatus("Unit is ready")
-            self._update_ready_status()
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].start()
+        except snap.SnapError as e:
+            logger.error("Failed to start landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to start landscape-outbox snap")
+            event.fail(f"Failed to start landscape-outbox snap: {str(e)}")
+            return
+
+        self._stored.running = True
+        self._stored.paused = False
+        self.unit.status = ActiveStatus("Unit is ready")
+        self._update_ready_status()
 
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()
