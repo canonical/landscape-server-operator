@@ -124,7 +124,7 @@ No modules.
 | <a name="input_revision"></a> [revision](#input\_revision) | Revision number of the charm. | `number` | `null` | no |
 | <a name="input_units"></a> [units](#input\_units) | Number of units to deploy. Ignored when 'machines' is set. | `number` | `1` | no |
 
-## Outputs
+## Outputs 
 
 | Name | Description |
 |------|-------------|
