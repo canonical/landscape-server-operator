@@ -3,12 +3,14 @@ from unittest import mock
 from unittest.mock import call, Mock, patch
 
 from charms.data_platform_libs.v0.data_interfaces import DatabaseCreatedEvent
-from ops.model import ActiveStatus, MaintenanceStatus
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from ops.testing import Context, Relation, State, StoredState
 import pytest
+from scenario.errors import UncaughtCharmError
 
 from charm import (
     LandscapeServerCharm,
+    SCHEMA_SCRIPT,
 )
 from database import (
     DatabaseConnectionContext,
@@ -16,6 +18,7 @@ from database import (
     fetch_postgres_relation_data,
     get_postgres_owner_role_from_version,
     grant_role,
+    PgHbaNotReadyError,
     PostgresRoles,
 )
 
@@ -709,3 +712,197 @@ class TestDatabaseHelpers:
 
         execute_psql_mock.assert_called_once()
         logger.error.assert_called_once()
+
+
+class TestBootstrapAccount:
+    _ADMIN_CONFIG = {
+        "admin_email": "admin@example.com",
+        "admin_name": "Admin",
+        "admin_password": "password123",
+        "root_url": "https://landscape.local",
+    }
+
+    @staticmethod
+    def _state(
+        *, account_bootstrapped: bool = False, config: dict | None = None
+    ) -> State:
+        stored = StoredState(
+            owner_path="LandscapeServerCharm",
+            content={
+                "ready": {
+                    "db": False,
+                    "inbound-amqp": False,
+                    "outbound-amqp": False,
+                    "load-balancer-certificates": False,
+                },
+                "account_bootstrapped": account_bootstrapped,
+            },
+        )
+        return State(
+            leader=True,
+            config=config or TestBootstrapAccount._ADMIN_CONFIG,
+            stored_states=[stored],
+        )
+
+    def test_pg_hba_error_raises(self):
+        """pg_hba.conf race raises PgHbaNotReadyError so Juju retries the hook."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+        pg_hba = Mock(returncode=1, stdout="", stderr="no pg_hba.conf entry for host")
+
+        with patch("charm.subprocess.run", return_value=pg_hba):
+            with ctx(ctx.on.start(), state_in) as manager:
+                with pytest.raises(PgHbaNotReadyError):
+                    manager.charm._bootstrap_account()
+
+    def test_pg_hba_error_does_not_mark_bootstrapped(self):
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+        pg_hba = Mock(returncode=1, stdout="", stderr="no pg_hba.conf entry for host")
+
+        with patch("charm.subprocess.run", return_value=pg_hba):
+            with ctx(ctx.on.start(), state_in) as manager:
+                with pytest.raises(PgHbaNotReadyError):
+                    manager.charm._bootstrap_account()
+                assert manager.charm._stored.account_bootstrapped is False
+
+    def test_success_marks_bootstrapped(self):
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+
+        with patch(
+            "charm.subprocess.run",
+            return_value=Mock(returncode=0, stdout="", stderr=""),
+        ):
+            with ctx(ctx.on.start(), state_in) as manager:
+                manager.charm._bootstrap_account()
+                assert manager.charm._stored.account_bootstrapped is True
+
+    def test_duplicate_account_marks_bootstrapped(self):
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+        dup = Mock(returncode=1, stdout="", stderr="DuplicateAccountError")
+
+        with patch("charm.subprocess.run", return_value=dup):
+            with ctx(ctx.on.start(), state_in) as manager:
+                manager.charm._bootstrap_account()
+                assert manager.charm._stored.account_bootstrapped is True
+
+    def test_generic_error_does_not_raise(self):
+        """Non-pg_hba failures are logged and swallowed — no raise."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+        error = Mock(returncode=1, stdout="", stderr="some other error")
+
+        with patch("charm.subprocess.run", return_value=error):
+            with ctx(ctx.on.start(), state_in) as manager:
+                manager.charm._bootstrap_account()
+
+    def test_already_bootstrapped_skips_script(self):
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state(account_bootstrapped=True)
+
+        with patch("charm.subprocess.run") as run_mock:
+            with ctx(ctx.on.start(), state_in) as manager:
+                manager.charm._bootstrap_account()
+                run_mock.assert_not_called()
+
+    def test_migrate_schema_bootstrap_propagates_pg_hba_raise(self):
+        """_migrate_schema_bootstrap does not swallow PgHbaNotReadyError,
+        so it propagates to the event handler and fails the hook."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+
+        with (
+            patch("charm.check_call"),
+            patch.object(
+                LandscapeServerCharm,
+                "_bootstrap_account",
+                side_effect=PgHbaNotReadyError("no pg_hba.conf entry"),
+            ),
+        ):
+            with ctx(ctx.on.start(), state_in) as manager:
+                with pytest.raises(PgHbaNotReadyError):
+                    manager.charm._migrate_schema_bootstrap()
+
+    def test_migrate_schema_bootstrap_blocks_on_schema_failure(self):
+        ctx = Context(LandscapeServerCharm)
+        state_in = self._state()
+
+        with patch(
+            "charm.check_call", side_effect=CalledProcessError(1, SCHEMA_SCRIPT)
+        ):
+            with ctx(ctx.on.start(), state_in) as manager:
+                result = manager.charm._migrate_schema_bootstrap()
+                assert result is False
+                assert isinstance(manager.charm.unit.status, BlockedStatus)
+
+    def test_pg_hba_error_fails_database_hook(self):
+        """pg_hba.conf race causes UncaughtCharmError so Juju retries the hook."""
+        ctx = Context(LandscapeServerCharm)
+        relation = Relation(
+            "database",
+            remote_app_name="postgresql",
+            remote_app_data={
+                "username": "landscape",
+                "password": "secret",
+                "endpoints": "1.2.3.4:5432",
+                "version": "14.8",
+                "database": "landscape",
+            },
+        )
+        state_in = State(
+            leader=True,
+            relations=[relation],
+            config=self._ADMIN_CONFIG,
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={
+                        "ready": {
+                            "db": False,
+                            "inbound-amqp": False,
+                            "outbound-amqp": False,
+                            "load-balancer-certificates": False,
+                        },
+                        "account_bootstrapped": False,
+                    },
+                )
+            ],
+        )
+        pg_hba = Mock(returncode=1, stdout="", stderr="no pg_hba.conf entry for host")
+
+        with (
+            patch(
+                "charm.fetch_postgres_relation_data",
+                return_value=DatabaseConnectionContext(
+                    host="1.2.3.4",
+                    port="5432",
+                    username="landscape",
+                    password="secret",
+                    version="14.8",
+                ),
+            ),
+            patch("charm.update_db_conf"),
+            patch("charm.check_call"),
+            patch(
+                "charm.get_postgres_roles",
+                return_value=PostgresRoles(
+                    relation="landscape",
+                    application="landscape-app",
+                    owner="postgres",
+                    superuser=None,
+                ),
+            ),
+            patch("charm.grant_role"),
+            patch("charm.subprocess.run", return_value=pg_hba),
+            patch(
+                "charm.LandscapeServerCharm._update_wsl_distributions",
+                return_value=True,
+            ),
+            patch("charm.LandscapeServerCharm._update_ready_status"),
+        ):
+            with pytest.raises(UncaughtCharmError) as exc_info:
+                ctx.run(ctx.on.relation_changed(relation), state_in)
+
+        assert isinstance(exc_info.value.__cause__, PgHbaNotReadyError)

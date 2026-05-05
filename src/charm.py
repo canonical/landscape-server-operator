@@ -70,6 +70,7 @@ from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
     grant_role,
+    PgHbaNotReadyError,
 )
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
@@ -101,6 +102,7 @@ BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
+
 
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
@@ -1008,15 +1010,17 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call(call, env=get_modified_env_vars())
-            self._bootstrap_account()
-            self._set_autoregistration()
-            return True
         except CalledProcessError as e:
             logger.error(
                 "Landscape Server schema update failed with return code %d",
                 e.returncode,
             )
             self.unit.status = BlockedStatus("Failed to update database schema")
+            return False
+
+        self._bootstrap_account()
+        self._set_autoregistration()
+        return True
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
@@ -1564,6 +1568,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["root_url"] = self.charm_config.root_url
         if not karg["root_url"] and self._stored.leader_ip:
             karg["root_url"] = "https://" + self._stored.leader_ip
+        if not karg["root_url"]:
+            logger.warning("Skipping bootstrap: root_url not yet available")
+            return
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
 
@@ -1592,6 +1599,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if "DuplicateAccountError" in result.stderr:
                 logger.error("Cannot bootstrap b/c account is already there!")
                 self._stored.account_bootstrapped = True
+            elif "no pg_hba.conf entry" in result.stderr:
+                # Patroni regenerates pg_hba.conf asynchronously after the
+                # landscape role is created by the schema script. Raise so
+                # Juju retries the hook once Patroni has reloaded.
+                raise PgHbaNotReadyError(result.stderr)
             else:
                 logger.error(result.stderr)
         else:
