@@ -101,8 +101,24 @@ AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistrat
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
 
-GPG_HOME_DIR = "/etc/landscape-server/gpg"
-GPG_PASSPHRASE_FILE = "/etc/landscape-server/gpg-passphrase.txt"
+GPG_HOME_DIR_DEFAULT = "/var/lib/landscape-server/gnupg"
+
+GPG_SERVICE_CONF_SECTIONS = (
+    "api",
+    "async-frontend",
+    "hostagent-message-consumer",
+    "hostagent-message-server",
+    "job-handler",
+    "landscape",
+    "maintenance",
+    "message-server",
+    "package-search",
+    "package-upload",
+    "pingserver",
+    "schema",
+    "scripts",
+    "secrets",
+)
 
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
@@ -611,10 +627,11 @@ class LandscapeServerCharm(CharmBase):
     def _configure_gpg(self) -> bool:
         """Write GPG credentials from the configured Juju secret.
 
-        Writes the passphrase to GPG_PASSPHRASE_FILE and imports the private
-        key into GPG_HOME_DIR. Returns True when GPG was configured
-        successfully, False when no secret is configured. Sets a BlockedStatus
-        and returns False on error.
+        Reads gpg_home_dir from service.conf [system] section, writes the
+        passphrase file there, imports the private key into that directory,
+        and updates service.conf so all services point to the correct paths.
+        Returns True on success, False when no secret is configured or on
+        error. Sets BlockedStatus on error.
         """
         secret_id = self.charm_config.gpg_secret_id
         if not secret_id:
@@ -642,34 +659,40 @@ class LandscapeServerCharm(CharmBase):
             self.unit.status = BlockedStatus("GPG secret missing required fields")
             return False
 
+        service_conf = read_service_conf()
+        gpg_home_dir = service_conf.get("system", {}).get(
+            "gpg_home_dir", GPG_HOME_DIR_DEFAULT
+        )
+        gpg_passphrase_file = os.path.join(gpg_home_dir, "gpg-passphrase.txt")
+
         landscape_user = user_exists("landscape")
         landscape_uid = landscape_user.pw_uid
         landscape_gid = landscape_user.pw_gid
 
-        os.makedirs(GPG_HOME_DIR, mode=0o700, exist_ok=True)
+        os.makedirs(gpg_home_dir, mode=0o700, exist_ok=True)
         # Enforce 0700 explicitly — makedirs is subject to umask
-        os.chmod(GPG_HOME_DIR, 0o700)
-        os.chown(GPG_HOME_DIR, landscape_uid, landscape_gid)
+        os.chmod(gpg_home_dir, 0o700)
+        os.chown(gpg_home_dir, landscape_uid, landscape_gid)
 
         # Set umask to 0o177 so open() creates the file with 0o600 immediately,
         # avoiding a window where it could be world-readable
         old_umask = os.umask(0o177)
         try:
-            with open(GPG_PASSPHRASE_FILE, "w") as fp:
+            with open(gpg_passphrase_file, "w") as fp:
                 fp.write(passphrase)
         finally:
             os.umask(old_umask)
-        os.chown(GPG_PASSPHRASE_FILE, landscape_uid, landscape_gid)
+        os.chown(gpg_passphrase_file, landscape_uid, landscape_gid)
 
         try:
             subprocess.run(
                 [
                     "gpg",
                     "--homedir",
-                    GPG_HOME_DIR,
+                    gpg_home_dir,
                     "--batch",
                     "--passphrase-file",
-                    GPG_PASSPHRASE_FILE,
+                    gpg_passphrase_file,
                     "--import",
                 ],
                 input=private_key,
@@ -681,6 +704,15 @@ class LandscapeServerCharm(CharmBase):
             logger.error("Failed to import GPG private key: %s", e.stderr)
             self.unit.status = BlockedStatus("Failed to import GPG key")
             return False
+
+        gpg_service_conf_updates = {
+            section: {
+                "gpg-home-path": gpg_home_dir,
+                "gpg-passphrase-path": gpg_passphrase_file,
+            }
+            for section in GPG_SERVICE_CONF_SECTIONS
+        }
+        update_service_conf(gpg_service_conf_updates)
 
         logger.info("GPG credentials configured successfully")
         self.unit.status = WaitingStatus("Waiting on relations")

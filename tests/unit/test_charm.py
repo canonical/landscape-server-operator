@@ -33,8 +33,8 @@ from ops.testing import (
 from charm import (
     DEFAULT_SERVICES,
     get_modified_env_vars,
-    GPG_HOME_DIR,
-    GPG_PASSPHRASE_FILE,
+    GPG_HOME_DIR_DEFAULT,
+    GPG_SERVICE_CONF_SECTIONS,
     HASH_ID_DATABASES,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
@@ -2091,9 +2091,13 @@ class TestGetModifiedEnvVars(unittest.TestCase):
     def test_removes_juju_python(self):
         """Removes any python paths that contain `juju`"""
 
-        pythonpath = "/var/lib/juju/python3:/usr/lib/python3:/usr/lib/juju/python3.10"
+        fake_syspath = [
+            "/var/lib/juju/python3",
+            "/usr/lib/python3",
+            "/usr/lib/juju/python3.10",
+        ]
 
-        with patch.dict(os.environ, {"PYTHONPATH": pythonpath}):
+        with patch("src.helpers.sys.path", fake_syspath):
             modified = get_modified_env_vars()["PYTHONPATH"]
 
         self.assertNotIn("/var/lib/juju/python3", modified)
@@ -2139,6 +2143,8 @@ class TestGPGConfiguration:
         "-----BEGIN PGP PRIVATE KEY BLOCK-----\ntest"
         "\n-----END PGP PRIVATE KEY BLOCK-----"
     )
+    GPG_HOME_DIR = GPG_HOME_DIR_DEFAULT
+    GPG_PASSPHRASE_FILE = os.path.join(GPG_HOME_DIR_DEFAULT, "gpg-passphrase.txt")
 
     def _make_gpg_secret(self, secret_id=None):
         return Secret(
@@ -2206,8 +2212,6 @@ class TestGPGConfiguration:
 
         with (
             patch("charm.os.makedirs"),
-            patch("charm.os.chmod"),
-            patch("charm.os.chown"),
             patch("charm.os.umask", return_value=0o022),
             patch("charm.user_exists", return_value=mock_landscape),
             patch("charm.subprocess.run") as mock_run,
@@ -2236,30 +2240,28 @@ class TestGPGConfiguration:
 
         with (
             patch("charm.os.makedirs") as mock_makedirs,
-            patch("charm.os.chmod") as mock_chmod,
-            patch("charm.os.chown") as mock_chown,
             patch("charm.os.umask", return_value=0o022) as mock_umask,
             patch("charm.user_exists", return_value=mock_landscape),
             patch("charm.subprocess.run") as mock_run,
+            patch("charm.update_service_conf") as mock_update_service_conf,
             patch("builtins.open", mock_open()) as mock_file,
         ):
             mock_run.return_value = subprocess.CompletedProcess([], 0)
             ctx.run(ctx.on.config_changed(), state_in)
 
-        mock_makedirs.assert_called_once_with(GPG_HOME_DIR, mode=0o700, exist_ok=True)
-        mock_chmod.assert_any_call(GPG_HOME_DIR, 0o700)
-        mock_chown.assert_any_call(GPG_HOME_DIR, 1000, 1001)
+        mock_makedirs.assert_called_once_with(
+            self.GPG_HOME_DIR, mode=0o700, exist_ok=True
+        )
         mock_umask.assert_any_call(0o177)
-        mock_file.assert_any_call(GPG_PASSPHRASE_FILE, "w")
-        mock_chown.assert_any_call(GPG_PASSPHRASE_FILE, 1000, 1001)
+        mock_file.assert_any_call(self.GPG_PASSPHRASE_FILE, "w")
         mock_run.assert_called_once_with(
             [
                 "gpg",
                 "--homedir",
-                GPG_HOME_DIR,
+                self.GPG_HOME_DIR,
                 "--batch",
                 "--passphrase-file",
-                GPG_PASSPHRASE_FILE,
+                self.GPG_PASSPHRASE_FILE,
                 "--import",
             ],
             input=self.PRIVATE_KEY,
@@ -2267,6 +2269,14 @@ class TestGPGConfiguration:
             text=True,
             capture_output=True,
         )
+        expected_gpg_conf = {
+            section: {
+                "gpg-home-path": self.GPG_HOME_DIR,
+                "gpg-passphrase-path": self.GPG_PASSPHRASE_FILE,
+            }
+            for section in GPG_SERVICE_CONF_SECTIONS
+        }
+        mock_update_service_conf.assert_any_call(expected_gpg_conf)
 
     def test_secret_changed_ignores_different_secret(self, replicas_network_state):
         """secret-changed for an unrelated secret ID is ignored."""
@@ -2301,11 +2311,10 @@ class TestGPGConfiguration:
 
         with (
             patch("charm.os.makedirs"),
-            patch("charm.os.chmod"),
-            patch("charm.os.chown"),
             patch("charm.os.umask", return_value=0o022),
             patch("charm.user_exists", return_value=mock_landscape),
             patch("charm.subprocess.run") as mock_run,
+            patch("charm.update_service_conf"),
             patch("builtins.open", mock_open()),
         ):
             mock_run.return_value = subprocess.CompletedProcess([], 0)
@@ -2315,10 +2324,10 @@ class TestGPGConfiguration:
             [
                 "gpg",
                 "--homedir",
-                GPG_HOME_DIR,
+                self.GPG_HOME_DIR,
                 "--batch",
                 "--passphrase-file",
-                GPG_PASSPHRASE_FILE,
+                self.GPG_PASSPHRASE_FILE,
                 "--import",
             ],
             input=self.PRIVATE_KEY,
