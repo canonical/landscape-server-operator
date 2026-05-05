@@ -6,6 +6,11 @@ from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 from helpers import get_modified_env_vars, logger
 
 
+class PgHbaNotReadyError(Exception):
+    """Raised when bootstrap-account fails because pg_hba.conf hasn't been
+    updated by Patroni yet. Propagating this causes Juju to retry the hook."""
+
+
 @dataclass
 class DatabaseConnectionContext:
     host: str | None = None
