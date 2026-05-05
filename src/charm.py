@@ -108,19 +108,7 @@ GPG_HOME_DIR_DEFAULT = "/var/lib/landscape-server/gnupg"
 
 GPG_SERVICE_CONF_SECTIONS = (
     "api",
-    "async-frontend",
-    "hostagent-message-consumer",
-    "hostagent-message-server",
-    "job-handler",
-    "landscape",
-    "maintenance",
-    "message-server",
-    "package-search",
-    "package-upload",
-    "pingserver",
-    "schema",
-    "scripts",
-    "secrets",
+    "appserver",
 )
 
 LANDSCAPE_SERVER = "landscape-server"
