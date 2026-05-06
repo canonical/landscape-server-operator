@@ -5,6 +5,11 @@ name: Promote charm
 on:
   workflow_dispatch:
     inputs:
+      track:
+        description: The charm track, must exist already
+        required: false
+        type: string
+        default: '26.04'
       from-risk:
         description: Promote from this Charmhub risk
         required: true
@@ -27,7 +32,7 @@ jobs:
     name: Promote charm
     uses: canonical/data-platform-workflows/.github/workflows/_promote_charm_legacy.yaml@v48.1.2
     with:
-      track: '26.04'
+      track: ${{ inputs.track }}
       from-risk: ${{ inputs.from-risk }}
       to-risk: ${{ inputs.to-risk }}
     secrets:
