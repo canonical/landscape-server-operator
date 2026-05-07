@@ -712,6 +712,10 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
         )
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juju):
     if lbaas is None:
         pytest.skip("LBaaS model not available")
