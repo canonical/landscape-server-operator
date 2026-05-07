@@ -222,5 +222,5 @@ def lbaas(juju: jubilant.Juju):
 @pytest.fixture
 def saved_db_relations(juju: jubilant.Juju):
     initial_relations = set(juju.status().apps["landscape-server"].relations)
-    yield initial_relations
+    yield initial_relations.copy()
     restore_db_relations(juju, initial_relations)
