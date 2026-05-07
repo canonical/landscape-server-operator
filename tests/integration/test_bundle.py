@@ -19,16 +19,18 @@ from charm import (
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LEADER_SERVICES,
 )
+from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
     get_session,
     has_legacy_pg,
     has_modern_pg,
     has_pgbouncer,
-    restore_db_relations,
     supports_legacy_pg,
     wait_for_http_status,
     wait_for_service,
 )
+
+LIVE_MODEL_SKIP_REASON = "Potentially destructive test skipped on live model."
 
 
 def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
@@ -43,6 +45,10 @@ def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
     pytest.skip("No haproxy app found in local or lbaas model")
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_redirect_https_none_routes_not_redirected(
     juju: jubilant.Juju, lbaas: jubilant.Juju
 ):
@@ -82,6 +88,10 @@ def test_redirect_https_none_routes_not_redirected(
         lbaas.wait(jubilant.all_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_redirect_https_all_routes_redirect_to_https(
     juju: jubilant.Juju, lbaas: jubilant.Juju
 ):
@@ -124,6 +134,10 @@ def test_redirect_https_all_routes_redirect_to_https(
         lbaas.wait(jubilant.all_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_redirect_https_default_routes_redirect_to_https(
     juju: jubilant.Juju, lbaas: jubilant.Juju
 ):
@@ -175,6 +189,10 @@ def test_redirect_https_default_routes_redirect_to_https(
         lbaas.wait(jubilant.all_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
     Services are responding over HTTPS.
@@ -203,12 +221,13 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
         lbaas.wait(jubilant.all_active, timeout=300)
 
 
-def test_modern_database_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
+def test_modern_database_relation(
+    juju: jubilant.Juju, lbaas: jubilant.Juju, saved_db_relations: set[str]
+):
     """
     Test the modern `database` interface.
     """
-    status = juju.status()
-    initial_relations = set(status.apps["landscape-server"].relations)
+    initial_relations = saved_db_relations
 
     if "db" in initial_relations:
         juju.remove_relation("landscape-server:db", "postgresql:db-admin", force=True)
@@ -223,8 +242,6 @@ def test_modern_database_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     relations = set(juju.status().apps["landscape-server"].relations)
 
     assert "database" in relations
-
-    restore_db_relations(juju, initial_relations)
 
 
 def test_bootstrap_account_created_with_modern_database(
@@ -263,15 +280,16 @@ def test_bootstrap_account_created_with_modern_database(
     )
 
 
-def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
+def test_legacy_db_relation(
+    juju: jubilant.Juju, lbaas: jubilant.Juju, saved_db_relations: set[str]
+):
     """
     Test the legacy `db` interface.
     """
     if not supports_legacy_pg(juju):
         pytest.skip("Legacy pgsql relation not available on this PostgreSQL charm")
 
-    status = juju.status()
-    initial_relations = set(status.apps["landscape-server"].relations)
+    initial_relations = saved_db_relations
 
     if "database" in initial_relations:
         juju.remove_relation(
@@ -287,8 +305,6 @@ def test_legacy_db_relation(juju: jubilant.Juju, lbaas: jubilant.Juju):
     relations = set(juju.status().apps["landscape-server"].relations)
 
     assert "db" in relations
-
-    restore_db_relations(juju, initial_relations)
 
 
 def test_pgbouncer_relation(juju: jubilant.Juju, bundle: None):
@@ -383,6 +399,10 @@ def test_all_services_up(juju: jubilant.Juju, lbaas: jubilant.Juju):
                 wait_for_service(juju, name, service)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_ubuntu_installer_attach_service(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
     NOTE: There is not an equivalent hostagent_messenger test because
@@ -412,6 +432,10 @@ def test_ubuntu_installer_attach_service(juju: jubilant.Juju, lbaas: jubilant.Ju
         juju.wait(jubilant.all_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_ubuntu_installer_attach_toggle_no_maintenance(
     juju: jubilant.Juju, lbaas: jubilant.Juju
 ):
@@ -519,6 +543,10 @@ def test_appserver_haproxy_route_enabled(juju: jubilant.Juju, lbaas: jubilant.Ju
     assert appserver_data.get("service", "").startswith("landscape-appserver-")
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.Juju):
     """
     Verify that when haproxy-route configs are enabled, the charm creates the
@@ -684,6 +712,10 @@ def test_lbaas_https_all_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
         )
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juju):
     if lbaas is None:
         pytest.skip("LBaaS model not available")
@@ -740,6 +772,10 @@ def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juj
         juju.wait(jubilant.all_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant.Juju):
     if lbaas is None:
         pytest.skip("LBaaS model not available")
@@ -800,6 +836,10 @@ def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant
         juju.wait(jubilant.all_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     """
     The upgrade action must add the PPA from the `landscape_ppa` config to apt
