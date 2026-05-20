@@ -175,7 +175,10 @@ class TestOnConfigChanged:
         assert config["message-server"]["workers"] == str(workers)
         assert config["pingserver"]["workers"] == str(workers)
 
-    def test_additional_service_config_overrides_worker_counts(self, capture_service_conf):
+    def test_additional_service_config_overrides_worker_counts(
+        self,
+        capture_service_conf,
+    ):
         """
         If `additional_service_config` specifies worker counts, it takes priority
         over the `worker_counts` config setting.
@@ -194,10 +197,9 @@ workers = 3
 workers = 4
 """
         context = Context(LandscapeServerCharm)
-        state = State(config={
-            "worker_counts": 10,
-            "additional_service_config": additional_config
-        })
+        state = State(
+            config={"worker_counts": 10, "additional_service_config": additional_config}
+        )
         context.run(context.on.config_changed(), state)
 
         config = capture_service_conf.get_config()
