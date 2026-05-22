@@ -16,6 +16,10 @@ on:
         value: ${{ jobs.build.outputs.artifact-prefix }}
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   build:
     name: Build charm
