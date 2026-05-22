@@ -209,6 +209,86 @@ workers = 4
         assert config["message-server"]["workers"] == "3"
         assert config["pingserver"]["workers"] == "4"
 
+    def test_additional_service_config_overrides_base_ports(self, capture_service_conf):
+        """
+        `additional_service_config` takes priority over all base_port config options.
+        """
+        additional_config = """
+[landscape]
+base_port = 1111
+
+[api]
+base_port = 2222
+
+[message-server]
+base_port = 3333
+
+[pingserver]
+base_port = 4444
+
+[package-upload]
+base_port = 5555
+
+[hostagent-message-server]
+base_port = 6666
+
+[ubuntu-installer-attach]
+base_port = 7777
+"""
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "appserver_base_port": 8080,
+                "api_base_port": 9080,
+                "message_server_base_port": 8090,
+                "pingserver_base_port": 8070,
+                "package_upload_base_port": 9100,
+                "hostagent_server_base_port": 50052,
+                "ubuntu_installer_attach_base_port": 53354,
+                "additional_service_config": additional_config,
+            }
+        )
+        context.run(context.on.config_changed(), state)
+
+        config = capture_service_conf.get_config()
+
+        assert config["landscape"]["base_port"] == "1111"
+        assert config["api"]["base_port"] == "2222"
+        assert config["message-server"]["base_port"] == "3333"
+        assert config["pingserver"]["base_port"] == "4444"
+        assert config["package-upload"]["base_port"] == "5555"
+        assert config["hostagent-message-server"]["base_port"] == "6666"
+        assert config["ubuntu-installer-attach"]["base_port"] == "7777"
+
+    def test_additional_service_config_overrides_root_url(self, capture_service_conf):
+        """
+        `additional_service_config` takes priority over the `root_url` config option.
+        """
+        additional_config = """
+[global]
+root-url = https://overridden.example.com
+
+[api]
+root-url = https://overridden.example.com
+
+[package-upload]
+root-url = https://overridden.example.com
+"""
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "root_url": "https://original.example.com",
+                "additional_service_config": additional_config,
+            }
+        )
+        context.run(context.on.config_changed(), state)
+
+        config = capture_service_conf.get_config()
+
+        assert config["global"]["root-url"] == "https://overridden.example.com"
+        assert config["api"]["root-url"] == "https://overridden.example.com"
+        assert config["package-upload"]["root-url"] == "https://overridden.example.com"
+
     def test_hostagent_services_default(
         self,
         replicas_network_state,
