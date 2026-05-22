@@ -465,21 +465,6 @@ class LandscapeServerCharm(CharmBase):
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
 
-        if self.charm_config.additional_service_config:
-            merge_service_conf(self.charm_config.additional_service_config)
-
-        if self.charm_config.license_file:
-            self.unit.status = MaintenanceStatus("Writing Landscape license file")
-            write_license_file(
-                self.charm_config.license_file,
-                user_exists("landscape").pw_uid,
-                self.root_gid,
-            )
-            self.unit.status = WaitingStatus("Waiting on relations")
-
-        self._configure_openid()
-        self._configure_oidc()
-
         service_conf_updates = {
             service: {"workers": str(self.charm_config.worker_counts)}
             for service in ("landscape", "api", "message-server", "pingserver")
@@ -511,6 +496,21 @@ class LandscapeServerCharm(CharmBase):
         }
 
         update_service_conf(service_conf_updates)
+
+        if self.charm_config.additional_service_config:
+            merge_service_conf(self.charm_config.additional_service_config)
+
+        if self.charm_config.license_file:
+            self.unit.status = MaintenanceStatus("Writing Landscape license file")
+            write_license_file(
+                self.charm_config.license_file,
+                user_exists("landscape").pw_uid,
+                self.root_gid,
+            )
+            self.unit.status = WaitingStatus("Waiting on relations")
+
+        self._configure_openid()
+        self._configure_oidc()
 
         db_kargs = {}
         if config_host := self.charm_config.db_host:
