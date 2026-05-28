@@ -123,3 +123,9 @@ variable "haproxy_self_signed_certs" {
   default  = {}
   nullable = true
 }
+
+variable "timeout" {
+  description = "Waiting time for machine creation"
+  type = string
+  default = "30m"
+}

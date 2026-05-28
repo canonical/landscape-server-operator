@@ -5,6 +5,10 @@ resource "juju_machine" "landscape_server" {
   model_uuid = var.model_uuid
   base       = var.landscape_server.base
   name       = "landscape-server-${count.index}"
+  constraints = var.landscape_server.constraints
+  timeouts {
+    create  = var.timeout
+  }
 
   lifecycle {
     ignore_changes = [constraints]
