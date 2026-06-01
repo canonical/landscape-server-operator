@@ -9,11 +9,11 @@ variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
     app_name   = optional(string, "landscape-server")
-    channel    = optional(string, "25.10/edge")
+    channel    = optional(string, "26.04/beta")
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
       autoregistration               = "true"
-      landscape_ppa                  = "ppa:landscape/self-hosted-beta"
+      landscape_ppa                  = "ppa:landscape/self-hosted-26.04"
       min_install                    = "true"
       root_url                       = "https://landscape.local/"
       enable_hostagent_messenger     = "true"
