@@ -1,16 +1,5 @@
 # © 2026 Canonical Ltd.
 
-resource "juju_machine" "landscape_server" {
-  count      = var.landscape_server.units
-  model_uuid = var.model_uuid
-  base       = var.landscape_server.base
-  name       = "landscape-server-${count.index}"
-
-  lifecycle {
-    ignore_changes = [constraints]
-  }
-}
-
 module "landscape_server" {
   source      = "../../../charm"
   model_uuid  = var.model_uuid
@@ -20,9 +9,7 @@ module "landscape_server" {
   constraints = var.landscape_server.constraints
   revision    = var.landscape_server.revision
   base        = var.landscape_server.base
-  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
-
-  depends_on = [juju_machine.landscape_server]
+  charm_name  = var.landscape_server.charm_name
 }
 
 module "haproxy" {
@@ -478,20 +465,20 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 
 }
 
-resource "juju_application" "haproxy_self_signed_certs" {
-  name        = var.haproxy_self_signed_certs.app_name
+resource "juju_application" "haproxy_certs" {
+  name        = var.haproxy_certs.app_name
   model_uuid  = var.model_uuid
   units       = 1
-  constraints = var.haproxy_self_signed_certs.constraints
+  constraints = var.haproxy_certs.constraints
 
   charm {
     name     = "self-signed-certificates"
-    revision = var.haproxy_self_signed_certs.revision
-    channel  = var.haproxy_self_signed_certs.channel
-    base     = var.haproxy_self_signed_certs.base
+    revision = var.haproxy_certs.revision
+    channel  = var.haproxy_certs.channel
+    base     = var.haproxy_certs.base
   }
 
-  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.haproxy_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -503,12 +490,12 @@ resource "juju_integration" "haproxy_certificates" {
   }
 
   application {
-    name = juju_application.haproxy_self_signed_certs[0].name
+    name = juju_application.haproxy_certs[0].name
   }
 
-  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+  depends_on = [module.haproxy, juju_application.haproxy_certs]
 
-  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.haproxy_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_receive_ca_certs" {
@@ -520,12 +507,12 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
   }
 
   application {
-    name = juju_application.haproxy_self_signed_certs[0].name
+    name = juju_application.haproxy_certs[0].name
   }
 
-  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+  depends_on = [module.haproxy, juju_application.haproxy_certs]
 
-  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.haproxy_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer" {
