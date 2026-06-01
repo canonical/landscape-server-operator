@@ -21,7 +21,7 @@ output "applications" {
   value = {
     landscape_server = module.landscape_server
     haproxy          = var.haproxy != null && length(module.haproxy) > 0 ? module.haproxy[0] : null
-    tls_certificates    = var.tls_certificates != null && length(juju_application.tls_certificates) > 0 ? juju_application.tls_certificates[0] : null
+    tls_certificates = var.tls_certificates != null && length(juju_application.tls_certificates) > 0 ? juju_application.tls_certificates[0] : null
     postgresql       = var.postgresql != null && length(module.postgresql) > 0 ? module.postgresql[0] : null
     rabbitmq_server  = var.rabbitmq_server != null && length(juju_application.rabbitmq_server) > 0 ? juju_application.rabbitmq_server[0] : null
     pgbouncer        = var.pgbouncer != null && length(juju_application.pgbouncer) > 0 ? juju_application.pgbouncer[0] : null
