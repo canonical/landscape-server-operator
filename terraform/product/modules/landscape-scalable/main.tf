@@ -465,20 +465,20 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 
 }
 
-resource "juju_application" "haproxy_certs" {
-  name        = var.haproxy_certs.app_name
+resource "juju_application" "tls_certificates" {
+  name        = var.tls_certificates.app_name
   model_uuid  = var.model_uuid
   units       = 1
-  constraints = var.haproxy_certs.constraints
+  constraints = var.tls_certificates.constraints
 
   charm {
-    name     = "self-signed-certificates"
-    revision = var.haproxy_certs.revision
-    channel  = var.haproxy_certs.channel
-    base     = var.haproxy_certs.base
+    name     = var.tls_certificates.charm_name
+    revision = var.tls_certificates.revision
+    channel  = var.tls_certificates.channel
+    base     = var.tls_certificates.base
   }
 
-  count = var.haproxy_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -490,12 +490,12 @@ resource "juju_integration" "haproxy_certificates" {
   }
 
   application {
-    name = juju_application.haproxy_certs[0].name
+    name = juju_application.tls_certificates[0].name
   }
 
-  depends_on = [module.haproxy, juju_application.haproxy_certs]
+  depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.haproxy_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_receive_ca_certs" {
@@ -507,12 +507,12 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
   }
 
   application {
-    name = juju_application.haproxy_certs[0].name
+    name = juju_application.tls_certificates[0].name
   }
 
-  depends_on = [module.haproxy, juju_application.haproxy_certs]
+  depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.haproxy_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer" {

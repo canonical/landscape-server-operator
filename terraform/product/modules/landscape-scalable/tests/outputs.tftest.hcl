@@ -90,7 +90,7 @@ run "validate_self_signed_false_without_certs" {
   command = plan
 
   variables {
-    haproxy_certs = null
+    tls_certificates = null
   }
 
   assert {
