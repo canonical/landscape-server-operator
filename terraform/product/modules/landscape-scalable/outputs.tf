@@ -29,7 +29,7 @@ output "applications" {
 }
 
 locals {
-  haproxy_self_signed = var.haproxy != null && length(juju_application.tls_certificates) > 0 && var.tls_certificates != null && var.tls_certificates.charm_name == "self-signed-certificates"
+  haproxy_self_signed = var.haproxy != null && length(juju_application.tls_certificates) > 0 && try(var.tls_certificates.charm_name == "self-signed-certificates", false)
 }
 
 output "haproxy_self_signed" {
