@@ -139,12 +139,12 @@ resource "juju_integration" "landscape_server_haproxy" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = "reverseproxy"
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && !local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_appserver_haproxy_route_in_model" {
