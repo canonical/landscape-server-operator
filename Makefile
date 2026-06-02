@@ -52,14 +52,14 @@ deploy:
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	@if [ "$(SKIP_BUILD)" != "true" ]; then $(MAKE) build; else echo "skipping build..."; fi
 	$(MAKE) add-model
-	juju deploy -m $(MODEL_NAME) $(BUNDLE_DEPLOY_PATH)
+	juju deploy -m $(MODEL_NAME) $(BUNDLE_PATH)
 
 .PHONY: deploy-lbaas
 deploy-lbaas:
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	@if [ "$(SKIP_BUILD)" != "true" ]; then $(MAKE) build; else echo "skipping build..."; fi
 	$(MAKE) add-model
-	juju deploy -m $(MODEL_NAME) $(LBAAS_BUNDLE_DEPLOY_PATH)
+	juju deploy -m $(MODEL_NAME) $(LBAAS_BUNDLE_PATH)
 
 .PHONY: check-jq
 check-jq:
