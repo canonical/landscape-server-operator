@@ -38,6 +38,8 @@ from charms.operator_libs_linux.v1.systemd import (
     service_reload,
     service_resume,
     service_running,
+    service_start,
+    service_stop,
     SystemdError,
 )
 from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
@@ -118,6 +120,7 @@ LANDSCAPE_PACKAGES = (
     "landscape-common",
 )
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
+PGBOUNCER_SERVICE = "pgbouncer-pgbouncer@0.service"
 DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
@@ -1889,6 +1892,26 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         self.unit.status = prev_status
 
+    # TODO: remove when https://github.com/canonical/pgbouncer-operator/issues/664
+    # is closed
+    def _stop_pgbouncer(self) -> bool:
+        """Stop the pgbouncer systemd service.
+
+        Returns True if the service was stopped, False if it was not present.
+        Raises SystemdError on any other failure.
+        """
+        if not service_running(PGBOUNCER_SERVICE):
+            logger.info("pgbouncer service not running, skipping stop")
+            return False
+        service_stop(PGBOUNCER_SERVICE)
+        logger.info("Stopped pgbouncer service")
+        return True
+
+    # TODO: remove when https://github.com/canonical/pgbouncer-operator/issues/664
+    # is closed
+    def _start_pgbouncer(self) -> None:
+        service_start(PGBOUNCER_SERVICE)
+
     def _migrate_schema(self, event: ActionEvent) -> None:
         if self._stored.running:
             event.fail(
@@ -1896,6 +1919,12 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 " 'pause' prior to migration"
             )
             return
+
+        pgbouncer_stopped = False
+        try:
+            pgbouncer_stopped = self._stop_pgbouncer()
+        except SystemdError as e:
+            logger.warning("Stopping PGBouncer failed: %s", e)
 
         prev_status = self.unit.status
         self.unit.status = MaintenanceStatus("Migrating schemas...")
@@ -1911,6 +1940,12 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = BlockedStatus("Failed schema migration")
         else:
             self.unit.status = prev_status
+        finally:
+            if pgbouncer_stopped:
+                try:
+                    self._start_pgbouncer()
+                except SystemdError as e:
+                    logger.warning("Resuming PGBouncer failed: %s", e)
 
     def _hash_id_databases(self, event: ActionEvent) -> None:
         prev_status = self.unit.status

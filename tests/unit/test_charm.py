@@ -47,6 +47,7 @@ from charm import (
     LSCTL,
     METRIC_INSTRUMENTED_SERVICE_PORTS,
     NRPE_D_DIR,
+    PGBOUNCER_SERVICE,
     SCHEMA_SCRIPT,
     UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
 )
@@ -1787,7 +1788,10 @@ class TestCharm(unittest.TestCase):
     def test_action_migrate_schema(self):
         event = Mock(spec_set=ActionEvent)
 
-        with patch("subprocess.run") as run_mock:
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_running", return_value=False),
+        ):
             self.harness.charm._migrate_schema(event)
 
         event.log.assert_called_once()
@@ -1795,6 +1799,60 @@ class TestCharm(unittest.TestCase):
         run_mock.assert_called_once_with(
             [SCHEMA_SCRIPT], check=True, text=True, env=ANY
         )
+
+    def test_action_migrate_schema_with_pgbouncer(self):
+        """pgbouncer is stopped before migration and resumed after."""
+        event = Mock(spec_set=ActionEvent)
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_running", return_value=True) as running_mock,
+            patch("charm.service_stop") as stop_mock,
+            patch("charm.service_start") as start_mock,
+        ):
+            self.harness.charm._migrate_schema(event)
+
+        running_mock.assert_called_once_with(PGBOUNCER_SERVICE)
+        stop_mock.assert_called_once_with(PGBOUNCER_SERVICE)
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+        start_mock.assert_called_once_with(PGBOUNCER_SERVICE)
+        event.fail.assert_not_called()
+
+    def test_action_migrate_schema_pgbouncer_stop_failure(self):
+        """Migration proceeds even if stopping pgbouncer fails."""
+        from charms.operator_libs_linux.v1.systemd import SystemdError
+
+        event = Mock(spec_set=ActionEvent)
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_running", return_value=True),
+            patch("charm.service_stop", side_effect=SystemdError("boom")),
+        ):
+            self.harness.charm._migrate_schema(event)
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+        event.fail.assert_not_called()
+
+    def test_action_migrate_schema_pgbouncer_resume_failure(self):
+        """Migration succeeds even if pgbouncer cannot be resumed after migration."""
+        from charms.operator_libs_linux.v1.systemd import SystemdError
+
+        event = Mock(spec_set=ActionEvent)
+
+        with (
+            patch("subprocess.run"),
+            patch("charm.service_running", return_value=True),
+            patch("charm.service_stop"),
+            patch("charm.service_start", side_effect=SystemdError("boom")),
+        ):
+            self.harness.charm._migrate_schema(event)
+
+        event.fail.assert_not_called()
 
     def test_action_migrate_schema_running(self):
         """
@@ -1814,7 +1872,10 @@ class TestCharm(unittest.TestCase):
     def test_action_migrate_schema_CalledProcessError(self):
         event = Mock(spec_set=ActionEvent)
 
-        with patch("subprocess.run") as run_mock:
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_running", return_value=False),
+        ):
             run_mock.side_effect = CalledProcessError(127, "uhoh")
             self.harness.charm._migrate_schema(event)
 
