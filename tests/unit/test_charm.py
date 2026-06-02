@@ -15,11 +15,13 @@ import unittest
 from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
 
 from charmlibs.snap import SnapError
+from charmlibs.systemd import SystemdError
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (
+    ActionFailed,
     Context,
     Harness,
     MaintenanceStatus,
@@ -30,6 +32,7 @@ from ops.testing import (
     StoredState,
     TCPPort,
 )
+import pytest
 
 from charm import (
     BOOTSTRAP_ACCOUNT_SCRIPT,
@@ -1785,109 +1788,6 @@ class TestCharm(unittest.TestCase):
         apt_mock.update.assert_not_called()
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
-    def test_action_migrate_schema(self):
-        ctx = Context(LandscapeServerCharm)
-        state = State()
-
-        with (
-            patch("subprocess.run") as run_mock,
-            patch("charm.service_running", return_value=False),
-        ):
-            ctx.run(ctx.on.action("migrate-schema"), state)
-
-        run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
-        )
-
-    def test_action_migrate_schema_with_pgbouncer(self):
-        """pgbouncer is stopped before migration and resumed after."""
-        ctx = Context(LandscapeServerCharm)
-        state = State()
-
-        with (
-            patch("subprocess.run") as run_mock,
-            patch("charm.service_running", return_value=True) as running_mock,
-            patch("charm.service_stop") as stop_mock,
-            patch("charm.service_start") as start_mock,
-        ):
-            ctx.run(ctx.on.action("migrate-schema"), state)
-
-        running_mock.assert_called_once_with(PGBOUNCER_SERVICE)
-        stop_mock.assert_called_once_with(PGBOUNCER_SERVICE)
-        run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
-        )
-        start_mock.assert_called_once_with(PGBOUNCER_SERVICE)
-
-    def test_action_migrate_schema_pgbouncer_stop_failure(self):
-        """Migration proceeds even if stopping pgbouncer fails."""
-        from charmlibs.systemd import SystemdError
-
-        ctx = Context(LandscapeServerCharm)
-        state = State()
-
-        with (
-            patch("subprocess.run") as run_mock,
-            patch("charm.service_running", return_value=True),
-            patch("charm.service_stop", side_effect=SystemdError("boom")),
-        ):
-            ctx.run(ctx.on.action("migrate-schema"), state)
-
-        run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
-        )
-
-    def test_action_migrate_schema_pgbouncer_resume_failure(self):
-        """Migration succeeds even if pgbouncer cannot be resumed after migration."""
-        from charmlibs.systemd import SystemdError
-
-        ctx = Context(LandscapeServerCharm)
-        state = State()
-
-        with (
-            patch("subprocess.run"),
-            patch("charm.service_running", return_value=True),
-            patch("charm.service_stop"),
-            patch("charm.service_start", side_effect=SystemdError("boom")),
-        ):
-            ctx.run(ctx.on.action("migrate-schema"), state)
-
-    def test_action_migrate_schema_running(self):
-        """Schema migration is rejected while Landscape is running."""
-        from ops.testing import ActionFailed
-
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            stored_states=[
-                StoredState(
-                    owner_path="LandscapeServerCharm",
-                    content={"running": True},
-                )
-            ]
-        )
-
-        with (
-            patch("subprocess.run") as run_mock,
-            pytest.raises(ActionFailed),
-        ):
-            ctx.run(ctx.on.action("migrate-schema"), state)
-
-        run_mock.assert_not_called()
-
-    def test_action_migrate_schema_CalledProcessError(self):
-        from ops.testing import ActionFailed
-
-        ctx = Context(LandscapeServerCharm)
-        state = State()
-
-        with (
-            patch("subprocess.run") as run_mock,
-            patch("charm.service_running", return_value=False),
-            pytest.raises(ActionFailed),
-        ):
-            run_mock.side_effect = CalledProcessError(127, "uhoh")
-            ctx.run(ctx.on.action("migrate-schema"), state)
-
     def test_nrpe_external_master_relation_joined(self):
         mock_event = Mock()
         mock_event.relation.data = {self.harness.charm.unit: {}}
@@ -2046,6 +1946,100 @@ class TestCharm(unittest.TestCase):
                 },
             }
         )
+
+
+class TestMigrateSchema:
+    def test_migrate_schema(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(unit_status=WaitingStatus())
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_stop"),
+            patch("charm.service_start"),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+
+    def test_pgbouncer_stopped_and_resumed(self):
+        """pgbouncer is stopped before migration and resumed after."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(unit_status=WaitingStatus())
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_stop") as stop_mock,
+            patch("charm.service_start") as start_mock,
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        stop_mock.assert_called_once_with(PGBOUNCER_SERVICE)
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+        start_mock.assert_called_once_with(PGBOUNCER_SERVICE)
+
+    def test_pgbouncer_stop_failure_does_not_abort_migration(self):
+        """Migration proceeds even if stopping pgbouncer fails."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(unit_status=WaitingStatus())
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_stop", side_effect=SystemdError("boom")),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+
+    def test_pgbouncer_resume_failure_does_not_fail_action(self):
+        """Migration succeeds even if pgbouncer cannot be resumed after migration."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(unit_status=WaitingStatus())
+
+        with (
+            patch("subprocess.run"),
+            patch("charm.service_stop"),
+            patch("charm.service_start", side_effect=SystemdError("boom")),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+    def test_rejected_while_running(self):
+        """Schema migration is rejected while Landscape is running."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"running": True},
+                )
+            ]
+        )
+
+        with (
+            patch("subprocess.run") as run_mock,
+            pytest.raises(ActionFailed),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        run_mock.assert_not_called()
+
+    def test_subprocess_failure_fails_action(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(unit_status=WaitingStatus())
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch("charm.service_stop"),
+            pytest.raises(ActionFailed),
+        ):
+            run_mock.side_effect = CalledProcessError(127, "uhoh")
+            ctx.run(ctx.on.action("migrate-schema"), state)
 
 
 class TestMultiplePPAs:
