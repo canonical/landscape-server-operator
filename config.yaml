@@ -288,3 +288,8 @@ options:
       Snap channel from which to install the landscape-outbox snap.
       Changing this value will refresh the installed snap to the
       specified channel.
+  demo_data:
+    type: boolean
+    default: false
+    description: |
+      Whether to create demo data when running the schema migration.

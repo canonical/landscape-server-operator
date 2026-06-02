@@ -27,6 +27,7 @@ applications:
       enable_hostagent_messenger: True
       enable_ubuntu_installer_attach: True
       root_url: https://landscape.local/
+      demo_data: True
     base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy
