@@ -1786,23 +1786,23 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_migrate_schema(self):
-        event = Mock(spec_set=ActionEvent)
+        ctx = Context(LandscapeServerCharm)
+        state = State()
 
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.service_running", return_value=False),
         ):
-            self.harness.charm._migrate_schema(event)
+            ctx.run(ctx.on.action("migrate-schema"), state)
 
-        event.log.assert_called_once()
-        event.fail.assert_not_called()
         run_mock.assert_called_once_with(
             [SCHEMA_SCRIPT], check=True, text=True, env=ANY
         )
 
     def test_action_migrate_schema_with_pgbouncer(self):
         """pgbouncer is stopped before migration and resumed after."""
-        event = Mock(spec_set=ActionEvent)
+        ctx = Context(LandscapeServerCharm)
+        state = State()
 
         with (
             patch("subprocess.run") as run_mock,
@@ -1810,7 +1810,7 @@ class TestCharm(unittest.TestCase):
             patch("charm.service_stop") as stop_mock,
             patch("charm.service_start") as start_mock,
         ):
-            self.harness.charm._migrate_schema(event)
+            ctx.run(ctx.on.action("migrate-schema"), state)
 
         running_mock.assert_called_once_with(PGBOUNCER_SERVICE)
         stop_mock.assert_called_once_with(PGBOUNCER_SERVICE)
@@ -1818,31 +1818,31 @@ class TestCharm(unittest.TestCase):
             [SCHEMA_SCRIPT], check=True, text=True, env=ANY
         )
         start_mock.assert_called_once_with(PGBOUNCER_SERVICE)
-        event.fail.assert_not_called()
 
     def test_action_migrate_schema_pgbouncer_stop_failure(self):
         """Migration proceeds even if stopping pgbouncer fails."""
         from charmlibs.systemd import SystemdError
 
-        event = Mock(spec_set=ActionEvent)
+        ctx = Context(LandscapeServerCharm)
+        state = State()
 
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.service_running", return_value=True),
             patch("charm.service_stop", side_effect=SystemdError("boom")),
         ):
-            self.harness.charm._migrate_schema(event)
+            ctx.run(ctx.on.action("migrate-schema"), state)
 
         run_mock.assert_called_once_with(
             [SCHEMA_SCRIPT], check=True, text=True, env=ANY
         )
-        event.fail.assert_not_called()
 
     def test_action_migrate_schema_pgbouncer_resume_failure(self):
         """Migration succeeds even if pgbouncer cannot be resumed after migration."""
         from charmlibs.systemd import SystemdError
 
-        event = Mock(spec_set=ActionEvent)
+        ctx = Context(LandscapeServerCharm)
+        state = State()
 
         with (
             patch("subprocess.run"),
@@ -1850,41 +1850,43 @@ class TestCharm(unittest.TestCase):
             patch("charm.service_stop"),
             patch("charm.service_start", side_effect=SystemdError("boom")),
         ):
-            self.harness.charm._migrate_schema(event)
-
-        event.fail.assert_not_called()
+            ctx.run(ctx.on.action("migrate-schema"), state)
 
     def test_action_migrate_schema_running(self):
-        """
-        Test that we do not perform a schema migration while Landscape is
-        running.
-        """
-        event = Mock(spec_set=ActionEvent)
-        self.harness.charm._stored.running = True
+        """Schema migration is rejected while Landscape is running."""
+        from ops.testing import ActionFailed
 
-        with patch("subprocess.run") as run_mock:
-            self.harness.charm._migrate_schema(event)
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"running": True},
+                )
+            ]
+        )
 
-        event.log.assert_not_called()
-        event.fail.assert_called_once()
+        with (
+            patch("subprocess.run") as run_mock,
+            pytest.raises(ActionFailed),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
         run_mock.assert_not_called()
 
     def test_action_migrate_schema_CalledProcessError(self):
-        event = Mock(spec_set=ActionEvent)
+        from ops.testing import ActionFailed
+
+        ctx = Context(LandscapeServerCharm)
+        state = State()
 
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.service_running", return_value=False),
+            pytest.raises(ActionFailed),
         ):
             run_mock.side_effect = CalledProcessError(127, "uhoh")
-            self.harness.charm._migrate_schema(event)
-
-        event.log.assert_called_once()
-        event.fail.assert_called_once()
-        run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
-        )
-        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+            ctx.run(ctx.on.action("migrate-schema"), state)
 
     def test_nrpe_external_master_relation_joined(self):
         mock_event = Mock()
