@@ -1949,14 +1949,14 @@ class TestCharm(unittest.TestCase):
 
 
 class TestMigrateSchema:
-    def test_migrate_schema(self):
+    def test_migrate_schema_no_pgbouncer(self):
+        """Migration runs normally when pgbouncer is not present."""
         ctx = Context(LandscapeServerCharm)
         state = State(unit_status=WaitingStatus())
 
         with (
             patch("subprocess.run") as run_mock,
-            patch("charm.service_stop"),
-            patch("charm.service_start"),
+            patch("charm.service_running", return_value=False),
         ):
             ctx.run(ctx.on.action("migrate-schema"), state)
 
@@ -1971,6 +1971,7 @@ class TestMigrateSchema:
 
         with (
             patch("subprocess.run") as run_mock,
+            patch("charm.service_running", return_value=True),
             patch("charm.service_stop") as stop_mock,
             patch("charm.service_start") as start_mock,
         ):
@@ -1989,6 +1990,7 @@ class TestMigrateSchema:
 
         with (
             patch("subprocess.run") as run_mock,
+            patch("charm.service_running", return_value=True),
             patch("charm.service_stop", side_effect=SystemdError("boom")),
         ):
             ctx.run(ctx.on.action("migrate-schema"), state)
@@ -2004,6 +2006,7 @@ class TestMigrateSchema:
 
         with (
             patch("subprocess.run"),
+            patch("charm.service_running", return_value=True),
             patch("charm.service_stop"),
             patch("charm.service_start", side_effect=SystemdError("boom")),
         ):
@@ -2035,7 +2038,7 @@ class TestMigrateSchema:
 
         with (
             patch("subprocess.run") as run_mock,
-            patch("charm.service_stop"),
+            patch("charm.service_running", return_value=False),
             pytest.raises(ActionFailed),
         ):
             run_mock.side_effect = CalledProcessError(127, "uhoh")

@@ -44,7 +44,8 @@ applications:
 relations:
   - [landscape-server:inbound-amqp, rabbitmq-server]
   - [landscape-server:outbound-amqp, rabbitmq-server]
-  - [landscape-server:database, postgresql:database]
+  - [postgresql:database, pgbouncer:backend-database]
+  - [landscape-server:database, pgbouncer:database]
   - [haproxy:certificates, self-signed-certificates:certificates]
   - [haproxy:receive-ca-certs, self-signed-certificates:send-ca-cert]
   - [landscape-server:pingserver-haproxy-route, haproxy:haproxy-route]
@@ -53,5 +54,8 @@ relations:
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [
+      landscape-server:ubuntu-installer-attach-haproxy-route,
+      haproxy:haproxy-route,
+    ]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]

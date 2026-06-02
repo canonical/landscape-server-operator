@@ -1900,14 +1900,19 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         Returns True if the service was stopped, False if it was not running.
         Raises SystemdError on any other failure.
         """
+        if not service_running(PGBOUNCER_SERVICE):
+            logger.info("PGBouncer service not running!")
+            return False
+
         service_stop(PGBOUNCER_SERVICE)
-        logger.info("Stopped pgbouncer service")
+        logger.info("Stopped pgbouncer service.")
         return True
 
     # TODO: remove when https://github.com/canonical/pgbouncer-operator/issues/664
     # is closed
     def _start_pgbouncer(self) -> None:
         service_start(PGBOUNCER_SERVICE)
+        logger.info("Started PGBouncer.")
 
     def _migrate_schema(self, event: ActionEvent) -> None:
         if self._stored.running:
