@@ -23,6 +23,15 @@ from typing import List
 from urllib.parse import urlparse
 
 from charmlibs import snap
+from charmlibs.systemd import (
+    service_pause,
+    service_reload,
+    service_resume,
+    service_running,
+    service_start,
+    service_stop,
+    SystemdError,
+)
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -33,15 +42,6 @@ from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
 from charms.operator_libs_linux.v0.passwd import group_exists, user_exists
-from charms.operator_libs_linux.v1.systemd import (
-    service_pause,
-    service_reload,
-    service_resume,
-    service_running,
-    service_start,
-    service_stop,
-    SystemdError,
-)
 from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (

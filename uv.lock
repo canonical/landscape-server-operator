@@ -57,6 +57,15 @@ wheels = [
 ]
 
 [[package]]
+name = "charmlibs-systemd"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/35/3d/234da07da24ec5ae37184e6b05eeccb994f4e786829cd8efe15b3dff45ee/charmlibs_systemd-1.0.0.tar.gz", hash = "sha256:947e93b076e105509b190020ec16de051e9015c1eb12904192fb39489e0e1caa", size = 15746, upload-time = "2025-11-26T21:32:08.399Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/2e/5fe4d18e52df0fedbf4c4a9e1f6fe0f93f11611a670afb26f808cfd44208/charmlibs_systemd-1.0.0-py3-none-any.whl", hash = "sha256:37d4022e28f70f7a2a54fbff7c5694d25dc62dbb8680feffabde8c324a432199", size = 4904, upload-time = "2025-11-26T21:32:07.103Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.7"
 source = { registry = "https://pypi.org/simple" }
@@ -440,6 +449,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "charmlibs-snap" },
+    { name = "charmlibs-systemd" },
     { name = "cosl" },
     { name = "email-validator" },
     { name = "ops" },
@@ -466,6 +476,7 @@ integration = [
 [package.metadata]
 requires-dist = [
     { name = "charmlibs-snap", specifier = "~=1.0" },
+    { name = "charmlibs-systemd", specifier = "==1.0.0" },
     { name = "cosl", specifier = "==1.4.0" },
     { name = "email-validator", specifier = ">=2" },
     { name = "ops", specifier = "==2.23.1" },

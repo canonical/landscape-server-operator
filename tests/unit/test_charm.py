@@ -1822,7 +1822,7 @@ class TestCharm(unittest.TestCase):
 
     def test_action_migrate_schema_pgbouncer_stop_failure(self):
         """Migration proceeds even if stopping pgbouncer fails."""
-        from charms.operator_libs_linux.v1.systemd import SystemdError
+        from charmlibs.systemd import SystemdError
 
         event = Mock(spec_set=ActionEvent)
 
@@ -1840,7 +1840,7 @@ class TestCharm(unittest.TestCase):
 
     def test_action_migrate_schema_pgbouncer_resume_failure(self):
         """Migration succeeds even if pgbouncer cannot be resumed after migration."""
-        from charms.operator_libs_linux.v1.systemd import SystemdError
+        from charmlibs.systemd import SystemdError
 
         event = Mock(spec_set=ActionEvent)
 
