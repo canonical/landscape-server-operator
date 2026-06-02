@@ -13,10 +13,6 @@ SKIP_BUILD ?= false
 SKIP_CLEAN ?= false
 SKIP_ADD_MODEL ?= false
 
-# juju deploy treats a bare "foo/bar.yaml" as ambiguous; force local interpretation.
-BUNDLE_DEPLOY_PATH := $(if $(filter /% ./%,$(BUNDLE_PATH)),$(BUNDLE_PATH),./$(BUNDLE_PATH))
-LBAAS_BUNDLE_DEPLOY_PATH := $(if $(filter /% ./%,$(LBAAS_BUNDLE_PATH)),$(LBAAS_BUNDLE_PATH),./$(LBAAS_BUNDLE_PATH))
-
 # Python testing and linting
 .PHONY: test
 test:
