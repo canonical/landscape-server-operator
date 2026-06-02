@@ -70,6 +70,7 @@ def test_defaults():
     assert config.hostagent_server_base_port == 50052
     assert config.ubuntu_installer_attach_base_port == 53354
     assert config.gpg_secret_id is None
+    assert config.bootstrap_schema_override_args is None
 
 
 @pytest.mark.parametrize(
@@ -265,3 +266,19 @@ def test_landscape_ppas_strips_whitespace():
         }
     )
     assert config.landscape_ppas == ["ppa:foo/bar", "ppa:baz/qux"]
+
+
+def test_bootstrap_schema_override_args_list():
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "bootstrap_schema_override_args": (
+                "--with-openstack, --with-extra-computers, 10 "
+            ),
+        }
+    )
+    assert config.bootstrap_schema_override_args_list == [
+        "--with-openstack",
+        "--with-extra-computers",
+        "10",
+    ]

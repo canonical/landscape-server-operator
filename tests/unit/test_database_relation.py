@@ -250,7 +250,7 @@ class TestDatabaseRelation:
             password="secret",
             schema_password=None,
         )
-        migrate_mock.assert_called_once_with("postgres")
+        migrate_mock.assert_called_once_with("postgres", demo_data=False)
         grant_role_mock.assert_not_called()
         update_ready.assert_called_once_with(restart_services=True)
         assert isinstance(status, ActiveStatus)
@@ -321,9 +321,72 @@ class TestDatabaseRelation:
             password="landscape-pass",
             schema_password=None,
         )
-        migrate_mock.assert_called_once_with("postgres")
+        migrate_mock.assert_called_once_with("postgres", demo_data=False)
         grant_role_mock.assert_not_called()
         update_ready.assert_called_once_with(restart_services=True)
+
+    def test_database_relation_passes_demo_data_to_schema_bootstrap(self):
+        ctx = Context(LandscapeServerCharm)
+        relation = Relation("database", remote_app_name="postgresql")
+
+        fetch_context = DatabaseConnectionContext(
+            host="1.2.3.4",
+            port="5432",
+            username="relation-9",
+            password="secret",
+            version="16.9",
+        )
+
+        with (
+            patch("charm.update_db_conf") as update_db_conf,
+            patch(
+                "charm.LandscapeServerCharm._migrate_schema_bootstrap",
+                return_value=True,
+            ) as migrate_mock,
+            patch(
+                "charm.LandscapeServerCharm._update_wsl_distributions",
+                return_value=True,
+            ),
+            patch(
+                "charm.get_postgres_roles",
+                return_value=PostgresRoles(
+                    relation="relation-9",
+                    application="landscape-app",
+                    owner="charmed_dba",
+                    superuser=None,
+                ),
+            ),
+            patch("charm.grant_role") as grant_role_mock,
+            patch("charm.fetch_postgres_relation_data", return_value=fetch_context),
+        ):
+            state_in = self._state(
+                relation=relation,
+                leader=True,
+                config={"demo_data": True},
+            )
+
+            with ctx(ctx.on.start(), state_in) as manager:
+                manager.charm.database = Mock()
+                manager.charm._database_relation_changed(
+                    mock.create_autospec(DatabaseCreatedEvent)
+                )
+
+        migrate_mock.assert_called_once_with("charmed_dba", demo_data=True)
+        grant_role_mock.assert_called_once_with(
+            host="1.2.3.4",
+            port="5432",
+            relation_user="relation-9",
+            relation_password="secret",
+            role="charmed_dml",
+            user="landscape-app",
+        )
+        update_db_conf.assert_called_once_with(
+            host="1.2.3.4",
+            port="5432",
+            user="relation-9",
+            password="secret",
+            schema_password=None,
+        )
 
     def test_database_relation_pg16_grants_roles(self):
         ctx = Context(LandscapeServerCharm)
@@ -367,7 +430,7 @@ class TestDatabaseRelation:
                     mock.create_autospec(DatabaseCreatedEvent)
                 )
 
-        migrate_mock.assert_called_once_with("charmed_dba")
+        migrate_mock.assert_called_once_with("charmed_dba", demo_data=False)
         grant_role_mock.assert_has_calls(
             [
                 call(

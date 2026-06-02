@@ -153,6 +153,49 @@ PROXY_ENV_MAPPING = {
     "JUJU_CHARM_NO_PROXY": "--with-no-proxy",
 }
 
+DEMO_SCHEMA_ARGS_SAAS = [
+    "--with-computers",
+    "--with-free-disk-space",
+    "--with-free-memory-and-swap",
+    "--with-load-averages",
+    "--with-temperatures",
+    "--with-network-traffic",
+    "--with-active-processes",
+    "--with-hardware",
+    "--with-packages",
+    "--with-package-activities",
+    "--with-script-activities",
+    "--with-users-and-groups",
+    "--with-cpu-usage",
+    "--with-ceph-usage",
+    "--with-compute-usage",
+    "--with-swift-usage",
+    "--with-user-and-group-activities",
+    "--with-custom-graph",
+    "--with-scripts",
+]
+
+DEMO_SCHEMA_ARGS_STANDALONE = [
+    "--with-computers",
+    "--with-free-disk-space",
+    "--with-free-memory-and-swap",
+    "--with-load-averages",
+    "--with-temperatures",
+    "--with-network-traffic",
+    "--with-active-processes",
+    "--with-packages",
+    "--with-package-activities",
+    "--with-script-activities",
+    "--with-users-and-groups",
+    "--with-cpu-usage",
+    "--with-ceph-usage",
+    "--with-compute-usage",
+    "--with-swift-usage",
+    "--with-user-and-group-activities",
+    "--with-custom-graph",
+    "--with-scripts",
+]
+
 METRIC_INSTRUMENTED_SERVICE_PORTS = [
     ("appserver", 8080),
     ("pingserver", 8070),
@@ -531,6 +574,9 @@ class LandscapeServerCharm(CharmBase):
         if db_kwargs:
             update_db_conf(**db_kwargs)
             if self._migrate_schema_bootstrap(demo_data=demo_data):
+                if demo_data and self.charm_config.deployment_mode == "standalone":
+                    if not self._update_wsl_distributions():
+                        return
                 self.unit.status = WaitingStatus("Waiting on relations")
                 self._stored.ready["db"] = True
             else:
@@ -956,7 +1002,7 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
-        if not self._migrate_schema_bootstrap():
+        if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
             return
 
         if not self._update_wsl_distributions():
@@ -1049,7 +1095,9 @@ class LandscapeServerCharm(CharmBase):
 
         roles = get_postgres_roles(db_ctx.version)
 
-        if not self._migrate_schema_bootstrap(roles.owner):
+        if not self._migrate_schema_bootstrap(
+            roles.owner, demo_data=self.charm_config.demo_data
+        ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
             )
@@ -1131,30 +1179,9 @@ class LandscapeServerCharm(CharmBase):
             call.extend(self._proxy_settings)
 
         if demo_data:
-            call.extend(
-                [
-                    "--with-computers",
-                    "--with-free-disk-space",
-                    "--with-free-memory-and-swap",
-                    "--with-load-averages",
-                    "--with-temperatures",
-                    "--with-network-traffic",
-                    "--with-active-processes",
-                    "--with-packages",
-                    "--with-package-activities",
-                    "--with-script-activities",
-                    "--with-users-and-groups",
-                    "--with-cpu-usage",
-                    "--with-ceph-usage",
-                    "--with-compute-usage",
-                    "--with-swift-usage",
-                    "--with-user-and-group-activities",
-                    "--with-custom-graph",
-                    "--with-scripts",
-                    "--with-account-password",
-                    "foo",
-                ]
-            )
+            call.extend(self._demo_schema_args())
+
+        call.extend(self.charm_config.bootstrap_schema_override_args_list)
 
         try:
             check_call(call, env=get_modified_env_vars())
@@ -1169,6 +1196,19 @@ class LandscapeServerCharm(CharmBase):
         self._bootstrap_account()
         self._set_autoregistration()
         return True
+
+    def _demo_schema_args(self) -> list[str]:
+        if self.charm_config.deployment_mode == "standalone":
+            args = DEMO_SCHEMA_ARGS_STANDALONE.copy()
+            account_password = self.charm_config.registration_key or "foo"
+            args.extend(["--with-account-password", account_password])
+            if self.charm_config.root_url:
+                args.extend(["--with-root-url", self.charm_config.root_url])
+            if self.charm_config.system_email:
+                args.extend(["--with-system-email", self.charm_config.system_email])
+            return args
+
+        return DEMO_SCHEMA_ARGS_SAAS.copy()
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
