@@ -13,6 +13,10 @@ SKIP_BUILD ?= false
 SKIP_CLEAN ?= false
 SKIP_ADD_MODEL ?= false
 
+# juju deploy treats a bare "foo/bar.yaml" as ambiguous; force local interpretation.
+BUNDLE_DEPLOY_PATH := $(if $(filter /% ./%,$(BUNDLE_PATH)),$(BUNDLE_PATH),./$(BUNDLE_PATH))
+LBAAS_BUNDLE_DEPLOY_PATH := $(if $(filter /% ./%,$(LBAAS_BUNDLE_PATH)),$(LBAAS_BUNDLE_PATH),./$(LBAAS_BUNDLE_PATH))
+
 # Python testing and linting
 .PHONY: test
 test:
@@ -52,14 +56,14 @@ deploy:
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	@if [ "$(SKIP_BUILD)" != "true" ]; then $(MAKE) build; else echo "skipping build..."; fi
 	$(MAKE) add-model
-	juju deploy -m $(MODEL_NAME) $(BUNDLE_PATH)
+	juju deploy -m $(MODEL_NAME) $(BUNDLE_DEPLOY_PATH)
 
 .PHONY: deploy-lbaas
 deploy-lbaas:
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	@if [ "$(SKIP_BUILD)" != "true" ]; then $(MAKE) build; else echo "skipping build..."; fi
 	$(MAKE) add-model
-	juju deploy -m $(MODEL_NAME) $(LBAAS_BUNDLE_PATH)
+	juju deploy -m $(MODEL_NAME) $(LBAAS_BUNDLE_DEPLOY_PATH)
 
 .PHONY: check-jq
 check-jq:
