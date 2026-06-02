@@ -1897,12 +1897,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
     def _stop_pgbouncer(self) -> bool:
         """Stop the pgbouncer systemd service.
 
-        Returns True if the service was stopped, False if it was not present.
+        Returns True if the service was stopped, False if it was not running.
         Raises SystemdError on any other failure.
         """
-        if not service_running(PGBOUNCER_SERVICE):
-            logger.info("pgbouncer service not running, skipping stop")
-            return False
         service_stop(PGBOUNCER_SERVICE)
         logger.info("Stopped pgbouncer service")
         return True
@@ -1945,7 +1942,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 try:
                     self._start_pgbouncer()
                 except SystemdError as e:
-                    logger.warning("Resuming PGBouncer failed: %s", e)
+                    logger.warning("Starting PGBouncer failed: %s", e)
 
     def _hash_id_databases(self, event: ActionEvent) -> None:
         prev_status = self.unit.status
