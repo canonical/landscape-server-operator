@@ -120,7 +120,7 @@ variable "haproxy_self_signed_certs" {
     base        = optional(string, "ubuntu@24.04")
   })
 
-  default  = {}
+  default  = null
   nullable = true
 }
 
