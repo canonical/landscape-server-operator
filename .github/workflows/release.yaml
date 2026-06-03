@@ -11,6 +11,8 @@ on:
             - "pyproject.toml"
             - ".github/workflows/*.yaml"
 
+    workflow_dispatch:
+
 jobs:
     lint:
         name: Lint
