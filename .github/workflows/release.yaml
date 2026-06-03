@@ -25,6 +25,9 @@ jobs:
     build:
         name: Build charm
         uses: ./.github/workflows/build.yaml
+        permissions:
+            actions: read # Needed to manage the artifact cache (used by build_charm.yaml from data-platform-workflows)
+            contents: read
 
     release:
         name: Release charm
