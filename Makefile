@@ -122,6 +122,6 @@ deploy-landscape-scalable: check-terraform check-jq
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	$(MAKE) add-model
 	cd terraform/product/modules/landscape-scalable && \
-	terraform init -backend=false && \
+	terraform init && \
 	terraform apply -auto-approve \
 		-var model_uuid=$$(juju show-model $(MODEL_NAME) --format=json | jq -r '.["$(MODEL_NAME)"]["model-uuid"]')
