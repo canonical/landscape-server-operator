@@ -1,4 +1,4 @@
-description: Landscape Scalable Dev with in-model HAProxy
+description: Landscape Scalable Dev in SaaS (non-self-hosted) mode
 applications:
   postgresql:
     channel: 16/stable
@@ -48,5 +48,8 @@ relations:
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [
+      landscape-server:ubuntu-installer-attach-haproxy-route,
+      haproxy:haproxy-route,
+    ]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]
