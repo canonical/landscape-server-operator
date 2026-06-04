@@ -63,6 +63,7 @@ class LandscapeCharmConfiguration(BaseModel):
     additional_service_config: str | None = None
     secret_token: str | None = None
     cookie_encryption_key: str | None = None
+    gpg_secret_id: str | None = None
     min_install: bool
     prometheus_scrape_interval: str
     autoregistration: bool

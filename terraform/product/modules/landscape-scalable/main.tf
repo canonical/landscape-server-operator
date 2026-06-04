@@ -1,16 +1,5 @@
 # © 2026 Canonical Ltd.
 
-resource "juju_machine" "landscape_server" {
-  count      = var.landscape_server.units
-  model_uuid = var.model_uuid
-  base       = var.landscape_server.base
-  name       = "landscape-server-${count.index}"
-
-  lifecycle {
-    ignore_changes = [constraints]
-  }
-}
-
 module "landscape_server" {
   source      = "../../../charm"
   model_uuid  = var.model_uuid
@@ -20,9 +9,8 @@ module "landscape_server" {
   constraints = var.landscape_server.constraints
   revision    = var.landscape_server.revision
   base        = var.landscape_server.base
-  machines    = toset([for m in juju_machine.landscape_server : m.machine_id])
-
-  depends_on = [juju_machine.landscape_server]
+  charm_name  = var.landscape_server.charm_name
+  units       = var.landscape_server.units
 }
 
 module "haproxy" {
@@ -478,20 +466,20 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 
 }
 
-resource "juju_application" "haproxy_self_signed_certs" {
-  name        = var.haproxy_self_signed_certs.app_name
+resource "juju_application" "tls_certificates" {
+  name        = var.tls_certificates.app_name
   model_uuid  = var.model_uuid
   units       = 1
-  constraints = var.haproxy_self_signed_certs.constraints
+  constraints = var.tls_certificates.constraints
 
   charm {
-    name     = "self-signed-certificates"
-    revision = var.haproxy_self_signed_certs.revision
-    channel  = var.haproxy_self_signed_certs.channel
-    base     = var.haproxy_self_signed_certs.base
+    name     = var.tls_certificates.charm_name
+    revision = var.tls_certificates.revision
+    channel  = var.tls_certificates.channel
+    base     = var.tls_certificates.base
   }
 
-  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -503,12 +491,12 @@ resource "juju_integration" "haproxy_certificates" {
   }
 
   application {
-    name = juju_application.haproxy_self_signed_certs[0].name
+    name = juju_application.tls_certificates[0].name
   }
 
-  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+  depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_receive_ca_certs" {
@@ -520,18 +508,17 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
   }
 
   application {
-    name = juju_application.haproxy_self_signed_certs[0].name
+    name = juju_application.tls_certificates[0].name
   }
 
-  depends_on = [module.haproxy, juju_application.haproxy_self_signed_certs]
+  depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.haproxy_self_signed_certs != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer" {
   name       = var.pgbouncer.app_name
   model_uuid = var.model_uuid
-  units      = 0
   config     = var.pgbouncer.config
 
   charm {
@@ -539,6 +526,11 @@ resource "juju_application" "pgbouncer" {
     revision = var.pgbouncer.revision
     channel  = var.pgbouncer.channel
     base     = var.pgbouncer.base
+  }
+
+  lifecycle {
+    # It's a subordinate
+    ignore_changes = [units]
   }
 
   count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0

@@ -60,6 +60,7 @@ from ops.model import (
     MaintenanceStatus,
     ModelError,
     Relation,
+    SecretNotFoundError,
     WaitingStatus,
 )
 from pydantic import ValidationError
@@ -70,6 +71,7 @@ from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
     grant_role,
+    PgHbaNotReadyError,
 )
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
@@ -102,6 +104,13 @@ AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistrat
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
 
+GPG_HOME_DIR_DEFAULT = "/var/lib/landscape-server/gnupg"
+
+GPG_SERVICE_CONF_SECTIONS = (
+    "api",
+    "appserver",
+)
+
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
     LANDSCAPE_SERVER,
@@ -109,7 +118,7 @@ LANDSCAPE_PACKAGES = (
     "landscape-common",
 )
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
-DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/edge"  # TODO update when stable is released.
+DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
@@ -278,6 +287,8 @@ class LandscapeServerCharm(CharmBase):
             self.on.get_service_conf_action, self._on_get_service_conf_action
         )
 
+        # Secrets
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
         # SMTP
         self.smtp = SmtpRequires(self)
         self.framework.observe(
@@ -454,21 +465,6 @@ class LandscapeServerCharm(CharmBase):
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
 
-        if self.charm_config.additional_service_config:
-            merge_service_conf(self.charm_config.additional_service_config)
-
-        if self.charm_config.license_file:
-            self.unit.status = MaintenanceStatus("Writing Landscape license file")
-            write_license_file(
-                self.charm_config.license_file,
-                user_exists("landscape").pw_uid,
-                self.root_gid,
-            )
-            self.unit.status = WaitingStatus("Waiting on relations")
-
-        self._configure_openid()
-        self._configure_oidc()
-
         service_conf_updates = {
             service: {"workers": str(self.charm_config.worker_counts)}
             for service in ("landscape", "api", "message-server", "pingserver")
@@ -500,6 +496,21 @@ class LandscapeServerCharm(CharmBase):
         }
 
         update_service_conf(service_conf_updates)
+
+        if self.charm_config.additional_service_config:
+            merge_service_conf(self.charm_config.additional_service_config)
+
+        if self.charm_config.license_file:
+            self.unit.status = MaintenanceStatus("Writing Landscape license file")
+            write_license_file(
+                self.charm_config.license_file,
+                user_exists("landscape").pw_uid,
+                self.root_gid,
+            )
+            self.unit.status = WaitingStatus("Waiting on relations")
+
+        self._configure_openid()
+        self._configure_oidc()
 
         db_kargs = {}
         if config_host := self.charm_config.db_host:
@@ -552,6 +563,8 @@ class LandscapeServerCharm(CharmBase):
         ):
             self._write_cookie_encryption_key(cookie_encryption_key)
             self._stored.cookie_encryption_key = cookie_encryption_key
+
+        self._configure_gpg()
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
@@ -617,12 +630,120 @@ class LandscapeServerCharm(CharmBase):
         logger.info("Writing cookie encryption key")
         update_service_conf({"api": {"cookie-encryption-key": cookie_encryption_key}})
 
+    def _configure_gpg(self) -> bool:
+        """Write GPG credentials from the configured Juju secret.
+
+        Reads gpg_home_dir from service.conf [system] section, writes the
+        passphrase file there, imports the private key into that directory,
+        and updates service.conf so all services point to the correct paths.
+        Returns True on success, False when no secret is configured or on
+        error. Sets BlockedStatus on error.
+        """
+        secret_id = self.charm_config.gpg_secret_id
+        if not secret_id:
+            logger.debug("gpg_secret_id not configured, skipping GPG setup")
+            return False
+
+        self.unit.status = MaintenanceStatus("Configuring GPG credentials")
+
+        try:
+            secret = self.model.get_secret(id=secret_id)
+            content = secret.get_content(refresh=True)
+        except (SecretNotFoundError, ModelError):
+            logger.warning("GPG secret '%s' not found or not accessible", secret_id)
+            self.unit.status = BlockedStatus("GPG secret not found or not accessible")
+            return False
+
+        passphrase = content.get("gpg-passphrase")
+        private_key = content.get("gpg-private-key")
+
+        if not passphrase or not private_key:
+            logger.warning(
+                "GPG secret is missing required fields: "
+                "'gpg-passphrase' and/or 'gpg-private-key'"
+            )
+            self.unit.status = BlockedStatus("GPG secret missing required fields")
+            return False
+
+        service_conf = read_service_conf()
+        gpg_home_dir = service_conf.get("system", {}).get(
+            "gpg_home_dir", GPG_HOME_DIR_DEFAULT
+        )
+        gpg_passphrase_file = os.path.join(gpg_home_dir, "gpg-passphrase.txt")
+
+        landscape_user = user_exists("landscape")
+        landscape_uid = landscape_user.pw_uid
+        landscape_gid = landscape_user.pw_gid
+
+        os.makedirs(gpg_home_dir, mode=0o700, exist_ok=True)
+        # Enforce 0700 explicitly — makedirs is subject to umask
+        os.chmod(gpg_home_dir, 0o700)
+        os.chown(gpg_home_dir, landscape_uid, landscape_gid)
+
+        # Set umask to 0o177 so open() creates the file with 0o600 immediately,
+        # avoiding a window where it could be world-readable
+        old_umask = os.umask(0o177)
+        try:
+            with open(gpg_passphrase_file, "w") as fp:
+                fp.write(passphrase)
+        finally:
+            os.umask(old_umask)
+        os.chown(gpg_passphrase_file, landscape_uid, landscape_gid)
+
+        try:
+            subprocess.run(
+                [
+                    "gpg",
+                    "--homedir",
+                    gpg_home_dir,
+                    "--batch",
+                    "--passphrase-file",
+                    gpg_passphrase_file,
+                    "--import",
+                ],
+                input=private_key,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error("Failed to import GPG private key: %s", e.stderr)
+            self.unit.status = BlockedStatus("Failed to import GPG key")
+            return False
+
+        gpg_service_conf_updates = {
+            section: {
+                "gpg-home-path": gpg_home_dir,
+                "gpg-passphrase-path": gpg_passphrase_file,
+            }
+            for section in GPG_SERVICE_CONF_SECTIONS
+        }
+        update_service_conf(gpg_service_conf_updates)
+
+        logger.info("GPG credentials configured successfully")
+        self.unit.status = WaitingStatus("Waiting on relations")
+        return True
+
+    def _on_secret_changed(self, event) -> None:
+        """Handle secret-changed for any secret this charm tracks."""
+        if event.secret.id == self.charm_config.gpg_secret_id:
+            if self._configure_gpg():
+                self._update_ready_status(restart_services=True)
+
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
+        # Create /sbin symlinks for fuse mount helpers, missing on
+        # resolute where /sbin and /usr/sbin are not merged,
+        # causing snapd's syscheck to fail.
+        for helper in ["mount.fuse", "mount.fuse3"]:
+            src = Path(f"/usr/sbin/{helper}")
+            dst = Path(f"/sbin/{helper}")
+            if src.exists() and not dst.exists():
+                dst.symlink_to(src)
 
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
@@ -695,11 +816,12 @@ class LandscapeServerCharm(CharmBase):
             write_license_file(
                 license_file, user_exists("landscape").pw_uid, self.root_gid
             )
-
-        self.unit.status = ActiveStatus("Unit is ready")
+            self.unit.status = WaitingStatus("Waiting on relations")
 
         # Indicate that this install is a charm install.
         prepend_default_settings({"DEPLOYED_FROM": "charm"})
+
+        self._configure_gpg()
 
         self._update_ready_status()
 
@@ -1007,15 +1129,17 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call(call, env=get_modified_env_vars())
-            self._bootstrap_account()
-            self._set_autoregistration()
-            return True
         except CalledProcessError as e:
             logger.error(
                 "Landscape Server schema update failed with return code %d",
                 e.returncode,
             )
             self.unit.status = BlockedStatus("Failed to update database schema")
+            return False
+
+        self._bootstrap_account()
+        self._set_autoregistration()
+        return True
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
@@ -1563,6 +1687,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["root_url"] = self.charm_config.root_url
         if not karg["root_url"] and self._stored.leader_ip:
             karg["root_url"] = "https://" + self._stored.leader_ip
+        if not karg["root_url"]:
+            logger.warning("Skipping bootstrap: root_url not yet available")
+            return
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
 
@@ -1591,6 +1718,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if "DuplicateAccountError" in result.stderr:
                 logger.error("Cannot bootstrap b/c account is already there!")
                 self._stored.account_bootstrapped = True
+            elif "no pg_hba.conf entry" in result.stderr:
+                # Patroni regenerates pg_hba.conf asynchronously after the
+                # landscape role is created by the schema script. Raise so
+                # Juju retries the hook once Patroni has reloaded.
+                raise PgHbaNotReadyError(result.stderr)
             else:
                 logger.error(result.stderr)
         else:
