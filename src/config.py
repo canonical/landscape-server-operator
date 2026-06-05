@@ -79,6 +79,18 @@ class LandscapeCharmConfiguration(BaseModel):
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
     outbox_snap_channel: str
+    demo_data: bool = False
+    bootstrap_schema_override_args: str | None = None
+
+    @property
+    def bootstrap_schema_override_args_list(self) -> list[str]:
+        if not self.bootstrap_schema_override_args:
+            return []
+        return [
+            arg.strip()
+            for arg in self.bootstrap_schema_override_args.split(",")
+            if arg.strip()
+        ]
 
     @field_validator("deployment_mode")
     @classmethod

@@ -7,6 +7,7 @@ NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 
 import json
 import re
+import shlex
 from urllib.parse import urlparse
 
 import jubilant
@@ -31,6 +32,26 @@ from tests.integration.helpers import (
 )
 
 LIVE_MODEL_SKIP_REASON = "Potentially destructive test skipped on live model."
+
+
+def _query_main_db(juju: jubilant.Juju, sql: str) -> str:
+    """Execute a read-only SQL query against the configured main Landscape DB."""
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    stores = json.loads(result.results["config"])["stores"]
+    host, port = stores["host"].rsplit(":", 1)
+    password, user, dbname = stores["password"], stores["user"], stores["main"]
+
+    ssh_command = (
+        f"PGPASSWORD={shlex.quote(password)} "
+        "psql "
+        f"-h {shlex.quote(host)} "
+        f"-p {shlex.quote(port)} "
+        f"-U {shlex.quote(user)} "
+        f"-d {shlex.quote(dbname)} "
+        f"-tAc {shlex.quote(sql)}"
+    )
+
+    return juju.ssh("landscape-server/leader", ssh_command)
 
 
 def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
@@ -266,17 +287,48 @@ def test_bootstrap_account_created_with_modern_database(
 
     juju.wait(jubilant.all_active, timeout=300)
 
-    result = juju.run("landscape-server/leader", "get-service-conf")
-    stores = json.loads(result.results["config"])["stores"]
-    host, port = stores["host"].split(":")
-    password, user, dbname = stores["password"], stores["user"], stores["main"]
-    result = juju.ssh(
-        "landscape-server/leader",
-        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
-        " -tAc 'SELECT email FROM person;'",
-    )
+    result = _query_main_db(juju, "SELECT email FROM person;")
     assert admin_email in result, (
         f"Admin {admin_email} not found in person table after bootstrap. "
+    )
+
+
+def test_demo_data_created_when_config_enabled(juju: jubilant.Juju, bundle: None):
+    """
+    Non-mutative check: only validate demo data if the option is already enabled.
+    """
+    if not has_modern_pg(juju):
+        pytest.skip("Modern database relation not active")
+
+    if not juju.config("landscape-server").get("demo_data"):
+        pytest.skip("demo_data is not enabled in model config")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = _query_main_db(juju, "SELECT COUNT(*) FROM computer;")
+    assert int(result.strip()) > 0, "Expected demo computers when demo_data is enabled"
+
+
+def test_demo_data_registration_key_matches_config(juju: jubilant.Juju, bundle: None):
+    """
+    Non-mutative check: only validate registration key parity when already set.
+    """
+    if not has_modern_pg(juju):
+        pytest.skip("Modern database relation not active")
+
+    config = juju.config("landscape-server")
+    if not config.get("demo_data"):
+        pytest.skip("demo_data is not enabled in model config")
+
+    registration_key = config.get("registration_key")
+    if not registration_key:
+        pytest.skip("registration_key is not set in model config")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = _query_main_db(juju, "SELECT registration_key FROM account LIMIT 1;")
+    assert result.strip() == registration_key, (
+        "Expected account.registration_key to match configured registration_key"
     )
 
 
@@ -355,16 +407,10 @@ def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
     """
     juju.wait(jubilant.all_active, timeout=300)
 
-    result = juju.run("landscape-server/leader", "get-service-conf")
-    stores = json.loads(result.results["config"])["stores"]
-    host, port = stores["host"].split(":")
-    password, user, dbname = stores["password"], stores["user"], stores["main"]
-
-    result = juju.ssh(
-        "landscape-server/leader",
-        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
-        ' -tAc "SELECT COUNT(*) FROM information_schema.tables'
-        " WHERE table_schema = 'public' AND table_name = 'account';\"",
+    result = _query_main_db(
+        juju,
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'account';",
     ).strip()
 
     assert result == "1", (
