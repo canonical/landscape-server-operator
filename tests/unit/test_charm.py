@@ -8,12 +8,14 @@ from grp import struct_group
 import json
 import os
 from pwd import struct_passwd
+import subprocess
 from subprocess import CalledProcessError
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import ANY, call, DEFAULT, Mock, patch, PropertyMock
+from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
 
 from charmlibs import apt
+from charmlibs.snap import SnapError
 from charmlibs.apt import PackageError, PackageNotFoundError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
@@ -23,15 +25,21 @@ from ops.testing import (
     MaintenanceStatus,
     PeerRelation,
     Relation,
+    Secret,
     State,
     StoredState,
     TCPPort,
 )
 
 from charm import (
+    BOOTSTRAP_ACCOUNT_SCRIPT,
+    DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
+    GPG_HOME_DIR_DEFAULT,
+    GPG_SERVICE_CONF_SECTIONS,
     HASH_ID_DATABASES,
+    LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LandscapeServerCharm,
@@ -166,6 +174,120 @@ class TestOnConfigChanged:
         assert config["api"]["workers"] == str(workers)
         assert config["message-server"]["workers"] == str(workers)
         assert config["pingserver"]["workers"] == str(workers)
+
+    def test_additional_service_config_overrides_worker_counts(
+        self,
+        capture_service_conf,
+    ):
+        """
+        If `additional_service_config` specifies worker counts, it takes priority
+        over the `worker_counts` config setting.
+        """
+        additional_config = """
+[landscape]
+workers = 5
+
+[api]
+workers = 7
+
+[message-server]
+workers = 3
+
+[pingserver]
+workers = 4
+"""
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={"worker_counts": 10, "additional_service_config": additional_config}
+        )
+        context.run(context.on.config_changed(), state)
+
+        config = capture_service_conf.get_config()
+
+        assert config["landscape"]["workers"] == "5"
+        assert config["api"]["workers"] == "7"
+        assert config["message-server"]["workers"] == "3"
+        assert config["pingserver"]["workers"] == "4"
+
+    def test_additional_service_config_overrides_base_ports(self, capture_service_conf):
+        """
+        `additional_service_config` takes priority over all base_port config options.
+        """
+        additional_config = """
+[landscape]
+base_port = 1111
+
+[api]
+base_port = 2222
+
+[message-server]
+base_port = 3333
+
+[pingserver]
+base_port = 4444
+
+[package-upload]
+base_port = 5555
+
+[hostagent-message-server]
+base_port = 6666
+
+[ubuntu-installer-attach]
+base_port = 7777
+"""
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "appserver_base_port": 8080,
+                "api_base_port": 9080,
+                "message_server_base_port": 8090,
+                "pingserver_base_port": 8070,
+                "package_upload_base_port": 9100,
+                "hostagent_server_base_port": 50052,
+                "ubuntu_installer_attach_base_port": 53354,
+                "additional_service_config": additional_config,
+            }
+        )
+        context.run(context.on.config_changed(), state)
+
+        config = capture_service_conf.get_config()
+
+        assert config["landscape"]["base_port"] == "1111"
+        assert config["api"]["base_port"] == "2222"
+        assert config["message-server"]["base_port"] == "3333"
+        assert config["pingserver"]["base_port"] == "4444"
+        assert config["package-upload"]["base_port"] == "5555"
+        assert config["hostagent-message-server"]["base_port"] == "6666"
+        assert config["ubuntu-installer-attach"]["base_port"] == "7777"
+
+    def test_additional_service_config_overrides_root_url(self, capture_service_conf):
+        """
+        `additional_service_config` takes priority over the `root_url` config option.
+        """
+        additional_config = """
+[global]
+root-url = https://overridden.example.com
+
+[api]
+root-url = https://overridden.example.com
+
+[package-upload]
+root-url = https://overridden.example.com
+"""
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "root_url": "https://original.example.com",
+                "additional_service_config": additional_config,
+            }
+        )
+        context.run(context.on.config_changed(), state)
+
+        config = capture_service_conf.get_config()
+
+        assert config["global"]["root-url"] == "https://overridden.example.com"
+        assert config["api"]["root-url"] == "https://overridden.example.com"
+        assert config["package-upload"]["root-url"] == "https://overridden.example.com"
 
     def test_hostagent_services_default(
         self,
@@ -358,6 +480,40 @@ class TestOnConfigChanged:
         state_out = ctx.run(event, leader_state)
 
         assert expected_port in state_out.opened_ports
+
+    def test_outbox_snap_ensure_called(self, snap_fixture):
+        """Config-changed calls snap.ensure for landscape-outbox."""
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"outbox_snap_channel": "latest/edge"})
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel="latest/edge",
+        )
+
+    def test_outbox_snap_ensure_default_channel(self, snap_fixture):
+        """Config-changed uses the default channel when not overridden."""
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        ctx.run(ctx.on.config_changed(), state)
+
+        snap_fixture.ensure.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            "latest",
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
+        )
+
+    def test_outbox_snap_ensure_failure_sets_maintenance(self, snap_fixture):
+        """If snap.ensure fails, the unit enters maintenance status."""
+        snap_fixture.ensure.side_effect = SnapError("refresh failed")
+
+        ctx = Context(LandscapeServerCharm)
+        state = State()
+        state_out = ctx.run(ctx.on.config_changed(), state)
+
+        assert isinstance(state_out.unit_status, MaintenanceStatus)
 
 
 class TestOnConfigChangedEnableUbuntuInstallerAttach:
@@ -814,6 +970,7 @@ class TestCharm(unittest.TestCase):
             "charm",
             check_call=DEFAULT,
             apt=DEFAULT,
+            snap=DEFAULT,
             prepend_default_settings=DEFAULT,
             update_service_conf=DEFAULT,
         )
@@ -832,6 +989,10 @@ class TestCharm(unittest.TestCase):
         mocks["apt"].add_package.assert_called_once_with(
             ["landscape-server", "landscape-hashids"],
             update_cache=True,
+        )
+        mocks["snap"].add.assert_called_once_with(
+            LANDSCAPE_OUTBOX_SNAP,
+            channel=DEFAULT_OUTBOX_SNAP_CHANNEL,
         )
         status = harness.charm.unit.status
         self.assertIsInstance(status, WaitingStatus)
@@ -1405,42 +1566,6 @@ class TestCharm(unittest.TestCase):
             }
         )
 
-    @patch("charm.update_service_conf")
-    def test_on_config_changed_no_smtp_change(self, _):
-        self.harness.charm._update_ready_status = Mock()
-        self.harness.charm._configure_smtp = Mock()
-
-        peer_relation_id = self.harness.add_relation("replicas", "landscape-server")
-        self.harness.update_relation_data(
-            peer_relation_id, "landscape-server", {"leader-ip": "test"}
-        )
-
-        with patch.object(
-            self.harness.charm, "_provide_all_haproxy_route_requirements"
-        ):
-            self.harness.update_config({"smtp_relay_host": ""})
-
-        self.harness.charm._configure_smtp.assert_not_called()
-        self.assertEqual(self.harness.charm._update_ready_status.call_count, 2)
-
-    @patch("charm.update_service_conf")
-    def test_on_config_changed_smtp_change(self, _):
-        self.harness.charm._update_ready_status = Mock()
-        self.harness.charm._configure_smtp = Mock()
-
-        peer_relation_id = self.harness.add_relation("replicas", "landscape-server")
-        self.harness.update_relation_data(
-            peer_relation_id, "landscape-server", {"leader-ip": "test"}
-        )
-
-        with patch.object(
-            self.harness.charm, "_provide_all_haproxy_route_requirements"
-        ):
-            self.harness.update_config({"smtp_relay_host": "smtp.example.com"})
-
-        self.harness.charm._configure_smtp.assert_called_once_with("smtp.example.com")
-        self.assertEqual(self.harness.charm._update_ready_status.call_count, 2)
-
     def test_configure_smtp_relay_host(self):
         mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
         with open(mock_postfix_cf, "w") as mock_postfix_cf_file:
@@ -1486,10 +1611,16 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_pause(self):
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
+        ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._pause(Mock())
 
         check_call_mock.assert_called_once_with([LSCTL, "stop"], env=ANY)
+        outbox_snap.stop.assert_called_once()
         self.assertFalse(self.harness.charm._stored.running)
 
     def test_action_pause_CalledProcessError(self):
@@ -1512,13 +1643,17 @@ class TestCharm(unittest.TestCase):
         with (
             patch("subprocess.run") as run_mock,
             patch("charm.check_call") as check_call_mock,
+            patch("charm.snap.SnapCache") as snap_cache_mock,
         ):
+            outbox_snap = Mock()
+            snap_cache_mock.return_value = {LANDSCAPE_OUTBOX_SNAP: outbox_snap}
             self.harness.charm._resume(event)
 
         run_mock.assert_called_once_with(
             [LSCTL, "start"], capture_output=True, text=True, env=ANY
         )
         check_call_mock.assert_called_once_with([LSCTL, "status"], env=ANY)
+        outbox_snap.start.assert_called_once()
         self.harness.charm._update_ready_status.assert_called_once()
         self.assertTrue(self.harness.charm._stored.running)
         event.log.assert_called_once()
@@ -1921,15 +2056,13 @@ class TestMultiplePPAs:
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
 
-# TODO fix from broken commit.
-@unittest.skip("Broken in `de29548e2b09c71db3a55f606ab318b5ea25550d`")
 class TestBootstrapAccount(unittest.TestCase):
     def setUp(self):
         self.harness = Harness(LandscapeServerCharm)
         self.addCleanup(self.harness.cleanup)
 
         self.harness.model.get_binding = Mock(
-            return_value=Mock(bind_address="123.123.123.123")
+            return_value=Mock(network=Mock(bind_address="123.123.123.123"))
         )
         self.harness.add_relation("replicas", "landscape-server")
         self.harness.set_leader()
@@ -1939,16 +2072,22 @@ class TestBootstrapAccount(unittest.TestCase):
         grp_mock = patch("charm.group_exists").start()
         grp_mock.return_value = Mock(spec_set=struct_group, gr_gid=1000)
 
-        self.process_mock = patch("subprocess.run").start()
+        self.process_mock = patch("charm.subprocess.run").start()
         self.log_mock = patch("charm.logger.error").start()
         self.log_info_mock = patch("charm.logger.info").start()
 
-        env_mock = patch("os.environ").start()
-        env_mock.copy.return_value = {}
+        patch("os.environ.copy", return_value={}).start()
 
         self.addCleanup(patch.stopall)
 
         self.harness.begin()
+
+    def _bootstrap_calls(self):
+        return [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and c.args[0][0] == BOOTSTRAP_ACCOUNT_SCRIPT
+        ]
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
@@ -1958,8 +2097,10 @@ class TestBootstrapAccount(unittest.TestCase):
                 "admin_name": "Hello Ubuntu",
             }
         )
-        self.assertIn("password required", self.log_mock.call_args.args[0])
-        self.process_mock.assert_not_called()
+        self.log_mock.assert_any_call(
+            "Admin email, name, and password required for bootstrap account"
+        )
+        self.assertEqual(self._bootstrap_calls(), [])
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_password_redacted(self, _):
@@ -1976,6 +2117,18 @@ class TestBootstrapAccount(unittest.TestCase):
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
+    def test_bootstrap_account_skips_when_no_root_url_and_no_leader_ip(self, _):
+        """If neither root_url nor leader_ip is available, skip bootstrap."""
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
+        self.assertEqual(len(self._bootstrap_calls()), 0)
+
+    @patch("charm.update_service_conf")
     def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
         self.harness.charm._stored.leader_ip = "10.0.0.1"
         self.harness.update_config(
@@ -1985,9 +2138,11 @@ class TestBootstrapAccount(unittest.TestCase):
                 "admin_password": "password",
             }
         )
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
         self.assertIn(
             "https://10.0.0.1",
-            self.process_mock.call_args.args[0],
+            calls[0].args[0],
         )
 
     @patch("charm.update_service_conf")
@@ -2003,15 +2158,14 @@ class TestBootstrapAccount(unittest.TestCase):
                 "root_url": config_root_url,
             }
         )
-        self.assertIn(config_root_url, self.process_mock.call_args.args[0])
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertIn(config_root_url, calls[0].args[0])
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_runs_once_with_correct_args(self, _):
-        """
-        Test that bootstrap account runs with correct args and that it can't
-        run again after a successful run
-        """
-        self.process_mock.return_value.returncode = 0  # Success
+    def test_bootstrap_account_runs_once_and_not_again_on_success(self, _):
+        """bootstrap-account runs once on success and does not run again."""
+        self.process_mock.return_value.returncode = 0
         admin_email = "hello@ubuntu.com"
         admin_name = "Hello Ubuntu"
         admin_password = "password"
@@ -2023,6 +2177,8 @@ class TestBootstrapAccount(unittest.TestCase):
             "root_url": root_url,
         }
         self.harness.update_config(config)
+        calls = self._bootstrap_calls()
+        self.assertEqual(len(calls), 1)
         self.assertEqual(
             [
                 "/opt/canonical/landscape/bootstrap-account",
@@ -2035,33 +2191,27 @@ class TestBootstrapAccount(unittest.TestCase):
                 "--root_url",
                 root_url,
             ],
-            self.process_mock.call_args.args[0],
+            calls[0].args[0],
         )
         self.harness.update_config(config)
-        self.process_mock.assert_called_once()
+        self.assertEqual(len(self._bootstrap_calls()), 1)
 
     @patch("charm.update_service_conf")
-    def test_bootstrap_account_runs_twice_if_error(self, _):
-        """
-        If there's an error ensure that bootstrap account runs again and not
-        a third time if successful
-        """
-        self.process_mock.return_value.returncode = 1  # Error here
-        admin_email = "hello@ubuntu.com"
-        admin_name = "Hello Ubuntu"
-        admin_password = "password"
-        root_url = "https://www.landscape.com"
+    def test_bootstrap_account_retries_after_generic_error(self, _):
+        """After a generic error, bootstrap runs again on the next config-changed."""
+        self.process_mock.return_value.returncode = 1
+        self.process_mock.return_value.stderr = "some transient error"
         config = {
-            "admin_email": admin_email,
-            "admin_name": admin_name,
-            "admin_password": admin_password,
-            "root_url": root_url,
+            "admin_email": "hello@ubuntu.com",
+            "admin_name": "Hello Ubuntu",
+            "admin_password": "password",
+            "root_url": "https://www.landscape.com",
         }
         self.harness.update_config(config)
         self.process_mock.return_value.returncode = 0
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
-        self.assertEqual(self.process_mock.call_count, 2)
+        self.assertEqual(len(self._bootstrap_calls()), 2)
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_cannot_run_if_already_bootstrapped(
@@ -2086,7 +2236,7 @@ class TestBootstrapAccount(unittest.TestCase):
         self.harness.update_config(config)
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
-        self.process_mock.assert_called_once()
+        self.assertEqual(len(self._bootstrap_calls()), 1)
 
     @patch("subprocess.run")
     def test_hash_id_databases(self, run_mock):
@@ -2123,9 +2273,13 @@ class TestGetModifiedEnvVars(unittest.TestCase):
     def test_removes_juju_python(self):
         """Removes any python paths that contain `juju`"""
 
-        pythonpath = "/var/lib/juju/python3:/usr/lib/python3:/usr/lib/juju/python3.10"
+        fake_syspath = [
+            "/var/lib/juju/python3",
+            "/usr/lib/python3",
+            "/usr/lib/juju/python3.10",
+        ]
 
-        with patch.dict(os.environ, {"PYTHONPATH": pythonpath}):
+        with patch("src.helpers.sys.path", fake_syspath):
             modified = get_modified_env_vars()["PYTHONPATH"]
 
         self.assertNotIn("/var/lib/juju/python3", modified)
@@ -2160,3 +2314,345 @@ def test_action_get_service_conf(monkeypatch):
     assert ctx.action_results is not None
     assert "config" in ctx.action_results
     assert json.loads(ctx.action_results["config"]) == conf
+
+
+class TestGPGConfiguration:
+    """Tests for GPG credential management via Juju secrets."""
+
+    GPG_SECRET_ID = "secret:test-gpg-secret-id"
+    PASSPHRASE = "my-test-passphrase"
+    PRIVATE_KEY = (
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\ntest"
+        "\n-----END PGP PRIVATE KEY BLOCK-----"
+    )
+    GPG_HOME_DIR = GPG_HOME_DIR_DEFAULT
+    GPG_PASSPHRASE_FILE = os.path.join(GPG_HOME_DIR_DEFAULT, "gpg-passphrase.txt")
+
+    def _make_gpg_secret(self, secret_id=None):
+        return Secret(
+            id=secret_id or self.GPG_SECRET_ID,
+            tracked_content={
+                "gpg-passphrase": self.PASSPHRASE,
+                "gpg-private-key": self.PRIVATE_KEY,
+            },
+        )
+
+    def test_no_secret_configured_skips_gpg(self, replicas_network_state):
+        """When gpg_secret_id is not set, _configure_gpg does nothing."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(**replicas_network_state)
+
+        with patch("charm.os.makedirs") as mock_makedirs:
+            state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        mock_makedirs.assert_not_called()
+        assert not isinstance(state_out.unit_status, BlockedStatus)
+
+    def test_secret_not_found_sets_blocked(self, replicas_network_state):
+        """When the secret does not exist, the unit enters BlockedStatus."""
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, BlockedStatus)
+        assert "not found" in state_out.unit_status.message
+
+    def test_secret_missing_fields_sets_blocked(self, replicas_network_state):
+        """When the secret exists but lacks required fields, BlockedStatus is set."""
+        ctx = Context(LandscapeServerCharm)
+        incomplete_secret = Secret(
+            id=self.GPG_SECRET_ID,
+            tracked_content={"gpg-passphrase": self.PASSPHRASE},
+        )
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[incomplete_secret],
+        )
+
+        state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, BlockedStatus)
+        assert "missing required fields" in state_out.unit_status.message
+
+    def test_gpg_import_failure_sets_blocked(self, replicas_network_state):
+        """When gpg --import fails, BlockedStatus is set."""
+        ctx = Context(LandscapeServerCharm)
+        secret = self._make_gpg_secret()
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[secret],
+        )
+        mock_landscape = Mock()
+        mock_landscape.pw_uid = 1000
+        mock_landscape.pw_gid = 1001
+
+        with (
+            patch("charm.os.makedirs"),
+            patch("charm.os.umask", return_value=0o022),
+            patch("charm.user_exists", return_value=mock_landscape),
+            patch("charm.subprocess.run") as mock_run,
+            patch("builtins.open", mock_open()),
+        ):
+            mock_run.side_effect = subprocess.CalledProcessError(
+                1, "gpg", stderr="bad key"
+            )
+            state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, BlockedStatus)
+        assert "Failed to import GPG key" in state_out.unit_status.message
+
+    def test_gpg_configured_successfully(self, replicas_network_state):
+        """When credentials are valid, files are written with correct permissions."""
+        ctx = Context(LandscapeServerCharm)
+        secret = self._make_gpg_secret()
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[secret],
+        )
+        mock_landscape = Mock()
+        mock_landscape.pw_uid = 1000
+        mock_landscape.pw_gid = 1001
+
+        with (
+            patch("charm.os.makedirs") as mock_makedirs,
+            patch("charm.os.umask", return_value=0o022) as mock_umask,
+            patch("charm.user_exists", return_value=mock_landscape),
+            patch("charm.subprocess.run") as mock_run,
+            patch("charm.update_service_conf") as mock_update_service_conf,
+            patch("builtins.open", mock_open()) as mock_file,
+        ):
+            mock_run.return_value = subprocess.CompletedProcess([], 0)
+            ctx.run(ctx.on.config_changed(), state_in)
+
+        mock_makedirs.assert_called_once_with(
+            self.GPG_HOME_DIR, mode=0o700, exist_ok=True
+        )
+        mock_umask.assert_any_call(0o177)
+        mock_file.assert_any_call(self.GPG_PASSPHRASE_FILE, "w")
+        mock_run.assert_called_once_with(
+            [
+                "gpg",
+                "--homedir",
+                self.GPG_HOME_DIR,
+                "--batch",
+                "--passphrase-file",
+                self.GPG_PASSPHRASE_FILE,
+                "--import",
+            ],
+            input=self.PRIVATE_KEY,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        expected_gpg_conf = {
+            section: {
+                "gpg-home-path": self.GPG_HOME_DIR,
+                "gpg-passphrase-path": self.GPG_PASSPHRASE_FILE,
+            }
+            for section in GPG_SERVICE_CONF_SECTIONS
+        }
+        mock_update_service_conf.assert_any_call(expected_gpg_conf)
+
+    def test_secret_changed_ignores_different_secret(self, replicas_network_state):
+        """secret-changed for an unrelated secret ID is ignored."""
+        ctx = Context(LandscapeServerCharm)
+        other_secret = Secret(
+            id="secret:other-secret-id",
+            tracked_content={"key": "value"},
+        )
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[other_secret],
+        )
+
+        with patch("charm.os.makedirs") as mock_makedirs:
+            ctx.run(ctx.on.secret_changed(other_secret), state_in)
+
+        mock_makedirs.assert_not_called()
+
+    def test_secret_changed_reconfigures_gpg(self, replicas_network_state):
+        """secret-changed for the GPG secret triggers reconfiguration."""
+        ctx = Context(LandscapeServerCharm)
+        secret = self._make_gpg_secret()
+        state_in = State(
+            **replicas_network_state,
+            config={"gpg_secret_id": self.GPG_SECRET_ID},
+            secrets=[secret],
+        )
+        mock_landscape = Mock()
+        mock_landscape.pw_uid = 1000
+        mock_landscape.pw_gid = 1001
+
+        with (
+            patch("charm.os.makedirs"),
+            patch("charm.os.umask", return_value=0o022),
+            patch("charm.user_exists", return_value=mock_landscape),
+            patch("charm.subprocess.run") as mock_run,
+            patch("charm.update_service_conf"),
+            patch("builtins.open", mock_open()),
+        ):
+            mock_run.return_value = subprocess.CompletedProcess([], 0)
+            ctx.run(ctx.on.secret_changed(secret), state_in)
+
+        mock_run.assert_called_once_with(
+            [
+                "gpg",
+                "--homedir",
+                self.GPG_HOME_DIR,
+                "--batch",
+                "--passphrase-file",
+                self.GPG_PASSPHRASE_FILE,
+                "--import",
+            ],
+            input=self.PRIVATE_KEY,
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+
+class TestSmtpIntegration(unittest.TestCase):
+    def setUp(self):
+        self.harness = Harness(LandscapeServerCharm)
+        self.harness.begin()
+        self.harness.charm._configure_smtp = Mock()
+
+    def tearDown(self):
+        self.harness.cleanup()
+
+    def _make_event(self, relation_data):
+        event = Mock()
+        self.harness.charm.smtp.get_relation_data_from_relation = Mock(
+            return_value=relation_data
+        )
+        return event
+
+    def _make_relation_data(self, host, port, user=None, password=None):
+        data = Mock()
+        data.host = host
+        data.port = port
+        data.user = user
+        data.password = password
+        return data
+
+    def test_smtp_data_available_no_credentials_calls_configure_smtp(self):
+        event = self._make_event(self._make_relation_data("smtp.example.com", 587))
+
+        self.harness.charm._on_smtp_data_available(event)
+
+        self.harness.charm._configure_smtp.assert_called_once_with(
+            "[smtp.example.com]:587"
+        )
+
+    def test_smtp_data_available_no_port(self):
+        event = self._make_event(self._make_relation_data("smtp.example.com", None))
+
+        self.harness.charm._on_smtp_data_available(event)
+
+        self.harness.charm._configure_smtp.assert_called_once_with("[smtp.example.com]")
+
+    def test_smtp_data_available_writes_sasl_passwd(self):
+        event = self._make_event(
+            self._make_relation_data("smtp.example.com", 587, "myuser", "secret")
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ) as mocks:
+                self.harness.charm._on_smtp_data_available(event)
+
+            with open(sasl_passwd_path) as f:
+                content = f.read()
+            file_mode = oct(os.stat(sasl_passwd_path).st_mode & 0o777)
+
+        self.assertEqual(content, "[smtp.example.com]:587 myuser:secret\n")
+        self.assertEqual(file_mode, oct(0o600))
+        mocks["check_call"].assert_called_once_with(["postmap", sasl_passwd_path])
+
+    def test_smtp_data_available_password_id_resolved(self):
+        """Credentials provided via Juju secret (password_id) are written correctly."""
+        event = self._make_event(
+            self._make_relation_data(
+                "smtp.example.com", 587, "myuser", "resolved-secret"
+            )
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ):
+                self.harness.charm._on_smtp_data_available(event)
+
+            with open(sasl_passwd_path) as f:
+                content = f.read()
+
+        self.assertIn("resolved-secret", content)
+
+    def test_smtp_data_available_no_sasl_passwd_when_no_credentials(self):
+        event = self._make_event(self._make_relation_data("smtp.example.com", 587))
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ) as mocks:
+                self.harness.charm._on_smtp_data_available(event)
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        mocks["check_call"].assert_not_called()
+
+    def test_smtp_data_available_clears_stale_sasl_files_when_credentials_removed(self):
+        """Stale sasl files are deleted when credentials are no longer present."""
+        event = self._make_event(self._make_relation_data("smtp.example.com", 587))
+
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            sasl_db_path = sasl_passwd_path + ".db"
+            open(sasl_passwd_path, "w").close()
+            open(sasl_db_path, "w").close()
+
+            with patch.multiple(
+                "charm",
+                POSTFIX_SASL_PASSWD=sasl_passwd_path,
+                check_call=DEFAULT,
+            ):
+                self.harness.charm._on_smtp_data_available(event)
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        self.assertFalse(os.path.exists(sasl_db_path))
+
+    def test_smtp_relation_broken_clears_sasl_files(self):
+        """Sasl files are removed when the smtp relation is broken."""
+        with TemporaryDirectory() as tmpdir:
+            sasl_passwd_path = os.path.join(tmpdir, "sasl_passwd")
+            sasl_db_path = sasl_passwd_path + ".db"
+            open(sasl_passwd_path, "w").close()
+            open(sasl_db_path, "w").close()
+
+            with patch("charm.POSTFIX_SASL_PASSWD", sasl_passwd_path):
+                self.harness.charm._on_smtp_relation_broken(Mock())
+
+        self.assertFalse(os.path.exists(sasl_passwd_path))
+        self.assertFalse(os.path.exists(sasl_db_path))
+
+    def test_smtp_relation_broken_tolerates_missing_files(self):
+        """_on_smtp_relation_broken does not raise if sasl files don't exist."""
+        with patch("charm.POSTFIX_SASL_PASSWD", "/nonexistent/sasl_passwd"):
+            self.harness.charm._on_smtp_relation_broken(Mock())

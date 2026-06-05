@@ -16,6 +16,7 @@ from dataclasses import asdict
 from functools import cached_property
 import json
 import os
+from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
@@ -31,6 +32,7 @@ from charmlibs.systemd import (
     service_running,
     SystemdError,
 )
+from charmlibs import snap
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -38,6 +40,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
+from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -57,6 +60,7 @@ from ops.model import (
     MaintenanceStatus,
     ModelError,
     Relation,
+    SecretNotFoundError,
     WaitingStatus,
 )
 from pydantic import ValidationError
@@ -67,6 +71,7 @@ from database import (
     DatabaseConnectionContext,
     fetch_postgres_relation_data,
     grant_role,
+    PgHbaNotReadyError,
 )
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
@@ -92,11 +97,19 @@ DPKG_RECONFIGURE = "/usr/sbin/dpkg-reconfigure"
 LSCTL = "/usr/bin/lsctl"
 NRPE_D_DIR = "/etc/nagios/nrpe.d"
 POSTFIX_CF = "/etc/postfix/main.cf"
+POSTFIX_SASL_PASSWD = "/etc/postfix/sasl_passwd"
 SCHEMA_SCRIPT = "/usr/bin/landscape-schema"
 BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
+
+GPG_HOME_DIR_DEFAULT = "/var/lib/landscape-server/gnupg"
+
+GPG_SERVICE_CONF_SECTIONS = (
+    "api",
+    "appserver",
+)
 
 LANDSCAPE_SERVER = "landscape-server"
 LANDSCAPE_PACKAGES = (
@@ -104,6 +117,8 @@ LANDSCAPE_PACKAGES = (
     "landscape-client",
     "landscape-common",
 )
+LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
+DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 DEFAULT_SERVICES = (
@@ -272,6 +287,17 @@ class LandscapeServerCharm(CharmBase):
             self.on.get_service_conf_action, self._on_get_service_conf_action
         )
 
+        # Secrets
+        self.framework.observe(self.on.secret_changed, self._on_secret_changed)
+        # SMTP
+        self.smtp = SmtpRequires(self)
+        self.framework.observe(
+            self.smtp.on.smtp_data_available, self._on_smtp_data_available
+        )
+        self.framework.observe(
+            self.on.smtp_relation_broken, self._on_smtp_relation_broken
+        )
+
         # State
         self._stored.set_default(
             ready={
@@ -404,6 +430,19 @@ class LandscapeServerCharm(CharmBase):
             return
 
         try:
+            snap.ensure(
+                LANDSCAPE_OUTBOX_SNAP,
+                snap.SnapState.Latest.value,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as e:
+            self.unit.status = MaintenanceStatus(
+                "Failed to refresh landscape-outbox snap."
+            )
+            logger.exception(e)
+            return
+
+        try:
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
@@ -425,25 +464,6 @@ class LandscapeServerCharm(CharmBase):
         )
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
-
-        if self.charm_config.additional_service_config:
-            merge_service_conf(self.charm_config.additional_service_config)
-
-        if self.charm_config.license_file:
-            self.unit.status = MaintenanceStatus("Writing Landscape license file")
-            write_license_file(
-                self.charm_config.license_file,
-                user_exists("landscape").pw_uid,
-                self.root_gid,
-            )
-            self.unit.status = WaitingStatus("Waiting on relations")
-
-        if self.charm_config.smtp_relay_host:
-            self.unit.status = MaintenanceStatus("Configuring SMTP relay host")
-            self._configure_smtp(self.charm_config.smtp_relay_host)
-
-        self._configure_openid()
-        self._configure_oidc()
 
         service_conf_updates = {
             service: {"workers": str(self.charm_config.worker_counts)}
@@ -476,6 +496,21 @@ class LandscapeServerCharm(CharmBase):
         }
 
         update_service_conf(service_conf_updates)
+
+        if self.charm_config.additional_service_config:
+            merge_service_conf(self.charm_config.additional_service_config)
+
+        if self.charm_config.license_file:
+            self.unit.status = MaintenanceStatus("Writing Landscape license file")
+            write_license_file(
+                self.charm_config.license_file,
+                user_exists("landscape").pw_uid,
+                self.root_gid,
+            )
+            self.unit.status = WaitingStatus("Waiting on relations")
+
+        self._configure_openid()
+        self._configure_oidc()
 
         db_kargs = {}
         if config_host := self.charm_config.db_host:
@@ -528,6 +563,8 @@ class LandscapeServerCharm(CharmBase):
         ):
             self._write_cookie_encryption_key(cookie_encryption_key)
             self._stored.cookie_encryption_key = cookie_encryption_key
+
+        self._configure_gpg()
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
@@ -593,12 +630,120 @@ class LandscapeServerCharm(CharmBase):
         logger.info("Writing cookie encryption key")
         update_service_conf({"api": {"cookie-encryption-key": cookie_encryption_key}})
 
+    def _configure_gpg(self) -> bool:
+        """Write GPG credentials from the configured Juju secret.
+
+        Reads gpg_home_dir from service.conf [system] section, writes the
+        passphrase file there, imports the private key into that directory,
+        and updates service.conf so all services point to the correct paths.
+        Returns True on success, False when no secret is configured or on
+        error. Sets BlockedStatus on error.
+        """
+        secret_id = self.charm_config.gpg_secret_id
+        if not secret_id:
+            logger.debug("gpg_secret_id not configured, skipping GPG setup")
+            return False
+
+        self.unit.status = MaintenanceStatus("Configuring GPG credentials")
+
+        try:
+            secret = self.model.get_secret(id=secret_id)
+            content = secret.get_content(refresh=True)
+        except (SecretNotFoundError, ModelError):
+            logger.warning("GPG secret '%s' not found or not accessible", secret_id)
+            self.unit.status = BlockedStatus("GPG secret not found or not accessible")
+            return False
+
+        passphrase = content.get("gpg-passphrase")
+        private_key = content.get("gpg-private-key")
+
+        if not passphrase or not private_key:
+            logger.warning(
+                "GPG secret is missing required fields: "
+                "'gpg-passphrase' and/or 'gpg-private-key'"
+            )
+            self.unit.status = BlockedStatus("GPG secret missing required fields")
+            return False
+
+        service_conf = read_service_conf()
+        gpg_home_dir = service_conf.get("system", {}).get(
+            "gpg_home_dir", GPG_HOME_DIR_DEFAULT
+        )
+        gpg_passphrase_file = os.path.join(gpg_home_dir, "gpg-passphrase.txt")
+
+        landscape_user = user_exists("landscape")
+        landscape_uid = landscape_user.pw_uid
+        landscape_gid = landscape_user.pw_gid
+
+        os.makedirs(gpg_home_dir, mode=0o700, exist_ok=True)
+        # Enforce 0700 explicitly — makedirs is subject to umask
+        os.chmod(gpg_home_dir, 0o700)
+        os.chown(gpg_home_dir, landscape_uid, landscape_gid)
+
+        # Set umask to 0o177 so open() creates the file with 0o600 immediately,
+        # avoiding a window where it could be world-readable
+        old_umask = os.umask(0o177)
+        try:
+            with open(gpg_passphrase_file, "w") as fp:
+                fp.write(passphrase)
+        finally:
+            os.umask(old_umask)
+        os.chown(gpg_passphrase_file, landscape_uid, landscape_gid)
+
+        try:
+            subprocess.run(
+                [
+                    "gpg",
+                    "--homedir",
+                    gpg_home_dir,
+                    "--batch",
+                    "--passphrase-file",
+                    gpg_passphrase_file,
+                    "--import",
+                ],
+                input=private_key,
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error("Failed to import GPG private key: %s", e.stderr)
+            self.unit.status = BlockedStatus("Failed to import GPG key")
+            return False
+
+        gpg_service_conf_updates = {
+            section: {
+                "gpg-home-path": gpg_home_dir,
+                "gpg-passphrase-path": gpg_passphrase_file,
+            }
+            for section in GPG_SERVICE_CONF_SECTIONS
+        }
+        update_service_conf(gpg_service_conf_updates)
+
+        logger.info("GPG credentials configured successfully")
+        self.unit.status = WaitingStatus("Waiting on relations")
+        return True
+
+    def _on_secret_changed(self, event) -> None:
+        """Handle secret-changed for any secret this charm tracks."""
+        if event.secret.id == self.charm_config.gpg_secret_id:
+            if self._configure_gpg():
+                self._update_ready_status(restart_services=True)
+
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
+        # Create /sbin symlinks for fuse mount helpers, missing on
+        # resolute where /sbin and /usr/sbin are not merged,
+        # causing snapd's syscheck to fail.
+        for helper in ["mount.fuse", "mount.fuse3"]:
+            src = Path(f"/usr/sbin/{helper}")
+            dst = Path(f"/sbin/{helper}")
+            if src.exists() and not dst.exists():
+                dst.symlink_to(src)
 
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
@@ -646,6 +791,16 @@ class LandscapeServerCharm(CharmBase):
             logger.error("Failed to install packages")
             raise exc  # This will trigger juju's exponential retry
 
+        self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
+        try:
+            snap.add(
+                LANDSCAPE_OUTBOX_SNAP,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as exc:
+            logger.error("Failed to install landscape-outbox snap")
+            raise exc
+
         # Write the license file, if it exists.
         license_file = self.charm_config.license_file
 
@@ -654,11 +809,12 @@ class LandscapeServerCharm(CharmBase):
             write_license_file(
                 license_file, user_exists("landscape").pw_uid, self.root_gid
             )
-
-        self.unit.status = ActiveStatus("Unit is ready")
+            self.unit.status = WaitingStatus("Waiting on relations")
 
         # Indicate that this install is a charm install.
         prepend_default_settings({"DEPLOYED_FROM": "charm"})
+
+        self._configure_gpg()
 
         self._update_ready_status()
 
@@ -720,6 +876,7 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call([LSCTL, "restart"], env=get_modified_env_vars())
+            check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
             self.unit.status = ActiveStatus("Unit is ready")
             return True
         except CalledProcessError as e:
@@ -965,15 +1122,17 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call(call, env=get_modified_env_vars())
-            self._bootstrap_account()
-            self._set_autoregistration()
-            return True
         except CalledProcessError as e:
             logger.error(
                 "Landscape Server schema update failed with return code %d",
                 e.returncode,
             )
             self.unit.status = BlockedStatus("Failed to update database schema")
+            return False
+
+        self._bootstrap_account()
+        self._set_autoregistration()
+        return True
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
@@ -1422,6 +1581,49 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         else:
             self.unit.status = WaitingStatus("Waiting on relations")
 
+    def _on_smtp_data_available(self, event: SmtpDataAvailableEvent) -> None:
+        relation_data = self.smtp.get_relation_data_from_relation(event.relation)
+        if relation_data is None:
+            logger.warning("smtp_data_available fired but relation data is empty")
+            return
+
+        host = relation_data.host
+        # Bracket bare hostnames and IPv4 addresses; IPv6 literals are already bracketed
+        if not host.startswith("["):
+            host = f"[{host}]"
+        relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
+
+        logger.info("Configuring SMTP relay: %s", relay_host)
+        self._configure_smtp(relay_host)
+        self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
+
+    def _on_smtp_relation_broken(self, _) -> None:
+        self._clear_sasl_passwd()
+
+    def _write_sasl_passwd(
+        self, relay_host: str, user: str | None, password: str | None
+    ) -> None:
+        if user is not None and password is not None:
+            sasl_passwd_line = f"{relay_host} {user}:{password}\n"
+            fd = os.open(
+                POSTFIX_SASL_PASSWD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(fd, "w") as f:
+                f.write(sasl_passwd_line)
+            check_call(["postmap", POSTFIX_SASL_PASSWD])
+            os.chmod(f"{POSTFIX_SASL_PASSWD}.db", 0o600)
+            logger.info("SMTP SASL credentials written to %s", POSTFIX_SASL_PASSWD)
+        else:
+            self._clear_sasl_passwd()
+
+    def _clear_sasl_passwd(self) -> None:
+        for path in (POSTFIX_SASL_PASSWD, f"{POSTFIX_SASL_PASSWD}.db"):
+            try:
+                os.unlink(path)
+                logger.info("Removed stale SMTP SASL file %s", path)
+            except FileNotFoundError:
+                pass
+
     def _configure_oidc(self) -> None:
         if not self.charm_config.oidc_issuer:  # not doing OIDC
             return
@@ -1478,6 +1680,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["root_url"] = self.charm_config.root_url
         if not karg["root_url"] and self._stored.leader_ip:
             karg["root_url"] = "https://" + self._stored.leader_ip
+        if not karg["root_url"]:
+            logger.warning("Skipping bootstrap: root_url not yet available")
+            return
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
 
@@ -1506,6 +1711,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if "DuplicateAccountError" in result.stderr:
                 logger.error("Cannot bootstrap b/c account is already there!")
                 self._stored.account_bootstrapped = True
+            elif "no pg_hba.conf entry" in result.stderr:
+                # Patroni regenerates pg_hba.conf asynchronously after the
+                # landscape role is created by the schema script. Raise so
+                # Juju retries the hook once Patroni has reloaded.
+                raise PgHbaNotReadyError(result.stderr)
             else:
                 logger.error(result.stderr)
         else:
@@ -1547,13 +1757,22 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         try:
             check_call([LSCTL, "stop"], env=get_modified_env_vars())
         except CalledProcessError as e:
-            logger.error("Stopping services failed with return code %d", e.returncode)
+            logger.error("Stopping services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to stop services")
             event.fail("Failed to stop services")
-        else:
-            self.unit.status = MaintenanceStatus("Services stopped")
-            self._stored.running = False
-            self._stored.paused = True
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].stop()
+        except snap.SnapError as e:
+            logger.error("Failed to stop landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to stop landscape-outbox snap")
+            event.fail(f"Failed to stop landscape-outbox snap: {str(e)}")
+            return
+
+        self.unit.status = MaintenanceStatus("Services stopped")
+        self._stored.running = False
+        self._stored.paused = True
 
     def _resume(self, event: ActionEvent):
         self.unit.status = MaintenanceStatus("Starting services")
@@ -1568,17 +1787,26 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             )
             check_call([LSCTL, "status"], env=get_modified_env_vars())
         except CalledProcessError as e:
-            logger.error("Starting services failed with return code %d", e.returncode)
-            logger.error("Failed to start services: %s", start_result.stdout)
+            logger.error("Starting services failed: %s", e)
+            logger.error("lsctl start output: %s", start_result.stdout)
             self.unit.status = MaintenanceStatus("Stopping services")
             subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
             self.unit.status = BlockedStatus("Failed to start services")
             event.fail(f"Failed to start services: {start_result.stdout}")
-        else:
-            self._stored.running = True
-            self._stored.paused = False
-            self.unit.status = ActiveStatus("Unit is ready")
-            self._update_ready_status()
+            return
+
+        try:
+            snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP].start()
+        except snap.SnapError as e:
+            logger.error("Failed to start landscape-outbox snap: %s", e)
+            self.unit.status = BlockedStatus("Failed to start landscape-outbox snap")
+            event.fail(f"Failed to start landscape-outbox snap: {str(e)}")
+            return
+
+        self._stored.running = True
+        self._stored.paused = False
+        self.unit.status = ActiveStatus("Unit is ready")
+        self._update_ready_status()
 
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()

@@ -34,8 +34,6 @@ def test_defaults():
     assert config.admin_password is None
     assert config.registration_key is None
 
-    assert config.smtp_relay_host == ""
-
     assert config.http_proxy is None
     assert config.https_proxy is None
     assert config.no_proxy is None
@@ -71,6 +69,7 @@ def test_defaults():
     assert config.package_upload_base_port == 9100
     assert config.hostagent_server_base_port == 50052
     assert config.ubuntu_installer_attach_base_port == 53354
+    assert config.gpg_secret_id is None
 
 
 @pytest.mark.parametrize(
@@ -205,6 +204,21 @@ def test_valid_custom_ports():
     defaults["worker_counts"] = 100
 
     LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize(
+    "gpg_secret_id,valid",
+    [
+        (None, True),
+        ("", True),
+        ("secret:avs3jirev5qhe9a5i420", True),
+    ],
+)
+def test_gpg_secret_id(gpg_secret_id, valid):
+    defaults = get_config_defaults()
+    defaults["gpg_secret_id"] = gpg_secret_id
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.gpg_secret_id == gpg_secret_id
 
 
 @pytest.mark.parametrize("mode", ["standalone", "prod", "my-mode_1"])
