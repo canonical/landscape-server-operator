@@ -15,8 +15,8 @@ import unittest
 from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
 
 from charmlibs import apt
-from charmlibs.snap import SnapError
 from charmlibs.apt import PackageError, PackageNotFoundError
+from charmlibs.snap import SnapError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (

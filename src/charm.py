@@ -22,7 +22,7 @@ from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
-from charmlibs import apt
+from charmlibs import apt, snap
 from charmlibs.apt import PackageError, PackageNotFoundError
 from charmlibs.passwd import group_exists, user_exists
 from charmlibs.systemd import (
@@ -32,7 +32,6 @@ from charmlibs.systemd import (
     service_running,
     SystemdError,
 )
-from charmlibs import snap
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
