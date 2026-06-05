@@ -286,6 +286,10 @@ class LandscapeServerCharm(CharmBase):
             self.on.debarchive_relation_joined,
             self._debarchive_relation_joined,
         )
+        self.framework.observe(
+            self.on.debarchive_relation_changed,
+            self._debarchive_relation_changed,
+        )
 
         # Leadership/peering
         self.framework.observe(self.on.leader_elected, self._leader_elected)
@@ -1507,8 +1511,20 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         leader_ip = self._stored.leader_ip
         if not leader_ip:
+            # `_stored.leader_ip` is only populated from replicas-relation-changed,
+            # which may not have fired yet (e.g. a single-unit deployment). Fall
+            # back to resolving our own bind address so we can still publish.
+            peer_relation = self.model.get_relation("replicas")
+            if peer_relation is not None:
+                binding = self.model.get_binding(peer_relation)
+                if binding and binding.network.bind_address:
+                    leader_ip = str(binding.network.bind_address)
+                    self._stored.leader_ip = leader_ip
+
+        secret_token = self._get_secret_token()
+        if not secret_token:
             logger.warning(
-                "Skipping debarchive relation update: leader IP is not yet available"
+                "Skipping debarchive relation update: secret token is not yet available"
             )
             return
 
@@ -1518,16 +1534,32 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if name := parsed.hostname:
                 hostname = name
 
-        secret_token = self._get_secret_token()
-        secret = self.app.add_secret({"secret-token": secret_token})
-
         for relation in relations:
+            # Reuse the per-relation secret rather than creating (and leaking) a
+            # new one on every hook invocation.
+            existing_id = relation.data[self.app].get("secret-token-id")
+            if existing_id:
+                try:
+                    secret = self.model.get_secret(id=existing_id)
+                    secret.set_content({"secret-token": secret_token})
+                except (SecretNotFoundError, ModelError):
+                    logger.warning(
+                        "Debarchive relation has stale secret-token-id %s; creating a new secret",
+                        existing_id,
+                    )
+                    secret = self.app.add_secret({"secret-token": secret_token})
+            else:
+                secret = self.app.add_secret({"secret-token": secret_token})
             secret.grant(relation)
             relation.data[self.app]["hostname"] = hostname
-            relation.data[self.app]["secret-id"] = secret.id
+            relation.data[self.app]["secret-token-id"] = secret.id
 
     def _debarchive_relation_joined(self, event: RelationJoinedEvent) -> None:
         """Provide the Landscape root URL when a debarchive charm relates."""
+        self._update_debarchive_relations()
+
+    def _debarchive_relation_changed(self, event: RelationChangedEvent) -> None:
+        """Refresh debarchive relation data when the relation is updated."""
         self._update_debarchive_relations()
 
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
