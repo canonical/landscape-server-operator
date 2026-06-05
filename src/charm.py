@@ -153,7 +153,7 @@ PROXY_ENV_MAPPING = {
     "JUJU_CHARM_NO_PROXY": "--with-no-proxy",
 }
 
-DEMO_SCHEMA_ARGS_SAAS = [
+DEMO_SCHEMA_ARGS = [
     "--with-computers",
     "--with-free-disk-space",
     "--with-free-memory-and-swap",
@@ -162,27 +162,6 @@ DEMO_SCHEMA_ARGS_SAAS = [
     "--with-network-traffic",
     "--with-active-processes",
     "--with-hardware",
-    "--with-packages",
-    "--with-package-activities",
-    "--with-script-activities",
-    "--with-users-and-groups",
-    "--with-cpu-usage",
-    "--with-ceph-usage",
-    "--with-compute-usage",
-    "--with-swift-usage",
-    "--with-user-and-group-activities",
-    "--with-custom-graph",
-    "--with-scripts",
-]
-
-DEMO_SCHEMA_ARGS_STANDALONE = [
-    "--with-computers",
-    "--with-free-disk-space",
-    "--with-free-memory-and-swap",
-    "--with-load-averages",
-    "--with-temperatures",
-    "--with-network-traffic",
-    "--with-active-processes",
     "--with-packages",
     "--with-package-activities",
     "--with-script-activities",
@@ -1198,17 +1177,14 @@ class LandscapeServerCharm(CharmBase):
         return True
 
     def _demo_schema_args(self) -> list[str]:
-        if self.charm_config.deployment_mode == "standalone":
-            args = DEMO_SCHEMA_ARGS_STANDALONE.copy()
-            account_password = self.charm_config.registration_key or "foo"
-            args.extend(["--with-account-password", account_password])
-            if self.charm_config.root_url:
-                args.extend(["--with-root-url", self.charm_config.root_url])
-            if self.charm_config.system_email:
-                args.extend(["--with-system-email", self.charm_config.system_email])
-            return args
-
-        return DEMO_SCHEMA_ARGS_SAAS.copy()
+        args = DEMO_SCHEMA_ARGS.copy()
+        account_password = self.charm_config.registration_key or "foo"
+        args.extend(["--with-account-password", account_password])
+        if self.charm_config.root_url:
+            args.extend(["--with-root-url", self.charm_config.root_url])
+        if self.charm_config.system_email:
+            args.extend(["--with-system-email", self.charm_config.system_email])
+        return args
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
