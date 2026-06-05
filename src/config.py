@@ -63,6 +63,7 @@ class LandscapeCharmConfiguration(BaseModel):
     additional_service_config: str | None = None
     secret_token: str | None = None
     cookie_encryption_key: str | None = None
+    gpg_secret_id: str | None = None
     min_install: bool
     prometheus_scrape_interval: str
     autoregistration: bool
@@ -77,6 +78,7 @@ class LandscapeCharmConfiguration(BaseModel):
     package_upload_base_port: int
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
+    outbox_snap_channel: str
 
     @field_validator("deployment_mode")
     @classmethod

@@ -62,7 +62,7 @@ resource "juju_application" "self_signed_certificates" {
   units = 1
 }
 
-resource "juju_integration" "haproxy_certs" {
+resource "juju_integration" "tls_certificates" {
   model = juju_model.lbaas_model.name
 
   application {
@@ -224,5 +224,5 @@ resource "terraform_data" "wait_for_lbaas" {
     }
   }
 
-  depends_on = [juju_offer.haproxy_route, juju_integration.haproxy_certs, juju_integration.haproxy_receive_ca_certs]
+  depends_on = [juju_offer.haproxy_route, juju_integration.tls_certificates, juju_integration.haproxy_receive_ca_certs]
 }

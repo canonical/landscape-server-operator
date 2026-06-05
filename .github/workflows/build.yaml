@@ -16,7 +16,14 @@ on:
         value: ${{ jobs.build.outputs.artifact-prefix }}
   workflow_dispatch:
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   build:
     name: Build charm
-    uses: canonical/data-platform-workflows/.github/workflows/build_charm.yaml@v35.0.2
+    uses: canonical/data-platform-workflows/.github/workflows/build_charm.yaml@v49.0.1
+    with:
+      charmcraft-snap-channel: latest/edge
+      cache: false

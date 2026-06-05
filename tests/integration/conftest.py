@@ -9,7 +9,7 @@ import uuid
 import jubilant
 import pytest
 
-from tests.integration.helpers import has_haproxy_route_provider
+from tests.integration.helpers import has_haproxy_route_provider, restore_db_relations
 
 BUNDLE_NAME = "bundle.yaml"
 """
@@ -217,3 +217,10 @@ def lbaas(juju: jubilant.Juju):
             yield lbaas_juju
         finally:
             juju.destroy_model(lbaas_model, destroy_storage=True, force=True)
+
+
+@pytest.fixture
+def saved_db_relations(juju: jubilant.Juju):
+    initial_relations = set(juju.status().apps["landscape-server"].relations)
+    yield initial_relations.copy()
+    restore_db_relations(juju, initial_relations)

@@ -1,0 +1,42 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+name: Promote charm
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: The charm track, must exist already
+        required: false
+        type: string
+        default: '26.04'
+      from-risk:
+        description: Promote from this Charmhub risk
+        required: true
+        type: choice
+        options:
+          - edge
+          - beta
+          - candidate
+      to-risk:
+        description: Promote to this Charmhub risk
+        required: true
+        type: choice
+        options:
+          - beta
+          - candidate
+          - stable
+
+jobs:
+  promote:
+    name: Promote charm
+    uses: canonical/data-platform-workflows/.github/workflows/_promote_charm_legacy.yaml@v48.1.2
+    with:
+      track: ${{ inputs.track }}
+      from-risk: ${{ inputs.from-risk }}
+      to-risk: ${{ inputs.to-risk }}
+    secrets:
+      charmhub-token: ${{ secrets.CHARMHUB_TOKEN }}
+    permissions:
+      actions: read  # Needed for GitHub API call to get workflow version
+      contents: write  # Needed to edit GitHub releases

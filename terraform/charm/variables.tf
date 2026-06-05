@@ -18,6 +18,12 @@ variable "channel" {
   default     = "25.10/edge"
 }
 
+variable "charm_name" {
+  description = "The name of the charm to be deployed."
+  type        = string
+  default     = "landscape-server"
+}
+
 variable "config" {
   description = "Application config. Details about available options can be found at https://charmhub.io/landscape-server/configurations."
   type        = map(string)
