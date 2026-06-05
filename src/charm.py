@@ -1544,7 +1544,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     secret.set_content({"secret-token": secret_token})
                 except (SecretNotFoundError, ModelError):
                     logger.warning(
-                        "Debarchive relation has stale secret-token-id %s; creating a new secret",
+                        "Debarchive relation has stale secret-token-id %s; "
+                        "creating a new secret",
                         existing_id,
                     )
                     secret = self.app.add_secret({"secret-token": secret_token})
