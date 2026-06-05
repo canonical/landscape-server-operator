@@ -11,8 +11,6 @@ run "basic_deploy" {
     model_uuid = run.setup_tests.model_uuid
     landscape_server = {
       channel = "latest/edge"
-      # renovate: depName="landscape-server"
-      revision = 143
     }
   }
 
