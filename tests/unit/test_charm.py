@@ -289,6 +289,97 @@ root-url = https://overridden.example.com
         assert config["api"]["root-url"] == "https://overridden.example.com"
         assert config["package-upload"]["root-url"] == "https://overridden.example.com"
 
+    def test_demo_data_enabled_is_forwarded_to_schema_migration(
+        self,
+        replicas_network_state,
+    ):
+        """
+        If `demo_data` is enabled and db config is present, pass it through to
+        schema migration.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            **replicas_network_state,
+            config={
+                "db_schema_user": "landscape",
+                "demo_data": True,
+            },
+        )
+
+        with (
+            patch("charm.update_db_conf"),
+            patch.object(
+                LandscapeServerCharm,
+                "_migrate_schema_bootstrap",
+                return_value=True,
+            ) as migrate_schema_bootstrap,
+        ):
+            ctx.run(ctx.on.config_changed(), state)
+
+        migrate_schema_bootstrap.assert_called_once_with(demo_data=True)
+
+    def test_demo_data_not_forced_when_disabled(
+        self,
+        replicas_network_state,
+    ):
+        """
+        If `demo_data` is disabled, schema migration must keep demo data off.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            **replicas_network_state,
+            config={
+                "db_schema_user": "landscape",
+                "demo_data": False,
+            },
+        )
+
+        with (
+            patch("charm.update_db_conf"),
+            patch.object(
+                LandscapeServerCharm,
+                "_migrate_schema_bootstrap",
+                return_value=True,
+            ) as migrate_schema_bootstrap,
+        ):
+            ctx.run(ctx.on.config_changed(), state)
+
+        migrate_schema_bootstrap.assert_called_once_with(demo_data=False)
+
+    def test_demo_data_standalone_updates_wsl_distributions(
+        self,
+        replicas_network_state,
+    ):
+        """
+        Standalone demo data bootstrap also refreshes stock WSL distributions.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            **replicas_network_state,
+            config={
+                "db_schema_user": "landscape",
+                "demo_data": True,
+                "deployment_mode": "standalone",
+            },
+        )
+
+        with (
+            patch("charm.update_db_conf"),
+            patch.object(
+                LandscapeServerCharm,
+                "_migrate_schema_bootstrap",
+                return_value=True,
+            ),
+            patch.object(
+                LandscapeServerCharm,
+                "_update_wsl_distributions",
+                return_value=True,
+            ) as update_wsl_distributions,
+        ):
+            ctx.run(ctx.on.config_changed(), state)
+
+        update_wsl_distributions.assert_called_once_with()
+
     def test_hostagent_services_default(
         self,
         replicas_network_state,
@@ -1066,6 +1157,121 @@ class TestCharm(unittest.TestCase):
             [SCHEMA_SCRIPT, "--bootstrap", "--db-owner-role", "charmed_dba"],
             env={"PATH": "/usr/bin"},
         )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_demo_data_flags(self, get_env):
+        with patch("charm.check_call") as check_call_mock:
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        check_call_mock.assert_called_once_with(
+            [
+                SCHEMA_SCRIPT,
+                "--bootstrap",
+                "--with-computers",
+                "--with-free-disk-space",
+                "--with-free-memory-and-swap",
+                "--with-load-averages",
+                "--with-temperatures",
+                "--with-network-traffic",
+                "--with-active-processes",
+                "--with-hardware",
+                "--with-packages",
+                "--with-package-activities",
+                "--with-script-activities",
+                "--with-users-and-groups",
+                "--with-cpu-usage",
+                "--with-ceph-usage",
+                "--with-compute-usage",
+                "--with-swift-usage",
+                "--with-user-and-group-activities",
+                "--with-custom-graph",
+                "--with-scripts",
+                "--with-account-password",
+                "foo",
+            ],
+            env={"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_standalone_includes_root_url_and_system_email(
+        self, get_env
+    ):
+        root_url = "https://landscape.local/"
+        system_email = "landscape-devel@lists.canonical.com"
+        self.harness.update_config(
+            {
+                "deployment_mode": "standalone",
+                "root_url": root_url,
+                "system_email": system_email,
+            }
+        )
+
+        with patch("charm.check_call") as check_call_mock:
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        called_args = check_call_mock.call_args.args[0]
+        assert "--with-root-url" in called_args
+        assert "--with-system-email" in called_args
+        assert root_url in called_args
+        assert system_email in called_args
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_demo_data_flags_saas(self, get_env):
+        self.harness.charm.charm_config.deployment_mode = "prod"
+
+        with patch("charm.check_call") as check_call_mock:
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        called_args = check_call_mock.call_args.args[0]
+        assert "--with-hardware" in called_args
+        assert "--with-account-password" in called_args
+        self.assertEqual(
+            check_call_mock.call_args.kwargs["env"],
+            {"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_override_args(self, get_env):
+        self.harness.update_config(
+            {
+                "bootstrap_schema_override_args": (
+                    "--with-openstack,--with-extra-computers,10"
+                )
+            }
+        )
+
+        with patch("charm.check_call") as check_call_mock:
+            result = self.harness.charm._migrate_schema_bootstrap()
+
+        check_call_mock.assert_called_once_with(
+            [
+                SCHEMA_SCRIPT,
+                "--bootstrap",
+                "--with-openstack",
+                "--with-extra-computers",
+                "10",
+            ],
+            env={"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_uses_registration_key_for_account_password(
+        self, get_env
+    ):
+        registration_key = "super-secret-registration-key"
+        self.harness.update_config({"registration_key": registration_key})
+
+        with patch("charm.check_call") as check_call_mock:
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        called_args = check_call_mock.call_args.args[0]
+        password_idx = called_args.index("--with-account-password") + 1
+        assert called_args[password_idx] == registration_key
         self.assertTrue(result)
 
     @patch.dict(

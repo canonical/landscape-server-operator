@@ -288,3 +288,14 @@ options:
       Snap channel from which to install the landscape-outbox snap.
       Changing this value will refresh the installed snap to the
       specified channel.
+  demo_data:
+    type: boolean
+    default: false
+    description: |
+      Whether to create demo data when running the schema migration.
+  bootstrap_schema_override_args:
+    type: string
+    default:
+    description: |
+      Comma-separated extra arguments to append to `landscape-schema --bootstrap`.
+      Example: --with-extra-computers,10,--with-openstack

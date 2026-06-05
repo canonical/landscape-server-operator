@@ -153,6 +153,28 @@ PROXY_ENV_MAPPING = {
     "JUJU_CHARM_NO_PROXY": "--with-no-proxy",
 }
 
+DEMO_SCHEMA_ARGS = [
+    "--with-computers",
+    "--with-free-disk-space",
+    "--with-free-memory-and-swap",
+    "--with-load-averages",
+    "--with-temperatures",
+    "--with-network-traffic",
+    "--with-active-processes",
+    "--with-hardware",
+    "--with-packages",
+    "--with-package-activities",
+    "--with-script-activities",
+    "--with-users-and-groups",
+    "--with-cpu-usage",
+    "--with-ceph-usage",
+    "--with-compute-usage",
+    "--with-swift-usage",
+    "--with-user-and-group-activities",
+    "--with-custom-graph",
+    "--with-scripts",
+]
+
 METRIC_INSTRUMENTED_SERVICE_PORTS = [
     ("appserver", 8080),
     ("pingserver", 8070),
@@ -512,20 +534,28 @@ class LandscapeServerCharm(CharmBase):
         self._configure_openid()
         self._configure_oidc()
 
-        db_kargs = {}
+        db_kwargs = {}
+        demo_data = False
         if config_host := self.charm_config.db_host:
-            db_kargs["host"] = config_host
+            db_kwargs["host"] = config_host
         if schema_password := self.charm_config.db_schema_password:
-            db_kargs["schema_password"] = schema_password
+            db_kwargs["schema_password"] = schema_password
         if config_port := self.charm_config.db_port:
-            db_kargs["port"] = config_port
+            db_kwargs["port"] = config_port
         if config_user := self.charm_config.db_schema_user:
-            db_kargs["user"] = config_user
+            db_kwargs["user"] = config_user
         if landscape_password := self.charm_config.db_landscape_password:
-            db_kargs["password"] = landscape_password
-        if db_kargs:
-            update_db_conf(**db_kargs)
-            if self._migrate_schema_bootstrap():
+            db_kwargs["password"] = landscape_password
+
+        if self.charm_config.demo_data:
+            demo_data = True
+
+        if db_kwargs:
+            update_db_conf(**db_kwargs)
+            if self._migrate_schema_bootstrap(demo_data=demo_data):
+                if demo_data and self.charm_config.deployment_mode == "standalone":
+                    if not self._update_wsl_distributions():
+                        return
                 self.unit.status = WaitingStatus("Waiting on relations")
                 self._stored.ready["db"] = True
             else:
@@ -951,7 +981,7 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
-        if not self._migrate_schema_bootstrap():
+        if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
             return
 
         if not self._update_wsl_distributions():
@@ -1044,7 +1074,9 @@ class LandscapeServerCharm(CharmBase):
 
         roles = get_postgres_roles(db_ctx.version)
 
-        if not self._migrate_schema_bootstrap(roles.owner):
+        if not self._migrate_schema_bootstrap(
+            roles.owner, demo_data=self.charm_config.demo_data
+        ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
             )
@@ -1104,11 +1136,16 @@ class LandscapeServerCharm(CharmBase):
 
         return settings
 
-    def _migrate_schema_bootstrap(self, owner_role: str | None = None):
+    def _migrate_schema_bootstrap(
+        self, owner_role: str | None = None, demo_data: bool = False
+    ):
         """
         Migrates schema along with the bootstrap command which ensures that the
         databases and the landscape user exists, and that proxy settings are set.
-        In addition, creates admin if configured.
+        In addition, creates admin and demo data if configured.
+
+        :param owner_role: The Postgres role to own the database.
+        :param demo_data: Create demo data.
 
         :returns: True on success.
         """
@@ -1119,6 +1156,11 @@ class LandscapeServerCharm(CharmBase):
 
         if self._proxy_settings:
             call.extend(self._proxy_settings)
+
+        if demo_data:
+            call.extend(self._demo_schema_args())
+
+        call.extend(self.charm_config.bootstrap_schema_override_args_list)
 
         try:
             check_call(call, env=get_modified_env_vars())
@@ -1133,6 +1175,16 @@ class LandscapeServerCharm(CharmBase):
         self._bootstrap_account()
         self._set_autoregistration()
         return True
+
+    def _demo_schema_args(self) -> list[str]:
+        args = DEMO_SCHEMA_ARGS.copy()
+        account_password = self.charm_config.registration_key or "foo"
+        args.extend(["--with-account-password", account_password])
+        if self.charm_config.root_url:
+            args.extend(["--with-root-url", self.charm_config.root_url])
+        if self.charm_config.system_email:
+            args.extend(["--with-system-email", self.charm_config.system_email])
+        return args
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
