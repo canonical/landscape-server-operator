@@ -1,4 +1,4 @@
-# © 2025 Canonical Ltd.
+# © 2026 Canonical Ltd.
 
 terraform {
   required_version = "~> 1.12"
