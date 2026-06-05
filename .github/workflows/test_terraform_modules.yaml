@@ -15,4 +15,5 @@ jobs:
     secrets: inherit
     with:
       lxd-controller: true
+      self-hosted-runner: true
       terraform-directories: '["terraform/charm", "terraform/product/modules/landscape-scalable"]'
