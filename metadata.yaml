@@ -53,6 +53,8 @@ requires:
     limit: 1
 
 provides:
+  debarchive:
+    interface: landscape-debarchive
   data:
     interface: block-storage
     scope: container

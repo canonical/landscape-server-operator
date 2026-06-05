@@ -134,6 +134,111 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
             self.assertEqual(scrape_interval, scrape_job["scrape_interval"])
 
 
+class TestDebarchiveRelation:
+    """
+    Tests for the `debarchive` provider relation.
+
+    When a debarchive charm relates, the leader publishes the Landscape
+    hostname to the relation app databag along with a secret holding the
+    Landscape secret token, which it grants to the relation.
+    """
+
+    def _debarchive_app_data(self, state: State) -> dict:
+        for relation in state.relations:
+            if relation.endpoint == "debarchive":
+                return dict(relation.local_app_data)
+        raise ValueError("No debarchive relation found.")
+
+    def _stored_leader_ip(self, leader_ip: str) -> StoredState:
+        return StoredState(
+            owner_path="LandscapeServerCharm",
+            content={"leader_ip": leader_ip},
+        )
+
+    def test_publishes_leader_ip_hostname_and_secret(self):
+        """
+        With no `root_url` configured, the leader publishes the stored leader IP
+        as the hostname and shares the secret token via a granted secret.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "10.0.0.1"
+
+        # The published secret-id resolves to a secret holding the token,
+        # granted to the debarchive relation.
+        secret_id = app_data["secret-id"]
+        secret = result.get_secret(id=secret_id)
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_configured_root_url_hostname_takes_precedence(self):
+        """The hostname from a configured `root_url` is published instead of the
+        leader IP."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result)["hostname"] == "landscape.example.com"
+
+    def test_skips_when_leader_ip_unavailable(self):
+        """
+        Nothing is published until the leader IP is known, even when a
+        `root_url` is configured.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result) == {}
+        assert result.secrets == frozenset()
+
+    def test_non_leader_does_not_publish(self):
+        """Non-leader units never write to the relation app databag."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=False,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result) == {}
+
+
 class TestOnConfigChanged:
     """
     Tests for `on.config_changed` hooks.

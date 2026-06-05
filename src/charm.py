@@ -260,6 +260,10 @@ class LandscapeServerCharm(CharmBase):
             self.on.application_dashboard_relation_joined,
             self._application_dashboard_relation_joined,
         )
+        self.framework.observe(
+            self.on.debarchive_relation_joined,
+            self._debarchive_relation_joined,
+        )
 
         # Leadership/peering
         self.framework.observe(self.on.leader_elected, self._leader_elected)
@@ -568,6 +572,7 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
+        self._update_debarchive_relations()
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
@@ -1260,6 +1265,7 @@ class LandscapeServerCharm(CharmBase):
                 "/api",
                 "/upload",
                 "/repository",
+                "/debarchive",
             ],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
@@ -1438,6 +1444,40 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             }
         )
 
+    def _update_debarchive_relations(self) -> None:
+        """Publish the Landscape root URL to all related debarchive charms."""
+        if not self.unit.is_leader():
+            return
+
+        relations = self.model.relations.get("debarchive", [])
+        if not relations:
+            return
+
+        leader_ip = self._stored.leader_ip
+        if not leader_ip:
+            logger.warning(
+                "Skipping debarchive relation update: leader IP is not yet available"
+            )
+            return
+
+        hostname = leader_ip
+        if self.charm_config.root_url:
+            parsed = urlparse(self.charm_config.root_url)
+            if name := parsed.hostname:
+                hostname = name
+
+        secret_token = self._get_secret_token()
+        secret = self.app.add_secret({"secret-token": secret_token})
+
+        for relation in relations:
+            secret.grant(relation)
+            relation.data[self.app]["hostname"] = hostname
+            relation.data[self.app]["secret-id"] = secret.id
+
+    def _debarchive_relation_joined(self, event: RelationJoinedEvent) -> None:
+        """Provide the Landscape root URL when a debarchive charm relates."""
+        self._update_debarchive_relations()
+
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
         # guaranteed to be the leader by the time we process it. See
@@ -1456,6 +1496,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     },
                 }
             )
+
+            # Now that we (may) have a leader IP, refresh any debarchive
+            # relations that depend on it for their root URL fallback.
+            self._update_debarchive_relations()
 
         self._leader_changed()
 
