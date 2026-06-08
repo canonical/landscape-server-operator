@@ -9,9 +9,9 @@ run "setup_tests" {
 run "basic_deploy" {
   variables {
     model_uuid = run.setup_tests.model_uuid
-    channel    = "latest/edge"
+    channel    = "26.04/edge"
     # renovate: depName="landscape-server"
-    revision = 143
+    revision = 355
   }
 
   assert {
