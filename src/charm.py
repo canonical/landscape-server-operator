@@ -284,11 +284,11 @@ class LandscapeServerCharm(CharmBase):
         )
         self.framework.observe(
             self.on.debarchive_relation_joined,
-            self._debarchive_relation_joined,
+            self._update_debarchive_relations,
         )
         self.framework.observe(
             self.on.debarchive_relation_changed,
-            self._debarchive_relation_changed,
+            self._update_debarchive_relations,
         )
 
         # Leadership/peering
@@ -1567,14 +1567,6 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     relation.data[self.app].get("secret-token-revision", "0")
                 )
                 relation.data[self.app]["secret-token-revision"] = str(revision + 1)
-
-    def _debarchive_relation_joined(self, event: RelationJoinedEvent) -> None:
-        """Provide the Landscape root URL when a debarchive charm relates."""
-        self._update_debarchive_relations()
-
-    def _debarchive_relation_changed(self, event: RelationChangedEvent) -> None:
-        """Refresh debarchive relation data when the relation is updated."""
-        self._update_debarchive_relations()
 
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
