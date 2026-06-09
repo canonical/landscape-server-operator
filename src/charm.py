@@ -282,6 +282,14 @@ class LandscapeServerCharm(CharmBase):
             self.on.application_dashboard_relation_joined,
             self._application_dashboard_relation_joined,
         )
+        self.framework.observe(
+            self.on.debarchive_relation_joined,
+            self._update_debarchive_relations,
+        )
+        self.framework.observe(
+            self.on.debarchive_relation_changed,
+            self._update_debarchive_relations,
+        )
 
         # Leadership/peering
         self.framework.observe(self.on.leader_elected, self._leader_elected)
@@ -584,7 +592,10 @@ class LandscapeServerCharm(CharmBase):
                     {"cookie-encryption-key": cookie_encryption_key}
                 )
 
-        if (secret_token) and (secret_token != self._stored.secret_token):
+        secret_token_changed = (
+            secret_token and secret_token != self._stored.secret_token
+        )
+        if secret_token_changed:
             self._write_secret_token(secret_token)
             self._stored.secret_token = secret_token
 
@@ -598,6 +609,9 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
+        self._update_debarchive_relations(
+            notify_secret_token_changed=bool(secret_token_changed)
+        )
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
@@ -1312,6 +1326,7 @@ class LandscapeServerCharm(CharmBase):
                 "/api",
                 "/upload",
                 "/repository",
+                "/debarchive",
             ],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
@@ -1490,6 +1505,69 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             }
         )
 
+    def _update_debarchive_relations(
+        self, notify_secret_token_changed: bool = False
+    ) -> None:
+        """Publish the Landscape root URL to all related debarchive charms."""
+        if not self.unit.is_leader():
+            return
+
+        relations = self.model.relations.get("debarchive", [])
+        if not relations:
+            return
+
+        leader_ip = self._stored.leader_ip
+        if not leader_ip:
+            # `_stored.leader_ip` is only populated from replicas-relation-changed,
+            # which may not have fired yet (e.g. a single-unit deployment). Fall
+            # back to resolving our own bind address so we can still publish.
+            peer_relation = self.model.get_relation("replicas")
+            if peer_relation is not None:
+                binding = self.model.get_binding(peer_relation)
+                if binding and binding.network.bind_address:
+                    leader_ip = str(binding.network.bind_address)
+                    self._stored.leader_ip = leader_ip
+
+        secret_token = self._get_secret_token()
+        if not secret_token:
+            logger.warning(
+                "Skipping debarchive relation update: secret token is not yet available"
+            )
+            return
+
+        hostname = leader_ip
+        if self.charm_config.root_url:
+            parsed = urlparse(self.charm_config.root_url)
+            if parsed.hostname:
+                hostname = parsed.hostname
+
+        for relation in relations:
+            # Reuse the per-relation secret rather than creating (and leaking) a
+            # new one on every hook invocation.
+            existing_id = relation.data[self.app].get("secret-token-id")
+            if existing_id:
+                try:
+                    secret = self.model.get_secret(id=existing_id)
+                    if notify_secret_token_changed:
+                        secret.set_content({"secret-token": secret_token})
+                except (SecretNotFoundError, ModelError):
+                    logger.warning(
+                        "Debarchive relation has stale secret-token-id %s; "
+                        "creating a new secret",
+                        existing_id,
+                    )
+                    secret = self.app.add_secret({"secret-token": secret_token})
+            else:
+                secret = self.app.add_secret({"secret-token": secret_token})
+            secret.grant(relation)
+            relation.data[self.app]["hostname"] = hostname
+            relation.data[self.app]["secret-token-id"] = secret.id
+            if notify_secret_token_changed:
+                revision = int(
+                    relation.data[self.app].get("secret-token-revision", "0")
+                )
+                relation.data[self.app]["secret-token-revision"] = str(revision + 1)
+
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
         # guaranteed to be the leader by the time we process it. See
@@ -1508,6 +1586,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     },
                 }
             )
+
+            # Now that we (may) have a leader IP, refresh any debarchive
+            # relations that depend on it for their root URL fallback.
+            self._update_debarchive_relations()
 
         self._leader_changed()
 

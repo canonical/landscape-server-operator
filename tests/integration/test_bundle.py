@@ -66,6 +66,63 @@ def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
     pytest.skip("No haproxy app found in local or lbaas model")
 
 
+def _leader_unit_name(juju: jubilant.Juju, app: str) -> str:
+    """Return the leader unit name for an application."""
+    app_status = juju.status().apps[app]
+    for name, unit_status in app_status.units.items():
+        if unit_status.leader:
+            return name
+    pytest.fail(f"No leader unit found for {app}")
+
+
+def _relation_app_data(juju: jubilant.Juju, unit: str, endpoint: str) -> dict:
+    """Return the local app databag for a unit's relation endpoint."""
+    ids_stdout = juju.cli("exec", "--unit", unit, "--", f"relation-ids {endpoint}")
+    ids = ids_stdout.strip().splitlines()
+    if not ids:
+        pytest.fail(f"No relation IDs found for endpoint {endpoint}")
+
+    data_stdout = juju.cli(
+        "exec",
+        "--unit",
+        unit,
+        "--",
+        f"relation-get --format=json -r {ids[0]} --app - {unit}",
+    )
+    data = json.loads(data_stdout)
+    return {k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()}
+
+
+def test_debarchive_relation(juju: jubilant.Juju):
+    """Landscape Server and debarchive publish and consume relation data."""
+    juju.wait(jubilant.all_active, timeout=300)
+    status = juju.status()
+
+    if "landscape-debarchive" not in status.apps:
+        pytest.skip("landscape-debarchive not deployed")
+
+    landscape_relations = status.apps["landscape-server"].relations
+    debarchive_relations = status.apps["landscape-debarchive"].relations
+    assert "debarchive" in landscape_relations
+    assert "landscape-server" in debarchive_relations
+    assert "database" in debarchive_relations
+
+    leader_unit = _leader_unit_name(juju, "landscape-server")
+    data = _relation_app_data(juju, leader_unit, "debarchive")
+    expected_hostname = urlparse(
+        juju.config("landscape-server").get("root_url", "https://landscape.local/")
+    ).hostname
+
+    assert data["hostname"] == expected_hostname
+    assert data["secret-token-id"].startswith("secret://")
+
+    token = juju.ssh(
+        "landscape-debarchive/leader",
+        "sudo snap get landscape-debarchive deb.archive.jwt.secret",
+    ).strip()
+    assert token and token != "-"
+
+
 @pytest.mark.skipif(
     USE_HOST_JUJU_MODEL,
     reason=LIVE_MODEL_SKIP_REASON,

@@ -134,6 +134,186 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
             self.assertEqual(scrape_interval, scrape_job["scrape_interval"])
 
 
+class TestDebarchiveRelation:
+    """
+    Tests for the `debarchive` provider relation.
+
+    When a debarchive charm relates, the leader publishes the Landscape
+    hostname to the relation app databag along with a secret holding the
+    Landscape secret token, which it grants to the relation.
+    """
+
+    def _debarchive_app_data(self, state: State) -> dict:
+        for relation in state.relations:
+            if relation.endpoint == "debarchive":
+                return dict(relation.local_app_data)
+        raise ValueError("No debarchive relation found.")
+
+    def _stored_leader_ip(self, leader_ip: str) -> StoredState:
+        return StoredState(
+            owner_path="LandscapeServerCharm",
+            content={"leader_ip": leader_ip},
+        )
+
+    def test_publishes_leader_ip_hostname_and_secret(self):
+        """
+        With no `root_url` configured, the leader publishes the stored leader IP
+        as the hostname and shares the secret token via a granted secret.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "10.0.0.1"
+
+        # The published secret-token-id resolves to a secret holding the token,
+        # granted to the debarchive relation.
+        secret_id = app_data["secret-token-id"]
+        secret = result.get_secret(id=secret_id)
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_relation_changed_refreshes_hostname_and_secret(self):
+        """The provider refreshes data when Juju fires relation-changed."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_changed(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "10.0.0.1"
+        secret = result.get_secret(id=app_data["secret-token-id"])
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_config_changed_republishes_updated_secret_token(self):
+        """Config changes bump relation data when the shared secret changes."""
+        context = Context(LandscapeServerCharm)
+        secret = Secret(
+            tracked_content={"secret-token": "old-s3cr3t"},
+            owner="app",
+        )
+        relation = Relation(
+            "debarchive",
+            local_app_data={
+                "hostname": "10.0.0.1",
+                "secret-token-id": secret.id,
+                "secret-token-revision": "1",
+            },
+        )
+        state = State(
+            leader=True,
+            relations=[relation],
+            secrets=[secret],
+            config={
+                "secret_token": "new-s3cr3t",
+                "cookie_encryption_key": "cookie-key",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.config_changed(), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["secret-token-id"] == secret.id
+        assert app_data["secret-token-revision"] == "2"
+        updated_secret = result.get_secret(id=secret.id)
+        assert updated_secret.latest_content == {"secret-token": "new-s3cr3t"}
+
+    def test_recreates_stale_secret_token_id(self):
+        """A stale published secret-token-id does not fail the relation hook."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation(
+            "debarchive",
+            local_app_data={"secret-token-id": "secret:doesnotexist"},
+        )
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["secret-token-id"] != "secret:doesnotexist"
+        secret = result.get_secret(id=app_data["secret-token-id"])
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_configured_root_url_hostname_takes_precedence(self):
+        """The hostname from a configured `root_url` is published instead of the
+        leader IP."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result)["hostname"] == "landscape.example.com"
+
+    def test_configured_root_url_publishes_without_leader_ip(self):
+        """
+        With `root_url` configured, the leader can publish relation data even
+        before the leader IP is known.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "landscape.example.com"
+        secret = result.get_secret(id=app_data["secret-token-id"])
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_non_leader_does_not_publish(self):
+        """Non-leader units never write to the relation app databag."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=False,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result) == {}
+
+
 class TestOnConfigChanged:
     """
     Tests for `on.config_changed` hooks.
