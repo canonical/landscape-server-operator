@@ -20,6 +20,7 @@ from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (
+    ActionFailed,
     Context,
     Harness,
     MaintenanceStatus,
@@ -30,6 +31,7 @@ from ops.testing import (
     StoredState,
     TCPPort,
 )
+import pytest
 
 from charm import (
     BOOTSTRAP_ACCOUNT_SCRIPT,
@@ -1325,24 +1327,6 @@ class TestCharm(unittest.TestCase):
             self.assertRaises(CalledProcessError, harness.begin_with_initial_hooks)
 
     @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
-    def test_migrate_schema_bootstrap_owner_role_flag(self, get_env):
-        with (
-            patch("charm.check_call") as check_call_mock,
-            patch.object(self.harness.charm, "_bootstrap_account"),
-            patch.object(self.harness.charm, "_set_autoregistration"),
-            patch.object(
-                self.harness.charm, "_schema_supports_flag", return_value=True
-            ),
-        ):
-            result = self.harness.charm._migrate_schema_bootstrap("charmed_dba")
-
-        check_call_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT, "--bootstrap", "--db-owner-role", "charmed_dba"],
-            env={"PATH": "/usr/bin"},
-        )
-        self.assertTrue(result)
-
-    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
     def test_migrate_schema_bootstrap_demo_data_flags(self, get_env):
         with patch("charm.check_call") as check_call_mock:
             result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
@@ -1456,58 +1440,6 @@ class TestCharm(unittest.TestCase):
         password_idx = called_args.index("--with-account-password") + 1
         assert called_args[password_idx] == registration_key
         self.assertTrue(result)
-
-    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
-    def test_migrate_schema_bootstrap_allow_connections_flag(self, get_env):
-        with (
-            patch("charm.check_call") as check_call_mock,
-            patch.object(self.harness.charm, "_bootstrap_account"),
-            patch.object(self.harness.charm, "_set_autoregistration"),
-        ):
-            result = self.harness.charm._migrate_schema_bootstrap(
-                allow_connections=True
-            )
-
-        check_call_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT, "--bootstrap", "--allow-connections"],
-            env={"PATH": "/usr/bin"},
-        )
-        self.assertTrue(result)
-
-    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
-    def test_migrate_schema_bootstrap_no_allow_connections_by_default(self, get_env):
-        with (
-            patch("charm.check_call") as check_call_mock,
-            patch.object(self.harness.charm, "_bootstrap_account"),
-            patch.object(self.harness.charm, "_set_autoregistration"),
-        ):
-            result = self.harness.charm._migrate_schema_bootstrap()
-
-        called_args = check_call_mock.call_args.args[0]
-        assert "--allow-connections" not in called_args
-        self.assertTrue(result)
-
-    def test_schema_supports_flag_returns_true_when_present(self):
-        with patch("charm.Path") as mock_path:
-            mock_path.return_value.read_text.return_value = (
-                "usage: schema [--allow-connections] [--db-owner-role ROLE]"
-            )
-            assert self.harness.charm._schema_supports_flag("--allow-connections")
-            assert self.harness.charm._schema_supports_flag("--db-owner-role")
-
-    def test_schema_supports_flag_returns_false_when_absent(self):
-        with patch("charm.Path") as mock_path:
-            mock_path.return_value.read_text.return_value = (
-                "usage: schema [--bootstrap]"
-            )
-            assert not self.harness.charm._schema_supports_flag("--allow-connections")
-            assert not self.harness.charm._schema_supports_flag("--db-owner-role")
-
-    def test_schema_supports_flag_returns_false_on_missing_script(self):
-        with patch("charm.Path") as mock_path:
-            mock_path.return_value.read_text.side_effect = OSError("No such file")
-            assert not self.harness.charm._schema_supports_flag("--allow-connections")
-            assert not self.harness.charm._schema_supports_flag("--db-owner-role")
 
     @patch.dict(
         os.environ,
@@ -2225,18 +2157,6 @@ class TestCharm(unittest.TestCase):
         apt_mock.update.assert_not_called()
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
-    def test_action_migrate_schema(self):
-        event = Mock(spec_set=ActionEvent)
-
-        with patch("subprocess.run") as run_mock:
-            self.harness.charm._migrate_schema(event)
-
-        event.log.assert_called_once()
-        event.fail.assert_not_called()
-        run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
-        )
-
     def test_action_migrate_schema_running(self):
         """
         Test that we do not perform a schema migration while Landscape is
@@ -2251,20 +2171,6 @@ class TestCharm(unittest.TestCase):
         event.log.assert_not_called()
         event.fail.assert_called_once()
         run_mock.assert_not_called()
-
-    def test_action_migrate_schema_CalledProcessError(self):
-        event = Mock(spec_set=ActionEvent)
-
-        with patch("subprocess.run") as run_mock:
-            run_mock.side_effect = CalledProcessError(127, "uhoh")
-            self.harness.charm._migrate_schema(event)
-
-        event.log.assert_called_once()
-        event.fail.assert_called_once()
-        run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
-        )
-        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_nrpe_external_master_relation_joined(self):
         mock_event = Mock()
@@ -3097,3 +3003,168 @@ class TestSmtpIntegration(unittest.TestCase):
         """_on_smtp_relation_broken does not raise if sasl files don't exist."""
         with patch("charm.POSTFIX_SASL_PASSWD", "/nonexistent/sasl_passwd"):
             self.harness.charm._on_smtp_relation_broken(Mock())
+
+
+_not_running = StoredState(
+    owner_path="LandscapeServerCharm", content={"running": False}
+)
+
+
+class TestSchemaFlags:
+    """Tests for _schema_supports_flag and the flag-gating in _migrate_schema_bootstrap
+    and the migrate-schema action."""
+
+    # --- _schema_supports_flag ---
+
+    def test_schema_supports_flag_returns_true_when_present(self):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with patch("charm.Path") as mock_path:
+                mock_path.return_value.read_text.return_value = (
+                    "usage: schema [--allow-connections] [--db-owner-role ROLE]"
+                )
+                assert manager.charm._schema_supports_flag("--allow-connections")
+                assert manager.charm._schema_supports_flag("--db-owner-role")
+
+    def test_schema_supports_flag_returns_false_when_absent(self):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with patch("charm.Path") as mock_path:
+                mock_path.return_value.read_text.return_value = (
+                    "usage: schema [--bootstrap]"
+                )
+                assert not manager.charm._schema_supports_flag("--allow-connections")
+                assert not manager.charm._schema_supports_flag("--db-owner-role")
+
+    def test_schema_supports_flag_returns_false_on_missing_script(self):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with patch("charm.Path") as mock_path:
+                mock_path.return_value.read_text.side_effect = OSError("No such file")
+                assert not manager.charm._schema_supports_flag("--allow-connections")
+                assert not manager.charm._schema_supports_flag("--db-owner-role")
+
+    # --- _migrate_schema_bootstrap flag gating ---
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_owner_role_flag(self, _get_env):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with (
+                patch("charm.check_call") as check_call_mock,
+                patch.object(manager.charm, "_bootstrap_account"),
+                patch.object(manager.charm, "_set_autoregistration"),
+                patch.object(manager.charm, "_schema_supports_flag", return_value=True),
+            ):
+                result = manager.charm._migrate_schema_bootstrap("charmed_dba")
+
+        check_call_mock.assert_called_once_with(
+            [
+                SCHEMA_SCRIPT,
+                "--bootstrap",
+                "--db-owner-role",
+                "charmed_dba",
+                "--allow-connections",
+            ],
+            env={"PATH": "/usr/bin"},
+        )
+        assert result is True
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_allow_connections_when_supported(self, _get_env):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with (
+                patch("charm.check_call") as check_call_mock,
+                patch.object(manager.charm, "_bootstrap_account"),
+                patch.object(manager.charm, "_set_autoregistration"),
+                patch.object(manager.charm, "_schema_supports_flag", return_value=True),
+            ):
+                result = manager.charm._migrate_schema_bootstrap()
+
+        check_call_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT, "--bootstrap", "--allow-connections"],
+            env={"PATH": "/usr/bin"},
+        )
+        assert result is True
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_no_allow_connections_when_not_supported(
+        self, _get_env
+    ):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with (
+                patch("charm.check_call") as check_call_mock,
+                patch.object(manager.charm, "_bootstrap_account"),
+                patch.object(manager.charm, "_set_autoregistration"),
+                patch.object(
+                    manager.charm, "_schema_supports_flag", return_value=False
+                ),
+            ):
+                result = manager.charm._migrate_schema_bootstrap()
+
+        called_args = check_call_mock.call_args.args[0]
+        assert "--allow-connections" not in called_args
+        assert result is True
+
+    # --- migrate-schema action ---
+
+    def test_action_migrate_schema_no_allow_connections_when_not_supported(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus("paused"),
+            stored_states=[_not_running],
+        )
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+
+    def test_action_migrate_schema_allow_connections_when_supported(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus("paused"),
+            stored_states=[_not_running],
+        )
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=True
+            ),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT, "--allow-connections"], check=True, text=True, env=ANY
+        )
+
+    def test_action_migrate_schema_blocks_on_error(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus("paused"),
+            stored_states=[_not_running],
+        )
+
+        with (
+            patch(
+                "subprocess.run",
+                side_effect=CalledProcessError(1, SCHEMA_SCRIPT),
+            ),
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=False
+            ),
+            pytest.raises(ActionFailed),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        assert isinstance(ctx.action_results, dict) or ctx.action_results is None

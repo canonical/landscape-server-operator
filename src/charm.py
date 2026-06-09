@@ -995,10 +995,7 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
-        if not self._migrate_schema_bootstrap(
-            demo_data=self.charm_config.demo_data,
-            allow_connections=self._schema_supports_flag("--allow-connections"),
-        ):
+        if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
             return
 
         if not self._update_wsl_distributions():
@@ -1094,7 +1091,6 @@ class LandscapeServerCharm(CharmBase):
         if not self._migrate_schema_bootstrap(
             roles.owner,
             demo_data=self.charm_config.demo_data,
-            allow_connections=self._schema_supports_flag("--allow-connections"),
         ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
@@ -1166,7 +1162,6 @@ class LandscapeServerCharm(CharmBase):
         self,
         owner_role: str | None = None,
         demo_data: bool = False,
-        allow_connections: bool = False,
     ):
         """
         Migrates schema along with the bootstrap command which ensures that the
@@ -1175,7 +1170,6 @@ class LandscapeServerCharm(CharmBase):
 
         :param owner_role: The Postgres role to own the database.
         :param demo_data: Create demo data.
-        :param allow_connections: Skip the exclusive-connection check (for PGBouncer).
 
         :returns: True on success.
         """
@@ -1184,7 +1178,7 @@ class LandscapeServerCharm(CharmBase):
         if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
 
-        if allow_connections:
+        if self._schema_supports_flag("--allow-connections"):
             call.append("--allow-connections")
 
         if self._proxy_settings:
@@ -2054,10 +2048,12 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Migrating schemas...")
         event.log("Running schema migration...")
 
+        cmd = [SCHEMA_SCRIPT]
+        if self._schema_supports_flag("--allow-connections"):
+            cmd.append("--allow-connections")
+
         try:
-            subprocess.run(
-                [SCHEMA_SCRIPT], check=True, text=True, env=get_modified_env_vars()
-            )
+            subprocess.run(cmd, check=True, text=True, env=get_modified_env_vars())
         except CalledProcessError as e:
             logger.error("Schema migration failed with error code %s", e.returncode)
             event.fail(f"Schema migration failed with error code {e.returncode}")
