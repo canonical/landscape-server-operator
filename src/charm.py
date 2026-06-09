@@ -592,7 +592,10 @@ class LandscapeServerCharm(CharmBase):
                     {"cookie-encryption-key": cookie_encryption_key}
                 )
 
-        if (secret_token) and (secret_token != self._stored.secret_token):
+        secret_token_changed = (
+            secret_token and secret_token != self._stored.secret_token
+        )
+        if secret_token_changed:
             self._write_secret_token(secret_token)
             self._stored.secret_token = secret_token
 
@@ -606,7 +609,9 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
-        self._update_debarchive_relations()
+        self._update_debarchive_relations(
+            notify_secret_token_changed=bool(secret_token_changed)
+        )
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
@@ -1500,7 +1505,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             }
         )
 
-    def _update_debarchive_relations(self) -> None:
+    def _update_debarchive_relations(
+        self, notify_secret_token_changed: bool = False
+    ) -> None:
         """Publish the Landscape root URL to all related debarchive charms."""
         if not self.unit.is_leader():
             return
@@ -1531,8 +1538,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         hostname = leader_ip
         if self.charm_config.root_url:
             parsed = urlparse(self.charm_config.root_url)
-            if name := parsed.hostname:
-                hostname = name
+            if parsed.hostname:
+                hostname = parsed.hostname
 
         for relation in relations:
             # Reuse the per-relation secret rather than creating (and leaking) a
@@ -1541,7 +1548,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             if existing_id:
                 try:
                     secret = self.model.get_secret(id=existing_id)
-                    secret.set_content({"secret-token": secret_token})
+                    if notify_secret_token_changed:
+                        secret.set_content({"secret-token": secret_token})
                 except (SecretNotFoundError, ModelError):
                     logger.warning(
                         "Debarchive relation has stale secret-token-id %s; "
@@ -1554,6 +1562,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             secret.grant(relation)
             relation.data[self.app]["hostname"] = hostname
             relation.data[self.app]["secret-token-id"] = secret.id
+            if notify_secret_token_changed:
+                revision = int(
+                    relation.data[self.app].get("secret-token-revision", "0")
+                )
+                relation.data[self.app]["secret-token-revision"] = str(revision + 1)
 
     def _debarchive_relation_joined(self, event: RelationJoinedEvent) -> None:
         """Provide the Landscape root URL when a debarchive charm relates."""

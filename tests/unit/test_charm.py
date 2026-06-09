@@ -198,6 +198,40 @@ class TestDebarchiveRelation:
         secret = result.get_secret(id=app_data["secret-token-id"])
         assert secret.latest_content == {"secret-token": "s3cr3t"}
 
+    def test_config_changed_republishes_updated_secret_token(self):
+        """Config changes bump relation data when the shared secret changes."""
+        context = Context(LandscapeServerCharm)
+        secret = Secret(
+            tracked_content={"secret-token": "old-s3cr3t"},
+            owner="app",
+        )
+        relation = Relation(
+            "debarchive",
+            local_app_data={
+                "hostname": "10.0.0.1",
+                "secret-token-id": secret.id,
+                "secret-token-revision": "1",
+            },
+        )
+        state = State(
+            leader=True,
+            relations=[relation],
+            secrets=[secret],
+            config={
+                "secret_token": "new-s3cr3t",
+                "cookie_encryption_key": "cookie-key",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.config_changed(), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["secret-token-id"] == secret.id
+        assert app_data["secret-token-revision"] == "2"
+        updated_secret = result.get_secret(id=secret.id)
+        assert updated_secret.latest_content == {"secret-token": "new-s3cr3t"}
+
     def test_recreates_stale_secret_token_id(self):
         """A stale published secret-token-id does not fail the relation hook."""
         context = Context(LandscapeServerCharm)
