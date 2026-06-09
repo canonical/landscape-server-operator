@@ -995,7 +995,10 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
-        if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
+        if not self._migrate_schema_bootstrap(
+            demo_data=self.charm_config.demo_data,
+            allow_connections=self._schema_supports_flag("--allow-connections"),
+        ):
             return
 
         if not self._update_wsl_distributions():
@@ -1089,7 +1092,9 @@ class LandscapeServerCharm(CharmBase):
         roles = get_postgres_roles(db_ctx.version)
 
         if not self._migrate_schema_bootstrap(
-            roles.owner, demo_data=self.charm_config.demo_data
+            roles.owner,
+            demo_data=self.charm_config.demo_data,
+            allow_connections=self._schema_supports_flag("--allow-connections"),
         ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
@@ -1150,8 +1155,18 @@ class LandscapeServerCharm(CharmBase):
 
         return settings
 
+    def _schema_supports_flag(self, flag: str) -> bool:
+        """Returns True if the installed schema script accepts the given flag."""
+        try:
+            return flag in Path(SCHEMA_SCRIPT).read_text()
+        except OSError:
+            return False
+
     def _migrate_schema_bootstrap(
-        self, owner_role: str | None = None, demo_data: bool = False
+        self,
+        owner_role: str | None = None,
+        demo_data: bool = False,
+        allow_connections: bool = False,
     ):
         """
         Migrates schema along with the bootstrap command which ensures that the
@@ -1160,13 +1175,17 @@ class LandscapeServerCharm(CharmBase):
 
         :param owner_role: The Postgres role to own the database.
         :param demo_data: Create demo data.
+        :param allow_connections: Skip the exclusive-connection check (for PGBouncer).
 
         :returns: True on success.
         """
         call = [SCHEMA_SCRIPT, "--bootstrap"]
 
-        if owner_role:
+        if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
+
+        if allow_connections:
+            call.append("--allow-connections")
 
         if self._proxy_settings:
             call.extend(self._proxy_settings)

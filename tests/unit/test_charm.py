@@ -1330,6 +1330,9 @@ class TestCharm(unittest.TestCase):
             patch("charm.check_call") as check_call_mock,
             patch.object(self.harness.charm, "_bootstrap_account"),
             patch.object(self.harness.charm, "_set_autoregistration"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=True
+            ),
         ):
             result = self.harness.charm._migrate_schema_bootstrap("charmed_dba")
 
@@ -1453,6 +1456,58 @@ class TestCharm(unittest.TestCase):
         password_idx = called_args.index("--with-account-password") + 1
         assert called_args[password_idx] == registration_key
         self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_allow_connections_flag(self, get_env):
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(self.harness.charm, "_bootstrap_account"),
+            patch.object(self.harness.charm, "_set_autoregistration"),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap(
+                allow_connections=True
+            )
+
+        check_call_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT, "--bootstrap", "--allow-connections"],
+            env={"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_no_allow_connections_by_default(self, get_env):
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(self.harness.charm, "_bootstrap_account"),
+            patch.object(self.harness.charm, "_set_autoregistration"),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap()
+
+        called_args = check_call_mock.call_args.args[0]
+        assert "--allow-connections" not in called_args
+        self.assertTrue(result)
+
+    def test_schema_supports_flag_returns_true_when_present(self):
+        with patch("charm.Path") as mock_path:
+            mock_path.return_value.read_text.return_value = (
+                "usage: schema [--allow-connections] [--db-owner-role ROLE]"
+            )
+            assert self.harness.charm._schema_supports_flag("--allow-connections")
+            assert self.harness.charm._schema_supports_flag("--db-owner-role")
+
+    def test_schema_supports_flag_returns_false_when_absent(self):
+        with patch("charm.Path") as mock_path:
+            mock_path.return_value.read_text.return_value = (
+                "usage: schema [--bootstrap]"
+            )
+            assert not self.harness.charm._schema_supports_flag("--allow-connections")
+            assert not self.harness.charm._schema_supports_flag("--db-owner-role")
+
+    def test_schema_supports_flag_returns_false_on_missing_script(self):
+        with patch("charm.Path") as mock_path:
+            mock_path.return_value.read_text.side_effect = OSError("No such file")
+            assert not self.harness.charm._schema_supports_flag("--allow-connections")
+            assert not self.harness.charm._schema_supports_flag("--db-owner-role")
 
     @patch.dict(
         os.environ,
