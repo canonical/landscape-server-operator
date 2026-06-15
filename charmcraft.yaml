@@ -17,12 +17,6 @@ charm-libs:
     version: "0.20"
   - lib: haproxy.haproxy_route
     version: "1.13"
-  - lib: operator_libs_linux.apt
-    version: "0.13"
-  - lib: operator_libs_linux.passwd
-    version: "0.4"
-  - lib: operator_libs_linux.systemd
-    version: "1.4"
   - lib: smtp_integrator.smtp
     version: "0.21"
 
