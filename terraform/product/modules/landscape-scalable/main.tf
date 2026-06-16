@@ -119,7 +119,7 @@ resource "juju_integration" "landscape_server_haproxy" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = module.landscape_server.requires.website
+    endpoint = try(module.landscape_server.requires.website, null)
   }
 
   application {
