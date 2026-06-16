@@ -12,7 +12,15 @@ import subprocess
 from subprocess import CalledProcessError
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
+from unittest.mock import (
+    ANY,
+    call,
+    DEFAULT,
+    Mock,
+    mock_open,
+    patch,
+    PropertyMock,
+)
 
 from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
@@ -1327,6 +1335,30 @@ class TestCharm(unittest.TestCase):
             self.assertRaises(CalledProcessError, harness.begin_with_initial_hooks)
 
     @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_owner_role_flag(self, get_env):
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(self.harness.charm, "_bootstrap_account"),
+            patch.object(self.harness.charm, "_set_autoregistration"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=True
+            ),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap("charmed_dba")
+
+        check_call_mock.assert_called_once_with(
+            [
+                SCHEMA_SCRIPT,
+                "--bootstrap",
+                "--db-owner-role",
+                "charmed_dba",
+                "--allow-connections",
+            ],
+            env={"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
     def test_migrate_schema_bootstrap_demo_data_flags(self, get_env):
         with patch("charm.check_call") as check_call_mock:
             result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
@@ -2157,12 +2189,31 @@ class TestCharm(unittest.TestCase):
         apt_mock.update.assert_not_called()
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
+    def test_action_migrate_schema(self):
+        event = Mock(spec=ActionEvent)
+        event.params = {}
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            self.harness.charm._migrate_schema(event)
+
+        event.log.assert_called_once()
+        event.fail.assert_not_called()
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+
     def test_action_migrate_schema_running(self):
         """
         Test that we do not perform a schema migration while Landscape is
         running.
         """
-        event = Mock(spec_set=ActionEvent)
+        event = Mock(spec=ActionEvent)
+        event.params = {}
         self.harness.charm._stored.running = True
 
         with patch("subprocess.run") as run_mock:
@@ -2171,6 +2222,22 @@ class TestCharm(unittest.TestCase):
         event.log.assert_not_called()
         event.fail.assert_called_once()
         run_mock.assert_not_called()
+
+    def test_action_migrate_schema_running_with_allow_connections(self):
+        """
+        Test that we perform a schema migration while Landscape is
+        running if the allow-connections flag is `true`.
+        """
+        self.harness.charm._stored.running = True
+
+        with patch("subprocess.run") as run_mock:
+            self.harness.run_action(
+                "migrate-schema", params={"allow_connections": True}
+            )
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT, "--allow-connections"], check=True, text=True, env=ANY
+        )
 
     def test_nrpe_external_master_relation_joined(self):
         mock_event = Mock()

@@ -2037,7 +2037,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = prev_status
 
     def _migrate_schema(self, event: ActionEvent) -> None:
-        if self._stored.running:
+        allow_conn = event.params.get("allow_connections")
+
+        if self._stored.running and not allow_conn:
             event.fail(
                 "Cannot migrate schema while running. Please run action"
                 " 'pause' prior to migration"
@@ -2048,12 +2050,15 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Migrating schemas...")
         event.log("Running schema migration...")
 
-        cmd = [SCHEMA_SCRIPT]
-        if self._schema_supports_flag("--allow-connections"):
-            cmd.append("--allow-connections")
+        schema_args = [SCHEMA_SCRIPT]
+
+        if allow_conn or self._schema_supports_flag("--allow-connections"):
+            schema_args.append("--allow-connections")
 
         try:
-            subprocess.run(cmd, check=True, text=True, env=get_modified_env_vars())
+            subprocess.run(
+                schema_args, check=True, text=True, env=get_modified_env_vars()
+            )
         except CalledProcessError as e:
             logger.error("Schema migration failed with error code %s", e.returncode)
             event.fail(f"Schema migration failed with error code {e.returncode}")
