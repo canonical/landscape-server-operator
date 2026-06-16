@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Juju charm for deploying and managing Landscape Server"
 requires-python = ">=3.10"
 dependencies = [
+    "charmlibs-apt==1.0.0.post0",
+    "charmlibs-passwd==1.0.1",
     "charmlibs-snap~=1.0",
+    "charmlibs-systemd==1.0.0",
     "cosl==1.4.0",
     "email-validator>=2",
     "ops==2.23.1",
