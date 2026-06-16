@@ -1360,7 +1360,12 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
     def test_migrate_schema_bootstrap_demo_data_flags(self, get_env):
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
             result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
 
         check_call_mock.assert_called_once_with(
@@ -1407,7 +1412,12 @@ class TestCharm(unittest.TestCase):
             }
         )
 
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
             result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
 
         called_args = check_call_mock.call_args.args[0]
@@ -1421,7 +1431,12 @@ class TestCharm(unittest.TestCase):
     def test_migrate_schema_bootstrap_demo_data_flags_saas(self, get_env):
         self.harness.charm.charm_config.deployment_mode = "prod"
 
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
             result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
 
         called_args = check_call_mock.call_args.args[0]
@@ -1443,7 +1458,12 @@ class TestCharm(unittest.TestCase):
             }
         )
 
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
             result = self.harness.charm._migrate_schema_bootstrap()
 
         check_call_mock.assert_called_once_with(
@@ -1465,7 +1485,12 @@ class TestCharm(unittest.TestCase):
         registration_key = "super-secret-registration-key"
         self.harness.update_config({"registration_key": registration_key})
 
-        with patch("charm.check_call") as check_call_mock:
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
             result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
 
         called_args = check_call_mock.call_args.args[0]
@@ -1674,6 +1699,7 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf") as update_service_conf_mock,
+            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
         ):
             check_call_mock.side_effect = CalledProcessError(127, "ouch")
             self.harness.charm._db_relation_changed(mock_event)
@@ -1723,6 +1749,7 @@ class TestCharm(unittest.TestCase):
             patch(
                 "settings_files.update_service_conf",
             ) as update_service_conf_mock,
+            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
         ):
             self.harness.charm._db_relation_changed(mock_event)
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1760,12 +1787,14 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
         ):
             self.harness.charm._db_relation_changed(mock_event)
 
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
         ):
             check_call_mock.side_effect = CalledProcessError(127, "ouch")
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1790,6 +1819,7 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
         ):
             self.harness.charm._db_relation_changed(mock_event)
 
@@ -1816,6 +1846,7 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
         ):
             # Let bootstrap account go through
             check_call_mock.side_effect = [None, CalledProcessError(127, "ouch")]
@@ -3086,9 +3117,10 @@ class TestSchemaFlags:
     def test_schema_supports_flag_returns_true_when_present(self):
         ctx = Context(LandscapeServerCharm)
         with ctx(ctx.on.start(), State()) as manager:
-            with patch("charm.Path") as mock_path:
-                mock_path.return_value.read_text.return_value = (
-                    "usage: schema [--allow-connections] [--db-owner-role ROLE]"
+            with patch("charm.subprocess.run") as mock_run:
+                mock_run.return_value = Mock(
+                    stdout="usage: schema [--allow-connections] [--db-owner-role ROLE]",
+                    stderr="",
                 )
                 assert manager.charm._schema_supports_flag("--allow-connections")
                 assert manager.charm._schema_supports_flag("--db-owner-role")
@@ -3096,9 +3128,10 @@ class TestSchemaFlags:
     def test_schema_supports_flag_returns_false_when_absent(self):
         ctx = Context(LandscapeServerCharm)
         with ctx(ctx.on.start(), State()) as manager:
-            with patch("charm.Path") as mock_path:
-                mock_path.return_value.read_text.return_value = (
-                    "usage: schema [--bootstrap]"
+            with patch("charm.subprocess.run") as mock_run:
+                mock_run.return_value = Mock(
+                    stdout="usage: schema [--bootstrap]",
+                    stderr="",
                 )
                 assert not manager.charm._schema_supports_flag("--allow-connections")
                 assert not manager.charm._schema_supports_flag("--db-owner-role")
@@ -3106,8 +3139,7 @@ class TestSchemaFlags:
     def test_schema_supports_flag_returns_false_on_missing_script(self):
         ctx = Context(LandscapeServerCharm)
         with ctx(ctx.on.start(), State()) as manager:
-            with patch("charm.Path") as mock_path:
-                mock_path.return_value.read_text.side_effect = OSError("No such file")
+            with patch("charm.subprocess.run", side_effect=OSError("No such file")):
                 assert not manager.charm._schema_supports_flag("--allow-connections")
                 assert not manager.charm._schema_supports_flag("--db-owner-role")
 

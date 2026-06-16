@@ -1154,7 +1154,12 @@ class LandscapeServerCharm(CharmBase):
     def _schema_supports_flag(self, flag: str) -> bool:
         """Returns True if the installed schema script accepts the given flag."""
         try:
-            return flag in Path(SCHEMA_SCRIPT).read_text()
+            result = subprocess.run(
+                [SCHEMA_SCRIPT, "--help"],
+                capture_output=True,
+                text=True,
+            )
+            return flag in result.stdout or flag in result.stderr
         except OSError:
             return False
 
