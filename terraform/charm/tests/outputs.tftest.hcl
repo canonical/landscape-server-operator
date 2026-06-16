@@ -354,3 +354,35 @@ run "external_haproxy_null_revision" {
     error_message = "Null revision on 25.10/edge should not have haproxy-route relations"
   }
 }
+
+run "has_haproxy_route_interface_true_for_modern" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "25.10/edge"
+    revision   = 278
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_haproxy_route_interface == true
+    error_message = "has_haproxy_route_interface should be true for modern revisions"
+  }
+}
+
+run "has_haproxy_route_interface_false_for_legacy" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "24.04/edge"
+    revision   = null
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_haproxy_route_interface == false
+    error_message = "has_haproxy_route_interface should be false for legacy channels"
+  }
+}
