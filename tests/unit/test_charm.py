@@ -1347,13 +1347,7 @@ class TestCharm(unittest.TestCase):
             result = self.harness.charm._migrate_schema_bootstrap("charmed_dba")
 
         check_call_mock.assert_called_once_with(
-            [
-                SCHEMA_SCRIPT,
-                "--bootstrap",
-                "--db-owner-role",
-                "charmed_dba",
-                "--allow-connections",
-            ],
+            [SCHEMA_SCRIPT, "--bootstrap", "--db-owner-role", "charmed_dba"],
             env={"PATH": "/usr/bin"},
         )
         self.assertTrue(result)
@@ -2273,7 +2267,12 @@ class TestCharm(unittest.TestCase):
         """
         self.harness.charm._stored.running = True
 
-        with patch("subprocess.run") as run_mock:
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=True
+            ),
+        ):
             self.harness.run_action(
                 "migrate-schema", params={"allow-connections": True}
             )
@@ -3170,53 +3169,9 @@ class TestSchemaFlags:
                 result = manager.charm._migrate_schema_bootstrap("charmed_dba")
 
         check_call_mock.assert_called_once_with(
-            [
-                SCHEMA_SCRIPT,
-                "--bootstrap",
-                "--db-owner-role",
-                "charmed_dba",
-                "--allow-connections",
-            ],
+            [SCHEMA_SCRIPT, "--bootstrap", "--db-owner-role", "charmed_dba"],
             env={"PATH": "/usr/bin"},
         )
-        assert result is True
-
-    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
-    def test_migrate_schema_bootstrap_allow_connections_when_supported(self, _get_env):
-        ctx = Context(LandscapeServerCharm)
-        with ctx(ctx.on.start(), State()) as manager:
-            with (
-                patch("charm.check_call") as check_call_mock,
-                patch.object(manager.charm, "_bootstrap_account"),
-                patch.object(manager.charm, "_set_autoregistration"),
-                patch.object(manager.charm, "_schema_supports_flag", return_value=True),
-            ):
-                result = manager.charm._migrate_schema_bootstrap()
-
-        check_call_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT, "--bootstrap", "--allow-connections"],
-            env={"PATH": "/usr/bin"},
-        )
-        assert result is True
-
-    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
-    def test_migrate_schema_bootstrap_no_allow_connections_when_not_supported(
-        self, _get_env
-    ):
-        ctx = Context(LandscapeServerCharm)
-        with ctx(ctx.on.start(), State()) as manager:
-            with (
-                patch("charm.check_call") as check_call_mock,
-                patch.object(manager.charm, "_bootstrap_account"),
-                patch.object(manager.charm, "_set_autoregistration"),
-                patch.object(
-                    manager.charm, "_schema_supports_flag", return_value=False
-                ),
-            ):
-                result = manager.charm._migrate_schema_bootstrap()
-
-        called_args = check_call_mock.call_args.args[0]
-        assert "--allow-connections" not in called_args
         assert result is True
 
     # --- migrate-schema action ---
@@ -3253,7 +3208,10 @@ class TestSchemaFlags:
                 LandscapeServerCharm, "_schema_supports_flag", return_value=True
             ),
         ):
-            ctx.run(ctx.on.action("migrate-schema"), state)
+            ctx.run(
+                ctx.on.action("migrate-schema", params={"allow-connections": True}),
+                state,
+            )
 
         run_mock.assert_called_once_with(
             [SCHEMA_SCRIPT, "--allow-connections"], check=True, text=True, env=ANY

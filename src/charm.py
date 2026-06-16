@@ -1088,8 +1088,7 @@ class LandscapeServerCharm(CharmBase):
         roles = get_postgres_roles(db_ctx.version)
 
         if not self._migrate_schema_bootstrap(
-            roles.owner,
-            demo_data=self.charm_config.demo_data,
+            roles.owner, demo_data=self.charm_config.demo_data
         ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
@@ -1181,9 +1180,6 @@ class LandscapeServerCharm(CharmBase):
 
         if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
-
-        if self._schema_supports_flag("--allow-connections"):
-            call.append("--allow-connections")
 
         if self._proxy_settings:
             call.extend(self._proxy_settings)
@@ -2056,7 +2052,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         schema_args = [SCHEMA_SCRIPT]
 
-        if allow_conn or self._schema_supports_flag("--allow-connections"):
+        if allow_conn and self._schema_supports_flag("--allow-connections"):
             schema_args.append("--allow-connections")
 
         try:
