@@ -129,21 +129,15 @@ def replicas_fixture() -> scenario.PeerRelation:
 
 @pytest.fixture(name="systemd_fixture")
 def systemd_fixture(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        "charms.operator_libs_linux.v1.systemd.service_reload", MagicMock()
-    )
+    monkeypatch.setattr("charmlibs.systemd.service_reload", MagicMock())
 
 
 @pytest.fixture(name="apt_fixture")
 def apt_fixture(monkeypatch: pytest.MonkeyPatch):
     add_package_mock = MagicMock()
     remove_package_mock = MagicMock()
-    monkeypatch.setattr(
-        "charms.operator_libs_linux.v0.apt.add_package", add_package_mock
-    )
-    monkeypatch.setattr(
-        "charms.operator_libs_linux.v0.apt.remove_package", remove_package_mock
-    )
+    monkeypatch.setattr("charmlibs.apt.add_package", add_package_mock)
+    monkeypatch.setattr("charmlibs.apt.remove_package", remove_package_mock)
     return add_package_mock, remove_package_mock
 
 
