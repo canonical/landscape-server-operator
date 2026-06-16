@@ -21,7 +21,9 @@ def check_call():
 
 @pytest.fixture(autouse=True)
 def schema_supports_flag():
-    with patch.object(LandscapeServerCharm, "_schema_supports_flag", return_value=False):
+    with patch.object(
+        LandscapeServerCharm, "_schema_supports_flag", return_value=False
+    ):
         yield
 
 

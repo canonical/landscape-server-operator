@@ -1699,7 +1699,9 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf") as update_service_conf_mock,
-            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             check_call_mock.side_effect = CalledProcessError(127, "ouch")
             self.harness.charm._db_relation_changed(mock_event)
@@ -1749,7 +1751,9 @@ class TestCharm(unittest.TestCase):
             patch(
                 "settings_files.update_service_conf",
             ) as update_service_conf_mock,
-            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             self.harness.charm._db_relation_changed(mock_event)
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1787,14 +1791,18 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
-            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             self.harness.charm._db_relation_changed(mock_event)
 
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
-            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             check_call_mock.side_effect = CalledProcessError(127, "ouch")
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1819,7 +1827,9 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
-            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             self.harness.charm._db_relation_changed(mock_event)
 
@@ -1846,7 +1856,9 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
-            patch.object(self.harness.charm, "_schema_supports_flag", return_value=False),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             # Let bootstrap account go through
             check_call_mock.side_effect = [None, CalledProcessError(127, "ouch")]

@@ -25,10 +25,10 @@ applications:
     charm: ../landscape-server_ubuntu@24.04-amd64.charm
     num_units: 1
     options:
-      landscape_ppa: ppa:landscape/self-hosted-beta
-      min_install: True
-      enable_hostagent_messenger: True
-      enable_ubuntu_installer_attach: True
+      landscape_ppa: ppa:landscape/self-hosted-26.04
+      min_install: true
+      enable_hostagent_messenger: false
+      enable_ubuntu_installer_attach: false
       root_url: https://landscape.local/
     base: ubuntu@24.04
   haproxy:
@@ -53,5 +53,8 @@ relations:
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [
+      landscape-server:ubuntu-installer-attach-haproxy-route,
+      haproxy:haproxy-route,
+    ]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]
