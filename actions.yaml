@@ -10,7 +10,7 @@ migrate-schema:
     Upgrade the Landscape database schemas on the related databases.
     Unit must already be paused using the 'pause' action.
   params:
-    allow_connections:
+    allow-connections:
       type: boolean
       description: |
         Allow external database connections during schema migration to

@@ -1138,14 +1138,14 @@ def test_action_migrate_schema_while_paused(juju: jubilant.Juju, bundle: None):
 )
 def test_action_migrate_schema_allow_connections(juju: jubilant.Juju, bundle: None):
     """
-    migrate-schema with allow_connections=true succeeds while Landscape is running,
+    migrate-schema with allow-connections=true succeeds while Landscape is running,
     allowing schema migration via PgBouncer without a full pause.
     """
     juju.wait(jubilant.all_active, timeout=300)
 
     unit = _leader_unit_name(juju, "landscape-server")
 
-    result = juju.run(unit, "migrate-schema", {"allow_connections": True})
+    result = juju.run(unit, "migrate-schema", {"allow-connections": True})
     assert result.status == "completed", (
         f"Expected migrate-schema --allow-connections to complete, got: {result.status}"
     )

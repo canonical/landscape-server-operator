@@ -2041,7 +2041,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = prev_status
 
     def _migrate_schema(self, event: ActionEvent) -> None:
-        allow_conn = event.params.get("allow_connections")
+        allow_conn = event.params.get("allow-connections")
 
         if self._stored.running and not allow_conn:
             event.fail(

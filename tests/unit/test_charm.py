@@ -2275,7 +2275,7 @@ class TestCharm(unittest.TestCase):
 
         with patch("subprocess.run") as run_mock:
             self.harness.run_action(
-                "migrate-schema", params={"allow_connections": True}
+                "migrate-schema", params={"allow-connections": True}
             )
 
         run_mock.assert_called_once_with(
