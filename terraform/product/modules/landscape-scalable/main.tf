@@ -28,7 +28,7 @@ module "haproxy" {
 }
 
 module "postgresql" {
-  source      = "git::https://github.com/canonical/postgresql-operator.git//terraform?ref=v16/1.165.0"
+  source      = "git::https://github.com/canonical/postgresql-operator.git//terraform?ref=v16/1.305.0"
   juju_model  = var.model_uuid
   config      = var.postgresql.config
   app_name    = var.postgresql.app_name
