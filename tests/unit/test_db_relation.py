@@ -19,14 +19,6 @@ def check_call():
         yield p
 
 
-@pytest.fixture(autouse=True)
-def schema_supports_flag():
-    with patch.object(
-        LandscapeServerCharm, "_schema_supports_flag", return_value=False
-    ):
-        yield
-
-
 @pytest.mark.parametrize("event", ("relation_changed", "relation_joined"))
 class TestDBRelation:
     """
