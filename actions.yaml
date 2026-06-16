@@ -14,7 +14,7 @@ migrate-schema:
       type: boolean
       description: |
         Allow external database connections during schema migration to
-        accomodate connections via PgBouncer.
+        accommodate connections via PgBouncer.
       default: false
 migrate-service-conf:
   description: |
