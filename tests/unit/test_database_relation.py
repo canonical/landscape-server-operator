@@ -883,6 +883,9 @@ class TestBootstrapAccount:
                 "_bootstrap_account",
                 side_effect=PgHbaNotReadyError("no pg_hba.conf entry"),
             ),
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=False
+            ),
         ):
             with ctx(ctx.on.start(), state_in) as manager:
                 with pytest.raises(PgHbaNotReadyError):
@@ -892,8 +895,11 @@ class TestBootstrapAccount:
         ctx = Context(LandscapeServerCharm)
         state_in = self._state()
 
-        with patch(
-            "charm.check_call", side_effect=CalledProcessError(1, SCHEMA_SCRIPT)
+        with (
+            patch("charm.check_call", side_effect=CalledProcessError(1, SCHEMA_SCRIPT)),
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=False
+            ),
         ):
             with ctx(ctx.on.start(), state_in) as manager:
                 result = manager.charm._migrate_schema_bootstrap()

@@ -1034,3 +1034,118 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
         "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
     )
     juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_pause_stops_services(juju: jubilant.Juju, bundle: None):
+    """
+    The pause action stops all Landscape systemd services on every unit.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    status = juju.status()
+    units = list(status.apps["landscape-server"].units)
+
+    try:
+        for unit in units:
+            juju.run(unit, "pause")
+
+        for unit in units:
+            result = juju.ssh(
+                unit, "systemctl is-active landscape-server.target || true"
+            )
+            assert "inactive" in result or "failed" in result, (
+                f"Expected landscape-server.target to be inactive after pause on {unit}"
+            )
+    finally:
+        for unit in units:
+            juju.run(unit, "resume")
+        juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_resume_starts_services(juju: jubilant.Juju, bundle: None):
+    """
+    The resume action starts all Landscape systemd services after a pause.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    status = juju.status()
+    units = list(status.apps["landscape-server"].units)
+
+    try:
+        for unit in units:
+            juju.run(unit, "pause")
+
+        for unit in units:
+            juju.run(unit, "resume")
+
+        for unit in units:
+            for service in DEFAULT_SERVICES:
+                wait_for_service(juju, unit, service)
+    finally:
+        juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_migrate_schema_fails_while_running(juju: jubilant.Juju, bundle: None):
+    """
+    Running migrate-schema while Landscape is running (not paused) must fail.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit = _leader_unit_name(juju, "landscape-server")
+
+    with pytest.raises(Exception):
+        juju.run(unit, "migrate-schema")
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_migrate_schema_while_paused(juju: jubilant.Juju, bundle: None):
+    """
+    migrate-schema succeeds on the leader unit when Landscape is paused.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit = _leader_unit_name(juju, "landscape-server")
+
+    try:
+        juju.run(unit, "pause")
+        result = juju.run(unit, "migrate-schema")
+        assert result.status == "completed", (
+            f"Expected migrate-schema to complete, got: {result.status}"
+        )
+    finally:
+        juju.run(unit, "resume")
+        juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_migrate_schema_allow_connections(juju: jubilant.Juju, bundle: None):
+    """
+    migrate-schema with allow-connections=true succeeds while Landscape is running,
+    allowing schema migration via PgBouncer without a full pause.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit = _leader_unit_name(juju, "landscape-server")
+
+    result = juju.run(unit, "migrate-schema", {"allow-connections": True})
+    assert result.status == "completed", (
+        f"Expected migrate-schema --allow-connections to complete, got: {result.status}"
+    )
