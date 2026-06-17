@@ -44,7 +44,8 @@ applications:
 relations:
   - [landscape-server:inbound-amqp, rabbitmq-server]
   - [landscape-server:outbound-amqp, rabbitmq-server]
-  - [landscape-server:database, postgresql:database]
+  - [landscape-server:database, pgbouncer:database]
+  - [pgbouncer:backend-database, postgresql:database]
   - [haproxy:certificates, self-signed-certificates:certificates]
   - [haproxy:receive-ca-certs, self-signed-certificates:send-ca-cert]
   - [landscape-server:pingserver-haproxy-route, haproxy:haproxy-route]
