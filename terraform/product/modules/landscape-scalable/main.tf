@@ -119,12 +119,12 @@ resource "juju_integration" "landscape_server_haproxy" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = try(module.landscape_server.requires.website, null)
+    endpoint = module.landscape_server.provides.website
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "reverseproxy"
+    endpoint = module.haproxy.requires.reverseproxy
   }
 
   depends_on = [module.landscape_server, module.haproxy]
