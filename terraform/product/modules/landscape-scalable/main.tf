@@ -23,6 +23,7 @@ module "haproxy" {
   revision    = var.haproxy.revision
   base        = var.haproxy.base
   units       = var.haproxy.units
+  # machines is not supported by the external haproxy module (haproxy-rev331)
 
   count = var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
@@ -37,6 +38,7 @@ module "postgresql" {
   revision    = var.postgresql.revision
   base        = var.postgresql.base
   units       = var.postgresql.units
+  # machines is not supported by the external postgresql module (v16/1.165.0)
 
   count = var.postgresql != null ? 1 : 0
 }
@@ -45,7 +47,8 @@ module "postgresql" {
 resource "juju_application" "rabbitmq_server" {
   name        = var.rabbitmq_server.app_name
   model_uuid  = var.model_uuid
-  units       = var.rabbitmq_server.units
+  units       = var.rabbitmq_server.machines == null ? var.rabbitmq_server.units : null
+  machines    = var.rabbitmq_server.machines
   constraints = var.rabbitmq_server.constraints
   config      = var.rabbitmq_server.config
 
@@ -470,7 +473,8 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 resource "juju_application" "tls_certificates" {
   name        = var.tls_certificates.app_name
   model_uuid  = var.model_uuid
-  units       = 1
+  units       = var.tls_certificates.machines == null ? 1 : null
+  machines    = var.tls_certificates.machines
   constraints = var.tls_certificates.constraints
 
   charm {
