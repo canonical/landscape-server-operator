@@ -812,7 +812,14 @@ class LandscapeServerCharm(CharmBase):
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
 
-            if self.charm_config.min_install:
+            local_deb = self._get_landscape_server_deb_resource()
+            if local_deb is not None:
+                logger.info(f"Installing landscape-server from local deb: {local_deb}")
+                cmd = ["apt", "install", "-y"]
+                if self.charm_config.min_install:
+                    cmd.append("--no-install-recommends")
+                check_call(cmd + [str(local_deb)])
+            elif self.charm_config.min_install:
                 logger.info("Not installing hashids..")
                 check_call(
                     [
@@ -1955,6 +1962,16 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status()
 
+    def _get_landscape_server_deb_resource(self) -> Path | None:
+        """Return path to an attached landscape-server .deb resource, or None."""
+        try:
+            path = self.model.resources.fetch("landscape-server-deb")
+        except ModelError:
+            return None
+        if path.stat().st_size == 0:
+            return None
+        return path
+
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()
         for proxy_var, proxy_var_value in [
@@ -2015,7 +2032,19 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         apt.update()
 
+        local_deb = self._get_landscape_server_deb_resource()
+        if local_deb is not None:
+            event.log(f"Installing landscape-server from local deb: {local_deb}")
+            check_call(["apt-mark", "unhold", LANDSCAPE_SERVER])
+            cmd = ["apt", "install", "-y"]
+            if self.charm_config.min_install:
+                cmd.append("--no-install-recommends")
+            check_call(cmd + [str(local_deb)])
+            check_call(["apt-mark", "hold", LANDSCAPE_SERVER])
+
         for package in LANDSCAPE_PACKAGES:
+            if local_deb is not None and package == LANDSCAPE_SERVER:
+                continue
             try:
                 event.log(f"Upgrading {package}...")
                 if package == LANDSCAPE_SERVER:

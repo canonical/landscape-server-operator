@@ -141,6 +141,15 @@ def apt_fixture(monkeypatch: pytest.MonkeyPatch):
     return add_package_mock, remove_package_mock
 
 
+@pytest.fixture
+def empty_deb_resource(tmp_path):
+    from ops.testing import Resource
+
+    empty = tmp_path / "landscape-server.deb"
+    empty.write_bytes(b"")
+    return Resource(name="landscape-server-deb", path=empty)
+
+
 class FakeSnapModule:
     def __init__(self):
         self.add = MagicMock()
