@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd
+# Copyright 2026 Canonical Ltd
 
 from base64 import b64encode
 from io import BytesIO, StringIO

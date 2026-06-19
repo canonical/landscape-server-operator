@@ -1,4 +1,4 @@
-# © 2025 Canonical Ltd.
+# © 2026 Canonical Ltd.
 
 mock_provider "juju" {}
 

@@ -1,4 +1,4 @@
-# © 2025 Canonical Ltd.
+# © 2026 Canonical Ltd.
 
 output "registration_key" {
   description = "Registration key from the Landscape Server config."

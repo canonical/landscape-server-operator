@@ -1,4 +1,4 @@
-# © 2025 Canonical Ltd.
+# © 2026 Canonical Ltd.
 
 variable "app_name" {
   description = "Name of the application in the Juju model."

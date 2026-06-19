@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd.
+# Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 # Adapted from: https://github.com/canonical/postgresql-operator/blob/main/.github/workflows/ci.yaml
 name: Unit test charm
@@ -42,7 +42,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~1.10"
+          terraform_version: "~1.12"
 
       - name: Run terraform tests
         run: make terraform-test-all
