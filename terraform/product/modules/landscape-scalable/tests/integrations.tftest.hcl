@@ -256,7 +256,7 @@ run "test_haproxy_route_integrations_created" {
     landscape_server = {
       revision = 216
     }
-    haproxy_route_offer_url = "admin/lbaas.haproxy"
+    haproxy_route_offer_url = "admin/lbaas:haproxy-route"
   }
 
   override_module {
