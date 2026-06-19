@@ -24,7 +24,11 @@ run "validate_output_structure" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = false
+      provides = {
+        website = "website"
+      }
       requires = {
         website               = "website"
         amqp                  = "amqp"
@@ -38,6 +42,11 @@ run "validate_output_structure" {
     target = module.haproxy
     outputs = {
       app_name = "haproxy"
+      requires = {
+        reverseproxy     = "reverseproxy"
+        certificates     = "certificates"
+        receive_ca_certs = "receive-ca-certs"
+      }
     }
   }
 
@@ -184,6 +193,7 @@ run "validate_haproxy_route_outputs" {
         message_server_haproxy_route          = "message-server-haproxy-route"
         api_haproxy_route                     = "api-haproxy-route"
         package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
         hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
         ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
         inbound_amqp                          = "inbound-amqp"

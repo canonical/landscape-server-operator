@@ -138,6 +138,11 @@ run "provides_relations" {
     condition     = output.provides.website == "website"
     error_message = "Should provide website relation"
   }
+
+  assert {
+    condition     = output.provides.debarchive == "debarchive"
+    error_message = "Should provide debarchive relation"
+  }
 }
 
 run "application_dashboard_required" {
@@ -153,6 +158,11 @@ run "application_dashboard_required" {
   assert {
     condition     = output.requires.application_dashboard == "application-dashboard"
     error_message = "Should always require application-dashboard relation"
+  }
+
+  assert {
+    condition     = output.requires.smtp == "smtp"
+    error_message = "Should always require smtp relation"
   }
 }
 

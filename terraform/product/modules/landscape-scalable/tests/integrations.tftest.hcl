@@ -18,12 +18,21 @@ run "test_local_has_modern_amqp_relations_true" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = true
       requires = {
-        inbound_amqp  = "inbound-amqp"
-        outbound_amqp = "outbound-amqp"
-        database      = "database"
-        db            = "db"
+        inbound_amqp                          = "inbound-amqp"
+        outbound_amqp                         = "outbound-amqp"
+        database                              = "database"
+        db                                    = "db"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
       }
     }
   }
@@ -45,10 +54,19 @@ run "test_local_has_modern_amqp_relations_false" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = true
       requires = {
-        database = "database"
-        db       = "db"
+        database                              = "database"
+        db                                    = "db"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
       }
     }
   }
@@ -124,12 +142,21 @@ run "validate_all_modules_created" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = true
       requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
+        website                               = "website"
+        amqp                                  = "amqp"
+        db                                    = "db"
+        application_dashboard                 = "application-dashboard"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
       }
     }
   }
@@ -167,7 +194,11 @@ run "validate_all_integrations_created" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = false
+      provides = {
+        website = "website"
+      }
       requires = {
         website               = "website"
         amqp                  = "amqp"
@@ -181,6 +212,11 @@ run "validate_all_integrations_created" {
     target = module.haproxy
     outputs = {
       app_name = "haproxy"
+      requires = {
+        reverseproxy     = "reverseproxy"
+        certificates     = "certificates"
+        receive_ca_certs = "receive-ca-certs"
+      }
     }
   }
 
@@ -269,6 +305,7 @@ run "test_haproxy_route_integrations_created" {
         message_server_haproxy_route          = "message-server-haproxy-route"
         api_haproxy_route                     = "api-haproxy-route"
         package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
         hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
         ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
         inbound_amqp                          = "inbound-amqp"
@@ -348,12 +385,21 @@ run "test_pgbouncer_integration" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = true
       requires = {
-        inbound_amqp  = "inbound-amqp"
-        outbound_amqp = "outbound-amqp"
-        database      = "database"
-        db            = "db"
+        inbound_amqp                          = "inbound-amqp"
+        outbound_amqp                         = "outbound-amqp"
+        database                              = "database"
+        db                                    = "db"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
       }
     }
   }
@@ -389,12 +435,21 @@ run "test_pgbouncer_skipped" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name = "landscape-server"
+      app_name                    = "landscape-server"
+      has_haproxy_route_interface = true
       requires = {
-        inbound_amqp  = "inbound-amqp"
-        outbound_amqp = "outbound-amqp"
-        database      = "database"
-        db            = "db"
+        inbound_amqp                          = "inbound-amqp"
+        outbound_amqp                         = "outbound-amqp"
+        database                              = "database"
+        db                                    = "db"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
       }
     }
   }
@@ -432,6 +487,9 @@ run "test_legacy_haproxy_reverseproxy_created" {
     outputs = {
       app_name                    = "landscape-server"
       has_haproxy_route_interface = false
+      provides = {
+        website = "website"
+      }
       requires = {
         website               = "website"
         amqp                  = "amqp"
@@ -445,6 +503,11 @@ run "test_legacy_haproxy_reverseproxy_created" {
     target = module.haproxy
     outputs = {
       app_name = "haproxy"
+      requires = {
+        reverseproxy     = "reverseproxy"
+        certificates     = "certificates"
+        receive_ca_certs = "receive-ca-certs"
+      }
     }
   }
 
@@ -482,6 +545,7 @@ run "test_modern_haproxy_reverseproxy_not_created" {
         message_server_haproxy_route          = "message-server-haproxy-route"
         api_haproxy_route                     = "api-haproxy-route"
         package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
         hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
         ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
         inbound_amqp                          = "inbound-amqp"
@@ -497,6 +561,13 @@ run "test_modern_haproxy_reverseproxy_not_created" {
     target = module.haproxy
     outputs = {
       app_name = "haproxy"
+      provides = {
+        haproxy_route = "haproxy-route"
+      }
+      requires = {
+        certificates     = "certificates"
+        receive_ca_certs = "receive-ca-certs"
+      }
     }
   }
 
