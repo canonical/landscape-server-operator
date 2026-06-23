@@ -1149,8 +1149,22 @@ class LandscapeServerCharm(CharmBase):
 
         return settings
 
+    def _schema_supports_flag(self, flag: str) -> bool:
+        """Returns True if the installed schema script accepts the given flag."""
+        try:
+            result = subprocess.run(
+                [SCHEMA_SCRIPT, "--help"],
+                capture_output=True,
+                text=True,
+            )
+            return flag in result.stdout or flag in result.stderr
+        except OSError:
+            return False
+
     def _migrate_schema_bootstrap(
-        self, owner_role: str | None = None, demo_data: bool = False
+        self,
+        owner_role: str | None = None,
+        demo_data: bool = False,
     ):
         """
         Migrates schema along with the bootstrap command which ensures that the
@@ -1164,7 +1178,7 @@ class LandscapeServerCharm(CharmBase):
         """
         call = [SCHEMA_SCRIPT, "--bootstrap"]
 
-        if owner_role:
+        if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
 
         if self._proxy_settings:
@@ -2023,7 +2037,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = prev_status
 
     def _migrate_schema(self, event: ActionEvent) -> None:
-        if self._stored.running:
+        allow_conn = event.params.get("allow-connections")
+
+        if self._stored.running and not allow_conn:
             event.fail(
                 "Cannot migrate schema while running. Please run action"
                 " 'pause' prior to migration"
@@ -2034,9 +2050,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Migrating schemas...")
         event.log("Running schema migration...")
 
+        schema_args = [SCHEMA_SCRIPT]
+
+        if allow_conn and self._schema_supports_flag("--allow-connections"):
+            schema_args.append("--allow-connections")
+
         try:
             subprocess.run(
-                [SCHEMA_SCRIPT], check=True, text=True, env=get_modified_env_vars()
+                schema_args, check=True, text=True, env=get_modified_env_vars()
             )
         except CalledProcessError as e:
             logger.error("Schema migration failed with error code %s", e.returncode)

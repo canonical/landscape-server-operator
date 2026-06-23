@@ -47,6 +47,7 @@ variable "postgresql" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -65,6 +66,7 @@ variable "haproxy" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -91,6 +93,7 @@ variable "rabbitmq_server" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -120,6 +123,7 @@ variable "tls_certificates" {
     constraints = optional(string, "arch=amd64")
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
+    machines    = optional(set(string))
   })
 
   default  = {}

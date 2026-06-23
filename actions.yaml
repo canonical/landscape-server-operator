@@ -9,6 +9,13 @@ migrate-schema:
   description: |
     Upgrade the Landscape database schemas on the related databases.
     Unit must already be paused using the 'pause' action.
+  params:
+    allow-connections:
+      type: boolean
+      description: |
+        Allow external database connections during schema migration to
+        accommodate connections via PgBouncer.
+      default: false
 migrate-service-conf:
   description: |
     Migrate the service.conf file to have the sections and settings that
