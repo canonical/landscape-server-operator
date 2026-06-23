@@ -14,8 +14,8 @@ run "validate_channel_defaults" {
   command = plan
 
   assert {
-    condition     = var.landscape_server.channel == "self-hosted-beta"
-    error_message = "Landscape Server channel should default to 'self-hosted-beta'"
+    condition     = var.landscape_server.channel == "26.04/edge"
+    error_message = "Landscape Server channel should default to '26.04/edge'"
   }
 
   assert {
@@ -91,8 +91,8 @@ run "validate_config_defaults" {
   }
 
   assert {
-    condition     = lookup(var.landscape_server.config, "landscape_ppa", null) == "ppa:landscape/self-hosted-26.04"
-    error_message = "Landscape Server should default to ppa:landscape/self-hosted-26.04"
+    condition     = lookup(var.landscape_server.config, "landscape_ppa", null) == "ppa:landscape/self-hosted-beta"
+    error_message = "Landscape Server should default to ppa:landscape/self-hosted-beta"
   }
 
   assert {
