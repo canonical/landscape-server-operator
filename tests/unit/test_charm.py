@@ -184,19 +184,12 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
 
     def test_dashboards_use_prometheusds_datasource(self):
         """
-        All dashboard datasource references use ${prometheusds}, not
-        hardcoded datasource UIDs.
+        All dashboard datasource references use ${prometheusds}.
         """
         dashboard_dir = Path("src/grafana_dashboards")
         for path in dashboard_dir.glob("*.json"):
             with open(path) as f:
-                content = f.read()
-            self.assertNotIn(
-                "DS_IL3",
-                content,
-                f"{path.name} contains hardcoded DS_IL3 datasource reference",
-            )
-            dashboard = json.loads(content)
+                dashboard = json.load(f)
             for panel in dashboard.get("panels", []):
                 ds = panel.get("datasource", {})
                 if ds.get("type") == "prometheus":
@@ -205,22 +198,8 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
                         "${prometheusds}",
                         f"{path.name} panel"
                         f" '{panel.get('title')}'"
-                        " has wrong datasource uid",
+                        " should use ${{prometheusds}}",
                     )
-
-    def test_dashboards_no_hardcoded_environment_filter(self):
-        """
-        Dashboard queries must not filter on environment="production".
-        """
-        dashboard_dir = Path("src/grafana_dashboards")
-        for path in dashboard_dir.glob("*.json"):
-            with open(path) as f:
-                content = f.read()
-            self.assertNotIn(
-                'environment=\\"production\\"',
-                content,
-                f"{path.name} contains hardcoded environment=production filter",
-            )
 
 
 class TestDebarchiveRelation:

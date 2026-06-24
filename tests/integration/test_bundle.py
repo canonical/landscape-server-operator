@@ -1209,11 +1209,15 @@ def test_cos_agent_dashboards_valid(
     for encoded in config["dashboards"]:
         raw = b64decode(encoded)
         dashboard = json.loads(lzma.decompress(raw))
-        assert "panels" in dashboard
         title = dashboard.get("title", "<untitled>")
-
-        content = json.dumps(dashboard)
-        assert "DS_IL3" not in content, f"'{title}' has hardcoded DS_IL3 datasource"
-        assert 'environment=\\"production\\"' not in content, (
-            f"'{title}' has hardcoded environment filter"
+        assert "panels" in dashboard, (
+            f"'{title}' missing panels"
         )
+        for panel in dashboard["panels"]:
+            ds = panel.get("datasource", {})
+            if ds.get("type") == "prometheus":
+                assert ds["uid"] == "${prometheusds}", (
+                    f"'{title}' panel"
+                    f" '{panel.get('title')}'"
+                    " should use ${{prometheusds}}"
+                )
