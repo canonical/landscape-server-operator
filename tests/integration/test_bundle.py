@@ -1210,9 +1210,7 @@ def test_cos_agent_dashboards_valid(
         raw = b64decode(encoded)
         dashboard = json.loads(lzma.decompress(raw))
         title = dashboard.get("title", "<untitled>")
-        assert "panels" in dashboard, (
-            f"'{title}' missing panels"
-        )
+        assert "panels" in dashboard, f"'{title}' missing panels"
         for panel in dashboard["panels"]:
             ds = panel.get("datasource", {})
             if ds.get("type") == "prometheus":
