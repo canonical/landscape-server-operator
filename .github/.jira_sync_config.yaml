@@ -1,6 +1,6 @@
 settings:
   # Jira project key to create the issue in
-  jira_project_key: "MTC"
+  jira_project_key: "LNDENG"
 
   # Dictionary mapping GitHub issue status to Jira issue status
   status_mapping:
@@ -14,9 +14,9 @@ settings:
 
   # (Optional) Jira project components that should be attached to the created issue
   # Component names are case-sensitive
-  components:
-    - IoT
-    - DACH TT
+  # components:
+  #   - IoT
+  #   - DACH TT
 
   # (Optional) GitHub labels. Only issues with one of those labels will be synchronized.
   # If not specified, all issues will be synchronized
