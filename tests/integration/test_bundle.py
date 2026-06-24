@@ -5,7 +5,9 @@ and Landscape Server.
 NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 """
 
+from base64 import b64decode
 import json
+import lzma
 import re
 import shlex
 from urllib.parse import urlparse
@@ -19,13 +21,19 @@ from charm import (
     LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LEADER_SERVICES,
+    METRIC_INSTRUMENTED_SERVICE_PORTS,
 )
 from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
+    all_landscape_active,
+    get_cos_agent_config,
     get_session,
+    has_cos_agent,
     has_legacy_pg,
     has_modern_pg,
     has_pgbouncer,
+    leader_unit_name,
+    relation_app_data,
     supports_legacy_pg,
     wait_for_http_status,
     wait_for_service,
@@ -51,7 +59,7 @@ def _query_main_db(juju: jubilant.Juju, sql: str) -> str:
         f"-tAc {shlex.quote(sql)}"
     )
 
-    return juju.ssh("landscape-server/leader", ssh_command)
+    return juju.exec(ssh_command, unit="landscape-server/leader").stdout
 
 
 def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
@@ -66,36 +74,9 @@ def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
     pytest.skip("No haproxy app found in local or lbaas model")
 
 
-def _leader_unit_name(juju: jubilant.Juju, app: str) -> str:
-    """Return the leader unit name for an application."""
-    app_status = juju.status().apps[app]
-    for name, unit_status in app_status.units.items():
-        if unit_status.leader:
-            return name
-    pytest.fail(f"No leader unit found for {app}")
-
-
-def _relation_app_data(juju: jubilant.Juju, unit: str, endpoint: str) -> dict:
-    """Return the local app databag for a unit's relation endpoint."""
-    ids_stdout = juju.cli("exec", "--unit", unit, "--", f"relation-ids {endpoint}")
-    ids = ids_stdout.strip().splitlines()
-    if not ids:
-        pytest.fail(f"No relation IDs found for endpoint {endpoint}")
-
-    data_stdout = juju.cli(
-        "exec",
-        "--unit",
-        unit,
-        "--",
-        f"relation-get --format=json -r {ids[0]} --app - {unit}",
-    )
-    data = json.loads(data_stdout)
-    return {k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()}
-
-
 def test_debarchive_relation(juju: jubilant.Juju):
     """Landscape Server and debarchive publish and consume relation data."""
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
     status = juju.status()
 
     if "landscape-debarchive" not in status.apps:
@@ -107,8 +88,8 @@ def test_debarchive_relation(juju: jubilant.Juju):
     assert "landscape-server" in debarchive_relations
     assert "database" in debarchive_relations
 
-    leader_unit = _leader_unit_name(juju, "landscape-server")
-    data = _relation_app_data(juju, leader_unit, "debarchive")
+    leader_unit = leader_unit_name(juju, "landscape-server")
+    data = relation_app_data(juju, leader_unit, "debarchive")
     expected_hostname = urlparse(
         juju.config("landscape-server").get("root_url", "https://landscape.local/")
     ).hostname
@@ -116,10 +97,10 @@ def test_debarchive_relation(juju: jubilant.Juju):
     assert data["hostname"] == expected_hostname
     assert data["secret-token-id"].startswith("secret://")
 
-    token = juju.ssh(
-        "landscape-debarchive/leader",
+    token = juju.exec(
         "sudo snap get landscape-debarchive deb.archive.jwt.secret",
-    ).strip()
+        unit="landscape-debarchive/leader",
+    ).stdout.strip()
     assert token and token != "-"
 
 
@@ -146,8 +127,8 @@ def test_redirect_https_none_routes_not_redirected(
     original = juju.config("landscape-server").get("redirect_https")
     try:
         juju.config("landscape-server", values={"redirect_https": "none"})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
         for route in ("ping", "api/about", "message-system", "upload"):
             url = f"http://{host}/{route}"
@@ -162,8 +143,8 @@ def test_redirect_https_none_routes_not_redirected(
     finally:
         restore = original or "default"
         juju.config("landscape-server", values={"redirect_https": restore})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -184,8 +165,8 @@ def test_redirect_https_all_routes_redirect_to_https(
     original = juju.config("landscape-server").get("redirect_https")
     try:
         juju.config("landscape-server", values={"redirect_https": "all"})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
         for route in (
             "ping",
@@ -208,8 +189,8 @@ def test_redirect_https_all_routes_redirect_to_https(
     finally:
         restore = original or "default"
         juju.config("landscape-server", values={"redirect_https": restore})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -230,8 +211,8 @@ def test_redirect_https_default_routes_redirect_to_https(
     original = juju.config("landscape-server").get("redirect_https")
     try:
         juju.config("landscape-server", values={"redirect_https": "default"})
-        juju.wait(jubilant.all_active, timeout=600)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=600)
+        lbaas.wait(all_landscape_active, timeout=300)
 
         for route in ("ping",):
             url = f"http://{host}/{route}"
@@ -263,8 +244,8 @@ def test_redirect_https_default_routes_redirect_to_https(
     finally:
         restore = original or "default"
         juju.config("landscape-server", values={"redirect_https": restore})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -280,8 +261,8 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
     original = juju.config("landscape-server").get("redirect_https")
     try:
         juju.config("landscape-server", values={"redirect_https": "default"})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
         routes = ("ping", "api/about", "message-system", "")
 
@@ -295,8 +276,8 @@ def test_services_up_over_https(juju: jubilant.Juju, lbaas: jubilant.Juju):
     finally:
         restore = original or "default"
         juju.config("landscape-server", values={"redirect_https": restore})
-        juju.wait(jubilant.all_active, timeout=300)
-        lbaas.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
+        lbaas.wait(all_landscape_active, timeout=300)
 
 
 def test_modern_database_relation(
@@ -342,7 +323,7 @@ def test_bootstrap_account_created_with_modern_database(
         pytest.skip("root_url must be configured for bootstrap-account")
     admin_email = config["admin_email"]
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     result = _query_main_db(juju, "SELECT email FROM person;")
     assert admin_email in result, (
@@ -360,7 +341,7 @@ def test_demo_data_created_when_config_enabled(juju: jubilant.Juju, bundle: None
     if not juju.config("landscape-server").get("demo_data"):
         pytest.skip("demo_data is not enabled in model config")
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     result = _query_main_db(juju, "SELECT COUNT(*) FROM computer;")
     assert int(result.strip()) > 0, "Expected demo computers when demo_data is enabled"
@@ -381,7 +362,7 @@ def test_demo_data_registration_key_matches_config(juju: jubilant.Juju, bundle: 
     if not registration_key:
         pytest.skip("registration_key is not set in model config")
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     result = _query_main_db(juju, "SELECT registration_key FROM account LIMIT 1;")
     assert result.strip() == registration_key, (
@@ -441,7 +422,7 @@ def test_get_service_conf_action(juju: jubilant.Juju, bundle: None):
     The get-service-conf action returns a JSON-serialisable dict with the
     expected top-level sections from service.conf.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     result = juju.run("landscape-server/leader", "get-service-conf")
     assert result.status == "completed"
@@ -462,7 +443,7 @@ def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
     pgbouncer or direct PostgreSQL is in use, since the host/port/user/password/
     dbname come from whatever landscape-server is configured to connect to.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     result = _query_main_db(
         juju,
@@ -483,7 +464,7 @@ def test_all_services_up(juju: jubilant.Juju, lbaas: jubilant.Juju):
     Uses `wait_for_service` rather than a one-shot check because Juju
     reporting active does not guarantee the services have finished starting.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     status = juju.status()
     units = status.apps["landscape-server"].units
@@ -513,7 +494,7 @@ def test_ubuntu_installer_attach_service(juju: jubilant.Juju, lbaas: jubilant.Ju
     Attach which will actually install/uninstall the package/service in addition
     to creating an HAProxy backend for it.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     status = juju.status()
     units = status.apps["landscape-server"].units
@@ -523,7 +504,7 @@ def test_ubuntu_installer_attach_service(juju: jubilant.Juju, lbaas: jubilant.Ju
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": "true"}
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
         for name in units.keys():
             wait_for_service(juju, name, LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
@@ -532,7 +513,7 @@ def test_ubuntu_installer_attach_service(juju: jubilant.Juju, lbaas: jubilant.Ju
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": restore_val}
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -546,7 +527,7 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
     Toggling Ubuntu Installer Attach should return to active status and
     reflect the correct service state.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
     config = juju.config("landscape-server")
     original_installer = config.get("enable_ubuntu_installer_attach")
 
@@ -554,7 +535,7 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": "true"}
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
         status = juju.status()
         assert status.apps["landscape-server"].app_status.current == "active"
@@ -565,16 +546,16 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": "false"}
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
         status = juju.status()
         assert status.apps["landscape-server"].app_status.current == "active"
 
         for name in status.apps["landscape-server"].units.keys():
             with pytest.raises(Exception):
-                juju.ssh(
-                    name,
+                juju.exec(
                     f"systemctl is-active {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}.service",
+                    unit=name,
                 )
 
     finally:
@@ -582,7 +563,7 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": restore_val}
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 def test_non_leader_unit_redirects_leader_only_services(
@@ -594,10 +575,10 @@ def test_non_leader_unit_redirects_leader_only_services(
     if len(units) <= 1:
         pytest.skip("Need more than 1 unit to have a non-leader!")
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     host = _haproxy_ip(juju, lbaas)
-    assert juju.wait(jubilant.all_active, timeout=300) and (
+    assert juju.wait(all_landscape_active, timeout=300) and (
         get_session().get(f"https://{host}/upload", verify=False).status_code == 200
     )
 
@@ -606,7 +587,7 @@ def test_appserver_haproxy_route_enabled(juju: jubilant.Juju, lbaas: jubilant.Ju
     """
     Verify that appserver-haproxy-route is present and publishes correct data.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
     status = juju.status()
     app_status = status.apps["landscape-server"]
 
@@ -663,7 +644,7 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
     ):
         pytest.skip("gRPC haproxy-route not integrated, skipping...")
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
     config = juju.config("landscape-server")
     original_hostagent = config.get("enable_hostagent_messenger")
     original_installer = config.get("enable_ubuntu_installer_attach")
@@ -676,7 +657,7 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
                 "enable_ubuntu_installer_attach": "true",
             },
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
         status = juju.status()
         app_status = status.apps["landscape-server"]
         assert "hostagent-messenger-haproxy-route" in app_status.relations
@@ -741,7 +722,7 @@ def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju, lbaas: jubilant.
                 ),
             },
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 def test_lbaas_http_routes(juju: jubilant.Juju, lbaas: jubilant.Juju):
@@ -850,7 +831,7 @@ def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juj
     original_hostagent = config.get("enable_hostagent_messenger")
     try:
         juju.config("landscape-server", values={"enable_hostagent_messenger": "true"})
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
         haproxy_unit_name = list(lbaas_status.apps["haproxy"].units.keys())[0]
         cert_result = lbaas.run(
@@ -872,7 +853,7 @@ def test_lbaas_grpc_hostagent_messenger(juju: jubilant.Juju, lbaas: jubilant.Juj
                 "enable_hostagent_messenger": "true" if original_hostagent else "false"
             },
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -912,7 +893,7 @@ def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant
         juju.config(
             "landscape-server", values={"enable_ubuntu_installer_attach": "true"}
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
         haproxy_unit_name = list(lbaas_status.apps["haproxy"].units.keys())[0]
         cert_result = lbaas.run(
@@ -936,7 +917,7 @@ def test_lbaas_grpc_ubuntu_installer_attach(juju: jubilant.Juju, lbaas: jubilant
                 )
             },
         )
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -950,11 +931,11 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     self-hosted-beta) works correctly.
     """
     unit_name = next(iter(juju.status().apps["landscape-server"].units))
-    series = juju.ssh(unit_name, "lsb_release -cs").strip()
+    series = juju.exec("lsb_release -cs", unit=unit_name).stdout.strip()
     if series == "resolute":
         pytest.skip()
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     landscape_ppas_config = juju.config("landscape-server").get(
         "landscape_ppa", "ppa:landscape/self-hosted-beta"
@@ -972,13 +953,16 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
     unit_name = next(iter(juju.status().apps["landscape-server"].units))
 
     try:
-        juju.ssh(
-            unit_name,
+        juju.exec(
             f"sudo add-apt-repository -y {old_ppa} && "
             f"sudo add-apt-repository -y --remove {landscape_ppa}",
+            unit=unit_name,
         )
         try:
-            juju.ssh(unit_name, f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/")
+            juju.exec(
+                f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/",
+                unit=unit_name,
+            )
             pytest.fail(f"Expected '{ppa_slug}' to be absent before upgrade")
         except Exception:
             pass
@@ -986,10 +970,16 @@ def test_upgrade_action_updates_ppa(juju: jubilant.Juju, bundle: None):
         juju.run(unit_name, "pause")
         juju.run(unit_name, "upgrade")
 
-        juju.ssh(unit_name, f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/")
+        juju.exec(
+            f"grep -r '{ppa_slug}' /etc/apt/sources.list.d/",
+            unit=unit_name,
+        )
     finally:
         for ppa in landscape_ppas:
-            juju.ssh(unit_name, f"sudo add-apt-repository -y {ppa}")
+            juju.exec(
+                f"sudo add-apt-repository -y {ppa}",
+                unit=unit_name,
+            )
         juju.run(unit_name, "pause")
         juju.run(unit_name, "upgrade")
         juju.run(unit_name, "resume")
@@ -1005,18 +995,24 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
     """
 
     # Default deployment should work out-of-the-box
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
     status = juju.status()
     units = status.apps["landscape-server"].units
 
     channel = juju.config("landscape-server")["outbox_snap_channel"]
 
     for unit in units:
-        snap_list = juju.ssh(unit, f"snap list {LANDSCAPE_OUTBOX_SNAP}")
+        snap_list = juju.exec(
+            f"snap list {LANDSCAPE_OUTBOX_SNAP}",
+            unit=unit,
+        ).stdout
         assert LANDSCAPE_OUTBOX_SNAP in snap_list
         assert str(channel) in snap_list
 
-        snap_services = juju.ssh(unit, f"snap services {LANDSCAPE_OUTBOX_SNAP}")
+        snap_services = juju.exec(
+            f"snap services {LANDSCAPE_OUTBOX_SNAP}",
+            unit=unit,
+        ).stdout
         assert re.search(r"\bactive\b", snap_services)
 
     # Refreshing to an invalid channel should fail
@@ -1033,7 +1029,7 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
     juju.config(
         "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
     )
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -1044,7 +1040,7 @@ def test_action_pause_stops_services(juju: jubilant.Juju, bundle: None):
     """
     The pause action stops all Landscape systemd services on every unit.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     status = juju.status()
     units = list(status.apps["landscape-server"].units)
@@ -1054,16 +1050,17 @@ def test_action_pause_stops_services(juju: jubilant.Juju, bundle: None):
             juju.run(unit, "pause")
 
         for unit in units:
-            result = juju.ssh(
-                unit, "systemctl is-active landscape-server.target || true"
-            )
+            result = juju.exec(
+                "systemctl is-active landscape-server.target || true",
+                unit=unit,
+            ).stdout
             assert "inactive" in result or "failed" in result, (
                 f"Expected landscape-server.target to be inactive after pause on {unit}"
             )
     finally:
         for unit in units:
             juju.run(unit, "resume")
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -1074,7 +1071,7 @@ def test_action_resume_starts_services(juju: jubilant.Juju, bundle: None):
     """
     The resume action starts all Landscape systemd services after a pause.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
     status = juju.status()
     units = list(status.apps["landscape-server"].units)
@@ -1090,7 +1087,7 @@ def test_action_resume_starts_services(juju: jubilant.Juju, bundle: None):
             for service in DEFAULT_SERVICES:
                 wait_for_service(juju, unit, service)
     finally:
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -1101,9 +1098,9 @@ def test_action_migrate_schema_fails_while_running(juju: jubilant.Juju, bundle: 
     """
     Running migrate-schema while Landscape is running (not paused) must fail.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
-    unit = _leader_unit_name(juju, "landscape-server")
+    unit = leader_unit_name(juju, "landscape-server")
 
     with pytest.raises(Exception):
         juju.run(unit, "migrate-schema")
@@ -1117,9 +1114,9 @@ def test_action_migrate_schema_while_paused(juju: jubilant.Juju, bundle: None):
     """
     migrate-schema succeeds on the leader unit when Landscape is paused.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
-    unit = _leader_unit_name(juju, "landscape-server")
+    unit = leader_unit_name(juju, "landscape-server")
 
     try:
         juju.run(unit, "pause")
@@ -1129,7 +1126,7 @@ def test_action_migrate_schema_while_paused(juju: jubilant.Juju, bundle: None):
         )
     finally:
         juju.run(unit, "resume")
-        juju.wait(jubilant.all_active, timeout=300)
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
@@ -1141,11 +1138,82 @@ def test_action_migrate_schema_allow_connections(juju: jubilant.Juju, bundle: No
     migrate-schema with allow-connections=true succeeds while Landscape is running,
     allowing schema migration via PgBouncer without a full pause.
     """
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
-    unit = _leader_unit_name(juju, "landscape-server")
+    unit = leader_unit_name(juju, "landscape-server")
 
     result = juju.run(unit, "migrate-schema", {"allow-connections": True})
     assert result.status == "completed", (
         f"Expected migrate-schema --allow-connections to complete, got: {result.status}"
     )
+
+
+def test_cos_agent_scrape_jobs(juju: jubilant.Juju, bundle: None):
+    """
+    The cos-agent relation publishes scrape configs for every
+    metric-instrumented Landscape service.
+    """
+    if not has_cos_agent(juju):
+        pytest.skip("No cos-agent relation")
+
+    config = get_cos_agent_config(juju)
+    scrape_jobs = config["metrics_scrape_jobs"]
+
+    expected_services = {svc for svc, _ in METRIC_INSTRUMENTED_SERVICE_PORTS}
+    actual_services = {
+        job["static_configs"][0]["labels"]["landscape_service"] for job in scrape_jobs
+    }
+    assert expected_services == actual_services, (
+        f"Missing services: {expected_services - actual_services}"
+    )
+
+
+def test_cos_agent_dashboards_present(
+    juju: jubilant.Juju,
+    bundle: None,
+):
+    """
+    The cos-agent relation publishes one dashboard per JSON file
+    in src/grafana_dashboards/.
+    """
+    if not has_cos_agent(juju):
+        pytest.skip("No cos-agent relation")
+
+    config = get_cos_agent_config(juju)
+    dashboards = config["dashboards"]
+
+    file_count = int(
+        juju.exec(
+            "ls src/grafana_dashboards/*.json | wc -l",
+            unit="landscape-server/leader",
+        ).stdout.strip()
+    )
+    assert len(dashboards) == file_count, (
+        f"Expected {file_count} dashboards, got {len(dashboards)}"
+    )
+
+
+def test_cos_agent_dashboards_valid(
+    juju: jubilant.Juju,
+    bundle: None,
+):
+    """
+    Each dashboard in the cos-agent relation decompresses to valid
+    JSON with panels and uses ${prometheusds} datasource.
+    """
+    if not has_cos_agent(juju):
+        pytest.skip("No cos-agent relation")
+
+    config = get_cos_agent_config(juju)
+
+    for encoded in config["dashboards"]:
+        raw = b64decode(encoded)
+        dashboard = json.loads(lzma.decompress(raw))
+        assert "panels" in dashboard
+        title = dashboard.get("title", "<untitled>")
+
+        content = json.dumps(dashboard)
+        assert "DS_IL3" not in content, f"'{title}' has hardcoded DS_IL3 datasource"
+        assert 'environment=\\"production\\"' not in content, (
+            f"'{title}' has hardcoded environment filter"
+        )

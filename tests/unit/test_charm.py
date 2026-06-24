@@ -6,7 +6,9 @@
 
 from grp import struct_group
 import json
+import lzma
 import os
+from pathlib import Path
 from pwd import struct_passwd
 import subprocess
 from subprocess import CalledProcessError
@@ -122,7 +124,7 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
 
         actual_static_configs = [scrape["static_configs"][0] for scrape in scrape_jobs]
 
-        self.assertListEqual(expected_static_configs, actual_static_configs)
+        self.assertCountEqual(expected_static_configs, actual_static_configs)
 
     def test_scrape_interval(self):
         """
@@ -142,6 +144,83 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
 
         for scrape_job in config["metrics_scrape_jobs"]:
             self.assertEqual(scrape_interval, scrape_job["scrape_interval"])
+
+    def test_dashboards_included_in_relation(self):
+        """
+        All Grafana dashboards from src/grafana_dashboards/ are included
+        in the cos-agent relation data.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("cos-agent")
+        state = State(relations=[relation])
+
+        result = context.run(context.on.relation_joined(relation), state)
+        config = self._get_cos_agent_relation_config(result)
+
+        self.assertIn("dashboards", config)
+
+        dashboard_dir = Path("src/grafana_dashboards")
+        expected_count = len(list(dashboard_dir.glob("*.json")))
+        self.assertEqual(len(config["dashboards"]), expected_count)
+
+    def test_dashboards_are_valid_json(self):
+        """
+        Each dashboard in the relation data decompresses to valid JSON.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("cos-agent")
+        state = State(relations=[relation])
+
+        result = context.run(context.on.relation_joined(relation), state)
+        config = self._get_cos_agent_relation_config(result)
+
+        import base64
+
+        for encoded in config["dashboards"]:
+            raw = base64.b64decode(encoded)
+            dashboard = json.loads(lzma.decompress(raw))
+            self.assertIsInstance(dashboard, dict)
+            self.assertIn("panels", dashboard)
+
+    def test_dashboards_use_prometheusds_datasource(self):
+        """
+        All dashboard datasource references use ${prometheusds}, not
+        hardcoded datasource UIDs.
+        """
+        dashboard_dir = Path("src/grafana_dashboards")
+        for path in dashboard_dir.glob("*.json"):
+            with open(path) as f:
+                content = f.read()
+            self.assertNotIn(
+                "DS_IL3",
+                content,
+                f"{path.name} contains hardcoded DS_IL3 datasource reference",
+            )
+            dashboard = json.loads(content)
+            for panel in dashboard.get("panels", []):
+                ds = panel.get("datasource", {})
+                if ds.get("type") == "prometheus":
+                    self.assertEqual(
+                        ds["uid"],
+                        "${prometheusds}",
+                        f"{path.name} panel"
+                        f" '{panel.get('title')}'"
+                        " has wrong datasource uid",
+                    )
+
+    def test_dashboards_no_hardcoded_environment_filter(self):
+        """
+        Dashboard queries must not filter on environment="production".
+        """
+        dashboard_dir = Path("src/grafana_dashboards")
+        for path in dashboard_dir.glob("*.json"):
+            with open(path) as f:
+                content = f.read()
+            self.assertNotIn(
+                'environment=\\"production\\"',
+                content,
+                f"{path.name} contains hardcoded environment=production filter",
+            )
 
 
 class TestDebarchiveRelation:
