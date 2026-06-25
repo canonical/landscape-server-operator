@@ -1269,7 +1269,7 @@ class TestCharm(unittest.TestCase):
         )
         mocks["check_call"].assert_any_call(["apt-mark", "hold", "landscape-server"])
         mocks["apt"].add_package.assert_called_once_with(
-            ["landscape-server", LANDSCAPE_HASH_IDS],
+            ["landscape-server", "landscape-hashids"],
             update_cache=True,
         )
         mocks["snap"].add.assert_called_once_with(
@@ -3257,7 +3257,7 @@ class TestPackageInstall:
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
+            patch("charm.check_call") as check_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
@@ -3267,6 +3267,11 @@ class TestPackageInstall:
         apt_mock.add_package.assert_called_once_with(
             [LANDSCAPE_SERVER], update_cache=True
         )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
 
     def test_install_landscape_server_hashids(self):
         """
@@ -3284,7 +3289,7 @@ class TestPackageInstall:
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
+            patch("charm.check_call") as check_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
@@ -3294,6 +3299,11 @@ class TestPackageInstall:
         apt_mock.add_package.assert_called_once_with(
             [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS], update_cache=True
         )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
 
     def test_install_landscape_server_hashids_hosted(self):
         """
@@ -3311,7 +3321,7 @@ class TestPackageInstall:
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
+            patch("charm.check_call") as check_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
@@ -3322,6 +3332,11 @@ class TestPackageInstall:
             [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED],
             update_cache=True,
         )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
 
     def test_install_landscape_server_hosted(self):
         """
@@ -3339,7 +3354,7 @@ class TestPackageInstall:
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
+            patch("charm.check_call") as check_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
@@ -3350,3 +3365,8 @@ class TestPackageInstall:
             [LANDSCAPE_SERVER, LANDSCAPE_HOSTED],
             update_cache=True,
         )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
