@@ -811,7 +811,6 @@ class LandscapeServerCharm(CharmBase):
         # least any juju_proxy setting, add the classic http(s)_proxy to the env
         # that will be used only for add-apt-repository call
         add_apt_repository_env = self._build_add_apt_repository_env()
-        apt_mark_hold_list = [LANDSCAPE_SERVER]
         pkg_list = [LANDSCAPE_SERVER]
         for ppa in self.charm_config.landscape_ppas:
             try:
@@ -839,12 +838,10 @@ class LandscapeServerCharm(CharmBase):
                 raise e
         else:
             pkg_list.append(LANDSCAPE_HASH_IDS)
-            apt_mark_hold_list.append(LANDSCAPE_HASH_IDS)
 
         deployment_mode = self.charm_config.deployment_mode
         if deployment_mode != "standalone":
             pkg_list.append(LANDSCAPE_HOSTED)
-            apt_mark_hold_list.append(LANDSCAPE_HOSTED)
 
         # Explicitly ensure cache is up-to-date after adding the PPA.
         try:
@@ -853,11 +850,11 @@ class LandscapeServerCharm(CharmBase):
             logger.error("Failed to install packages: %s", str(e))
             raise e
 
-        for p in apt_mark_hold_list:
+        for p in pkg_list:
             try:
                 check_call(["apt-mark", "hold", p])
             except CalledProcessError as e:
-                logger.error("failed trying to hold %s: %s", p, str(e))
+                logger.error("Error trying to hold %s: %s", p, str(e))
                 raise e
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
