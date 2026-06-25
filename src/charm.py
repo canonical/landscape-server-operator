@@ -842,23 +842,27 @@ class LandscapeServerCharm(CharmBase):
                 logger.error("Failed to add PPA '%s': %s", ppa, str(e))
                 raise e
 
-        install_list = [LANDSCAPE_SERVER]
-        if not self.charm_config.min_install:
-            install_list.append(LANDSCAPE_HASH_IDS)
-        if self.charm_config.deployment_mode != "standalone":
-            install_list.append(LANDSCAPE_HOSTED)
-
-        # Only hold packages that were explicitly installed (not recommends-pulled-in).
-        # When min_install=True, landscape-hosted is installed but not held because
-        # it pulled in as a package, not a controlled dependency.
-        hold_list = [LANDSCAPE_SERVER]
-        if not self.charm_config.min_install:
+        if self.charm_config.min_install:
+            try:
+                check_call(
+                    [
+                        "apt-get",
+                        "install",
+                        "--no-install-recommends",
+                        "-y",
+                        LANDSCAPE_SERVER,
+                    ]
+                )
+            except CalledProcessError as e:
+                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
+                raise e
+            self._hold_debian_packages([LANDSCAPE_SERVER])
+        else:
+            pkg_list = [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
             if self.charm_config.deployment_mode != "standalone":
-                hold_list.append(LANDSCAPE_HOSTED)
-            hold_list.append(LANDSCAPE_HASH_IDS)
-
-        self._install_debian_packages_with_recommends(install_list)
-        self._hold_debian_packages(hold_list)
+                pkg_list.append(LANDSCAPE_HOSTED)
+            self._install_debian_packages_with_recommends(pkg_list)
+            self._hold_debian_packages(pkg_list)
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:

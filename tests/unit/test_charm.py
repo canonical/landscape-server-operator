@@ -3256,19 +3256,21 @@ class TestPackageInstall:
         )
 
         with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.apt", spec_set=apt),
             patch("charm.check_call") as check_mock,
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
         ):
-            apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
 
-        apt_mock.add_package.assert_called_once_with(
-            [LANDSCAPE_SERVER], update_cache=True
-        )
-
         check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert [
+            "apt-get",
+            "install",
+            "--no-install-recommends",
+            "-y",
+            LANDSCAPE_SERVER,
+        ] in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
