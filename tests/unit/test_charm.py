@@ -61,6 +61,7 @@ from charm import (
     UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
 )
 from settings_files import AMQP_USERNAME, VHOSTS
+from src.charm import LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED, LANDSCAPE_SERVER
 
 IS_CI = os.getenv("GITHUB_ACTIONS", None) is not None
 """
@@ -1268,7 +1269,7 @@ class TestCharm(unittest.TestCase):
         )
         mocks["check_call"].assert_any_call(["apt-mark", "hold", "landscape-server"])
         mocks["apt"].add_package.assert_called_once_with(
-            ["landscape-server", "landscape-hashids"],
+            ["landscape-server", LANDSCAPE_HASH_IDS],
             update_cache=True,
         )
         mocks["snap"].add.assert_called_once_with(
@@ -3264,13 +3265,13 @@ class TestPackageInstall:
             ctx.run(ctx.on.install(), state)
 
         apt_mock.add_package.assert_called_once_with(
-            ["landscape-server"], update_cache=True
+            [LANDSCAPE_SERVER], update_cache=True
         )
 
     def test_install_landscape_server_hashids(self):
         """
         When passing `min_install=false` and running in standalone mode,
-        only the landscape-server package is installed.
+        the landscape-server and landscape-hashids packages are installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
@@ -3291,13 +3292,13 @@ class TestPackageInstall:
             ctx.run(ctx.on.install(), state)
 
         apt_mock.add_package.assert_called_once_with(
-            ["landscape-server", "landscape-hashids"], update_cache=True
+            [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS], update_cache=True
         )
 
     def test_install_landscape_server_hashids_hosted(self):
         """
         When passing `min_install=false` and running in SaaS mode,
-        only the landscape-server package is installed.
+        only the all three packages are installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
@@ -3318,14 +3319,14 @@ class TestPackageInstall:
             ctx.run(ctx.on.install(), state)
 
         apt_mock.add_package.assert_called_once_with(
-            ["landscape-server", "landscape-hashids", "landscape-hosted"],
+            [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED],
             update_cache=True,
         )
 
     def test_install_landscape_server_hosted(self):
         """
-        When passing `min_install=false` and running in SaaS mode,
-        only the landscape-server package is installed.
+        When passing `min_install=true` and running in SaaS mode,
+        the landscape-server and landscape-hosted packages are installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
@@ -3346,6 +3347,6 @@ class TestPackageInstall:
             ctx.run(ctx.on.install(), state)
 
         apt_mock.add_package.assert_called_once_with(
-            ["landscape-server", "landscape-hosted"],
+            [LANDSCAPE_SERVER, LANDSCAPE_HOSTED],
             update_cache=True,
         )
