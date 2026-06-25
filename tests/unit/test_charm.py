@@ -4,7 +4,6 @@
 # Learn more about testing at
 # https://documentation.ubuntu.com/ops/latest/explanation/testing/
 
-import logging
 from grp import struct_group
 import json
 import os
@@ -1399,11 +1398,13 @@ class TestCharm(unittest.TestCase):
     ):
         root_url = "https://landscape.local/"
         system_email = "landscape-devel@lists.canonical.com"
-        self.harness.update_config({
-            "deployment_mode": "standalone",
-            "root_url": root_url,
-            "system_email": system_email,
-        })
+        self.harness.update_config(
+            {
+                "deployment_mode": "standalone",
+                "root_url": root_url,
+                "system_email": system_email,
+            }
+        )
 
         with (
             patch("charm.check_call") as check_call_mock,
@@ -1443,11 +1444,13 @@ class TestCharm(unittest.TestCase):
 
     @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
     def test_migrate_schema_bootstrap_override_args(self, get_env):
-        self.harness.update_config({
-            "bootstrap_schema_override_args": (
-                "--with-openstack,--with-extra-computers,10"
-            )
-        })
+        self.harness.update_config(
+            {
+                "bootstrap_schema_override_args": (
+                    "--with-openstack,--with-extra-computers,10"
+                )
+            }
+        )
 
         with (
             patch("charm.check_call") as check_call_mock,
@@ -1589,9 +1592,9 @@ class TestCharm(unittest.TestCase):
     def test_update_ready_status_not_running(self):
         self.harness.charm.unit.status = WaitingStatus()
 
-        self.harness.charm._stored.ready.update({
-            k: True for k in self.harness.charm._stored.ready.keys()
-        })
+        self.harness.charm._stored.ready.update(
+            {k: True for k in self.harness.charm._stored.ready.keys()}
+        )
 
         patches = patch.multiple(
             "charm",
@@ -1613,9 +1616,9 @@ class TestCharm(unittest.TestCase):
     def test_update_ready_status_running(self):
         self.harness.charm.unit.status = WaitingStatus()
 
-        self.harness.charm._stored.ready.update({
-            k: True for k in self.harness.charm._stored.ready.keys()
-        })
+        self.harness.charm._stored.ready.update(
+            {k: True for k in self.harness.charm._stored.ready.keys()}
+        )
         self.harness.charm._stored.running = True
 
         self.harness.charm._update_ready_status()
@@ -1627,9 +1630,9 @@ class TestCharm(unittest.TestCase):
     def test_update_ready_status_called_process_error(self):
         self.harness.charm.unit.status = WaitingStatus()
 
-        self.harness.charm._stored.ready.update({
-            k: True for k in self.harness.charm._stored.ready.keys()
-        })
+        self.harness.charm._stored.ready.update(
+            {k: True for k in self.harness.charm._stored.ready.keys()}
+        )
 
         patches = patch.multiple(
             "charm",
@@ -1701,16 +1704,18 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(status, BlockedStatus)
         self.assertFalse(self.harness.charm._stored.ready["db"])
 
-        update_service_conf_mock.assert_called_once_with({
-            "stores": {
-                "host": "1.2.3.4:5678",
-                "password": "testpass",
-            },
-            "schema": {
-                "store_user": "testuser",
-                "store_password": "testpass",
-            },
-        })
+        update_service_conf_mock.assert_called_once_with(
+            {
+                "stores": {
+                    "host": "1.2.3.4:5678",
+                    "password": "testpass",
+                },
+                "schema": {
+                    "store_user": "testuser",
+                    "store_password": "testpass",
+                },
+            }
+        )
 
     @patch("charm.update_service_conf")
     def test_on_manual_db_config_change(self, _):
@@ -1750,11 +1755,13 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(update_service_conf_mock.call_count, 2)
         self.assertEqual(
             update_service_conf_mock.call_args_list[1],
-            call({
-                "stores": {
-                    "host": "hello:world",
-                },
-            }),
+            call(
+                {
+                    "stores": {
+                        "host": "hello:world",
+                    },
+                }
+            ),
         )
 
     @patch("charm.update_service_conf")
@@ -1948,12 +1955,14 @@ class TestCharm(unittest.TestCase):
         self.assertTrue(self.harness.charm._stored.ready["inbound-amqp"])
         self.assertTrue(self.harness.charm._stored.ready["outbound-amqp"])
 
-        mock_update_conf.assert_called_once_with({
-            "broker": {
-                "host": ",".join(hostname),
-                "password": password,
-            },
-        })
+        mock_update_conf.assert_called_once_with(
+            {
+                "broker": {
+                    "host": ",".join(hostname),
+                    "password": password,
+                },
+            }
+        )
 
     def test_amqp_relation_changed_outbound_first(self):
         """
@@ -1990,12 +1999,14 @@ class TestCharm(unittest.TestCase):
         self.assertTrue(self.harness.charm._stored.ready["inbound-amqp"])
         self.assertTrue(self.harness.charm._stored.ready["outbound-amqp"])
 
-        mock_update_conf.assert_called_once_with({
-            "broker": {
-                "host": hostname,
-                "password": password,
-            },
-        })
+        mock_update_conf.assert_called_once_with(
+            {
+                "broker": {
+                    "host": hostname,
+                    "password": password,
+                },
+            }
+        )
 
     def test_configure_smtp_relay_host(self):
         mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
@@ -2395,11 +2406,13 @@ class TestCharm(unittest.TestCase):
             )
 
         self.harness.charm._update_nrpe_checks.assert_called_once()
-        mock_update_conf.assert_called_once_with({
-            "package-search": {
-                "host": "localhost",
-            },
-        })
+        mock_update_conf.assert_called_once_with(
+            {
+                "package-search": {
+                    "host": "localhost",
+                },
+            }
+        )
 
     def test_on_replicas_relation_changed_non_leader(self):
         """
@@ -2419,11 +2432,13 @@ class TestCharm(unittest.TestCase):
             )
 
         self.harness.charm._update_nrpe_checks.assert_called_once()
-        mock_update_conf.assert_called_once_with({
-            "package-search": {
-                "host": "test",
-            },
-        })
+        mock_update_conf.assert_called_once_with(
+            {
+                "package-search": {
+                    "host": "test",
+                },
+            }
+        )
 
 
 class TestMultiplePPAs:
@@ -2532,10 +2547,12 @@ class TestBootstrapAccount(unittest.TestCase):
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
-        self.harness.update_config({
-            "admin_email": "hello@ubuntu.com",
-            "admin_name": "Hello Ubuntu",
-        })
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+            }
+        )
         self.log_mock.assert_any_call(
             "Admin email, name, and password required for bootstrap account"
         )
@@ -2543,34 +2560,40 @@ class TestBootstrapAccount(unittest.TestCase):
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_password_redacted(self, _):
-        self.harness.update_config({
-            "admin_email": "hello@ubuntu.com",
-            "admin_name": "Hello Ubuntu",
-            "admin_password": "secret123",
-            "registration_key": "secret123",
-            "root_url": "https://www.landscape.com",
-        })
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "secret123",
+                "registration_key": "secret123",
+                "root_url": "https://www.landscape.com",
+            }
+        )
         for mock_call in self.log_info_mock.call_args_list:
             self.assertNotIn("secret123", str(mock_call.args))
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_skips_when_no_root_url_and_no_leader_ip(self, _):
         """If neither root_url nor leader_ip is available, skip bootstrap."""
-        self.harness.update_config({
-            "admin_email": "hello@ubuntu.com",
-            "admin_name": "Hello Ubuntu",
-            "admin_password": "password",
-        })
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
         self.assertEqual(len(self._bootstrap_calls()), 0)
 
     @patch("charm.update_service_conf")
     def test_bootstrap_account_uses_leader_ip_when_no_root_url(self, _):
         self.harness.charm._stored.leader_ip = "10.0.0.1"
-        self.harness.update_config({
-            "admin_email": "hello@ubuntu.com",
-            "admin_name": "Hello Ubuntu",
-            "admin_password": "password",
-        })
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+            }
+        )
         calls = self._bootstrap_calls()
         self.assertEqual(len(calls), 1)
         self.assertIn(
@@ -2583,12 +2606,14 @@ class TestBootstrapAccount(unittest.TestCase):
         """If config root_url and leader_ip are both set, use config url"""
         self.harness.charm._stored.leader_ip = "10.0.0.1"
         config_root_url = "https://www.landscape.com"
-        self.harness.update_config({
-            "admin_email": "hello@ubuntu.com",
-            "admin_name": "Hello Ubuntu",
-            "admin_password": "password",
-            "root_url": config_root_url,
-        })
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+                "root_url": config_root_url,
+            }
+        )
         calls = self._bootstrap_calls()
         self.assertEqual(len(calls), 1)
         self.assertIn(config_root_url, calls[0].args[0])
