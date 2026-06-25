@@ -3338,10 +3338,10 @@ class TestPackageInstall:
         assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
 
-    def test_install_landscape_server_hosted(self):
+    def test_install_landscape_server_hosted_min_install_blocked(self):
         """
-        When passing `min_install=true` and running in SaaS mode,
-        the landscape-server and landscape-hosted packages are installed.
+        min_install=True with a non-standalone deployment_mode is a config error
+        since landscape-hosted depends on landscape-hashids.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
@@ -3354,19 +3354,10 @@ class TestPackageInstall:
 
         with (
             patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_mock,
+            patch("charm.check_call"),
             patch("charm.prepend_default_settings"),
             patch("charm.update_service_conf"),
+            ctx(ctx.on.install(), state) as mgr,
         ):
             apt_mock.add_package.return_value = None
-            ctx.run(ctx.on.install(), state)
-
-        apt_mock.add_package.assert_called_once_with(
-            [LANDSCAPE_SERVER, LANDSCAPE_HOSTED],
-            update_cache=True,
-        )
-
-        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
-        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
-        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
-        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
+            assert isinstance(mgr.charm.unit.status, BlockedStatus)

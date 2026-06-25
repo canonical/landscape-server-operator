@@ -778,6 +778,28 @@ class LandscapeServerCharm(CharmBase):
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
+    def _install_debian_packages_with_recommends(
+        self, package_names: list[str]
+    ) -> None:
+        """
+        Installs a Debian package via apt with `--install-recommends`.
+        """
+
+        # Explicitly ensure cache is up-to-date after adding the PPA.
+        try:
+            apt.add_package(package_names, update_cache=True)
+        except PackageError as e:
+            logger.error("Failed to install packages: %s", str(e))
+            raise e
+
+    def _hold_debian_packages(self, package_names: list[str]) -> None:
+        for p in package_names:
+            try:
+                check_call(["apt-mark", "hold", p])
+            except CalledProcessError as e:
+                logger.error("Error trying to hold %s: %s", p, str(e))
+                raise e
+
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
@@ -811,7 +833,6 @@ class LandscapeServerCharm(CharmBase):
         # least any juju_proxy setting, add the classic http(s)_proxy to the env
         # that will be used only for add-apt-repository call
         add_apt_repository_env = self._build_add_apt_repository_env()
-        pkg_list = [LANDSCAPE_SERVER]
         for ppa in self.charm_config.landscape_ppas:
             try:
                 check_call(
@@ -821,41 +842,23 @@ class LandscapeServerCharm(CharmBase):
                 logger.error("Failed to add PPA '%s': %s", ppa, str(e))
                 raise e
 
-        if self.charm_config.min_install:
-            logger.info("Not installing hashids..")
-            try:
-                check_call(
-                    [
-                        "apt",
-                        "install",
-                        LANDSCAPE_SERVER,
-                        "--no-install-recommends",
-                        "-y",
-                    ]
-                )
-            except CalledProcessError as e:
-                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
-                raise e
-        else:
-            pkg_list.append(LANDSCAPE_HASH_IDS)
+        install_list = [LANDSCAPE_SERVER]
+        if not self.charm_config.min_install:
+            install_list.append(LANDSCAPE_HASH_IDS)
+        if self.charm_config.deployment_mode != "standalone":
+            install_list.append(LANDSCAPE_HOSTED)
 
-        deployment_mode = self.charm_config.deployment_mode
-        if deployment_mode != "standalone":
-            pkg_list.append(LANDSCAPE_HOSTED)
+        # Only hold packages that were explicitly installed (not recommends-pulled-in).
+        # When min_install=True, landscape-hosted is installed but not held because
+        # it pulled in as a package, not a controlled dependency.
+        hold_list = [LANDSCAPE_SERVER]
+        if not self.charm_config.min_install:
+            if self.charm_config.deployment_mode != "standalone":
+                hold_list.append(LANDSCAPE_HOSTED)
+            hold_list.append(LANDSCAPE_HASH_IDS)
 
-        # Explicitly ensure cache is up-to-date after adding the PPA.
-        try:
-            apt.add_package(pkg_list, update_cache=True)
-        except PackageError as e:
-            logger.error("Failed to install packages: %s", str(e))
-            raise e
-
-        for p in pkg_list:
-            try:
-                check_call(["apt-mark", "hold", p])
-            except CalledProcessError as e:
-                logger.error("Error trying to hold %s: %s", p, str(e))
-                raise e
+        self._install_debian_packages_with_recommends(install_list)
+        self._hold_debian_packages(hold_list)
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:

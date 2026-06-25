@@ -143,18 +143,12 @@ class LandscapeCharmConfiguration(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def oidc_minimum_fields(self):
-        """
-        If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
-        must provide all three.
-        """
-        required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
-        fields = self.model_dump(include=set(required_configs))
-
-        if any(fields.values()) and not all(fields.values()):
+    def check_deployment_mode_min_install(self):
+        """min_install is only valid with standalone deployments."""
+        if self.min_install and self.deployment_mode != "standalone":
             raise ValueError(
-                f"When using OIDC, must provide all of {required_configs}. "
-                f"Got {fields}."
+                f"min_install=True is not compatible with "
+                f"deployment_mode={self.deployment_mode!r}."
             )
         return self
 
@@ -186,6 +180,22 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"the following ports: {', '.join(map(str, overused_ports))}"
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def oidc_minimum_fields(self):
+        """
+        If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
+        must provide all three.
+        """
+        required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
+        fields = self.model_dump(include=set(required_configs))
+
+        if any(fields.values()) and not all(fields.values()):
+            raise ValueError(
+                f"When using OIDC, must provide all of {required_configs}. "
+                f"Got {fields}."
+            )
         return self
 
 

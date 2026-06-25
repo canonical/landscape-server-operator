@@ -268,6 +268,40 @@ def test_landscape_ppas_strips_whitespace():
     assert config.landscape_ppas == ["ppa:foo/bar", "ppa:baz/qux"]
 
 
+@pytest.mark.parametrize(
+    "min_install,deployment_mode",
+    [
+        (True, "standalone"),
+        (False, "standalone"),
+        (False, "saas"),
+        (False, "my-custom-mode"),
+    ],
+)
+def test_min_install_valid_combinations(min_install, deployment_mode):
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "min_install": min_install,
+            "deployment_mode": deployment_mode,
+        }
+    )
+    assert config.min_install == min_install
+    assert config.deployment_mode == deployment_mode
+
+
+@pytest.mark.parametrize("deployment_mode", ["saas", "my-custom-mode"])
+def test_min_install_invalid_with_non_standalone(deployment_mode):
+    """min_install=True is blocked for non-standalone deployments."""
+    with pytest.raises(ValidationError, match="min_install=True is not compatible"):
+        LandscapeCharmConfiguration(
+            **{
+                **get_config_defaults(),
+                "min_install": True,
+                "deployment_mode": deployment_mode,
+            }
+        )
+
+
 def test_bootstrap_schema_override_args_list():
     config = LandscapeCharmConfiguration(
         **{
