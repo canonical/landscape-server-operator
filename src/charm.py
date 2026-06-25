@@ -111,6 +111,8 @@ GPG_SERVICE_CONF_SECTIONS = (
 )
 
 LANDSCAPE_SERVER = "landscape-server"
+LANDSCAPE_HASH_IDS = "landscape-hashids"
+LANDSCAPE_HOSTED = "landscape-hosted"
 LANDSCAPE_PACKAGES = (
     LANDSCAPE_SERVER,
     "landscape-client",
@@ -488,9 +490,9 @@ class LandscapeServerCharm(CharmBase):
         self._set_ports()
 
         # Update additional configuration
-        update_service_conf(
-            {"global": {"deployment-mode": self.charm_config.deployment_mode}}
-        )
+        update_service_conf({
+            "global": {"deployment-mode": self.charm_config.deployment_mode}
+        })
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
 
@@ -587,9 +589,9 @@ class LandscapeServerCharm(CharmBase):
                 logger.info("Generating new random cookie encryption key")
                 cookie_encryption_key = generate_cookie_encryption_key()
                 peer_relation = self.model.get_relation("replicas")
-                peer_relation.data[self.app].update(
-                    {"cookie-encryption-key": cookie_encryption_key}
-                )
+                peer_relation.data[self.app].update({
+                    "cookie-encryption-key": cookie_encryption_key
+                })
 
         secret_token_changed = (
             secret_token and secret_token != self._stored.secret_token
@@ -799,40 +801,61 @@ class LandscapeServerCharm(CharmBase):
         try:
             # This package is responsible for the hanging installs and ignores env vars
             apt.remove_package(["needrestart"])
+        except (PackageNotFoundError, PackageError) as e:
+            logger.error("Failed to remove needrestart package: %s", str(e))
+            raise e  # This will trigger juju's exponential retry
 
-            # Add the Landscape Server PPA and install via apt.
-            # add-apt-repository doesn't use the proxy configuration from apt or juju
-            # let's make sure to use the http(s) proxy settings from the charm or at
-            # least any juju_proxy setting, add the classic http(s)_proxy to the env
-            # that will be used only for add-apt-repository call
-            add_apt_repository_env = self._build_add_apt_repository_env()
-
-            for ppa in self.charm_config.landscape_ppas:
+        # Add the Landscape Server PPA and install via apt.
+        # add-apt-repository doesn't use the proxy configuration from apt or juju
+        # let's make sure to use the http(s) proxy settings from the charm or at
+        # least any juju_proxy setting, add the classic http(s)_proxy to the env
+        # that will be used only for add-apt-repository call
+        add_apt_repository_env = self._build_add_apt_repository_env()
+        apt_mark_hold_list = [LANDSCAPE_SERVER]
+        pkg_list = [LANDSCAPE_SERVER]
+        for ppa in self.charm_config.landscape_ppas:
+            try:
                 check_call(
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
+            except CalledProcessError as e:
+                logger.error("Failed to add PPA '%s': %s", ppa, str(e))
+                raise e
 
-            if self.charm_config.min_install:
-                logger.info("Not installing hashids..")
-                check_call(
-                    [
-                        "apt",
-                        "install",
-                        LANDSCAPE_SERVER,
-                        "--no-install-recommends",
-                        "-y",
-                    ]
-                )
-            else:
-                # Explicitly ensure cache is up-to-date after adding the PPA.
-                apt.add_package(
-                    [LANDSCAPE_SERVER, "landscape-hashids"], update_cache=True
-                )
-                check_call(["apt-mark", "hold", "landscape-hashids"])
-            check_call(["apt-mark", "hold", LANDSCAPE_SERVER])
-        except (PackageNotFoundError, PackageError, CalledProcessError) as exc:
-            logger.error("Failed to install packages")
-            raise exc  # This will trigger juju's exponential retry
+        if self.charm_config.min_install:
+            logger.info("Not installing hashids..")
+            try:
+                check_call([
+                    "apt",
+                    "install",
+                    LANDSCAPE_SERVER,
+                    "--no-install-recommends",
+                    "-y",
+                ])
+            except CalledProcessError as e:
+                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
+                raise e
+        else:
+            pkg_list.append(LANDSCAPE_HASH_IDS)
+            apt_mark_hold_list.append(LANDSCAPE_HASH_IDS)
+
+        deployment_mode = self.charm_config.deployment_mode
+        if deployment_mode != "standalone":
+            pkg_list.append(LANDSCAPE_HOSTED)
+            apt_mark_hold_list.append(LANDSCAPE_HOSTED)
+
+        # Explicitly ensure cache is up-to-date after adding the PPA.
+        try:
+            apt.add_package(pkg_list, update_cache=True)
+        except PackageError as e:
+            logger.error("Failed to install packages: %s", str(e))
+
+        for p in apt_mark_hold_list:
+            try:
+                check_call(["apt-mark", "hold", p])
+            except CalledProcessError as e:
+                logger.error("failed trying to hold %s: %s", p, str(e))
+                raise e
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:
@@ -897,23 +920,19 @@ class LandscapeServerCharm(CharmBase):
         deployment_mode = self.charm_config.deployment_mode
         is_standalone = deployment_mode == "standalone"
 
-        update_default_settings(
-            {
-                "RUN_ALL": "no",
-                "RUN_APISERVER": str(self.charm_config.worker_counts),
-                "RUN_ASYNC_FRONTEND": "yes",
-                "RUN_JOBHANDLER": "yes",
-                "RUN_APPSERVER": str(self.charm_config.worker_counts),
-                "RUN_MSGSERVER": str(self.charm_config.worker_counts),
-                "RUN_PINGSERVER": str(self.charm_config.worker_counts),
-                "RUN_CRON": "yes" if is_leader else "no",
-                "RUN_PACKAGESEARCH": "yes" if is_leader else "no",
-                "RUN_PACKAGEUPLOADSERVER": (
-                    "yes" if is_leader and is_standalone else "no"
-                ),
-                "RUN_PPPA_PROXY": "no",
-            }
-        )
+        update_default_settings({
+            "RUN_ALL": "no",
+            "RUN_APISERVER": str(self.charm_config.worker_counts),
+            "RUN_ASYNC_FRONTEND": "yes",
+            "RUN_JOBHANDLER": "yes",
+            "RUN_APPSERVER": str(self.charm_config.worker_counts),
+            "RUN_MSGSERVER": str(self.charm_config.worker_counts),
+            "RUN_PINGSERVER": str(self.charm_config.worker_counts),
+            "RUN_CRON": "yes" if is_leader else "no",
+            "RUN_PACKAGESEARCH": "yes" if is_leader else "no",
+            "RUN_PACKAGEUPLOADSERVER": ("yes" if is_leader and is_standalone else "no"),
+            "RUN_PPPA_PROXY": "no",
+        })
 
         logger.info("Starting services")
 
@@ -1236,12 +1255,10 @@ class LandscapeServerCharm(CharmBase):
         self._stored.ready[relation_name] = False
         self.unit.status = MaintenanceStatus(f"Setting up {relation_name} connection")
 
-        event.relation.data[self.unit].update(
-            {
-                "username": AMQP_USERNAME,
-                "vhost": VHOSTS[relation_name],
-            }
-        )
+        event.relation.data[self.unit].update({
+            "username": AMQP_USERNAME,
+            "vhost": VHOSTS[relation_name],
+        })
 
     def _amqp_relation_changed(self, event):
         unit_data = event.relation.data[event.unit]
@@ -1268,14 +1285,12 @@ class LandscapeServerCharm(CharmBase):
             )
             return
 
-        update_service_conf(
-            {
-                "broker": {
-                    "host": hostname,
-                    "password": password,
-                }
+        update_service_conf({
+            "broker": {
+                "host": hostname,
+                "password": password,
             }
-        )
+        })
 
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status()
@@ -1447,11 +1462,9 @@ class LandscapeServerCharm(CharmBase):
             },
         }
 
-        relation.data[self.unit].update(
-            {
-                "monitors": yaml.safe_dump(monitors),
-            }
-        )
+        relation.data[self.unit].update({
+            "monitors": yaml.safe_dump(monitors),
+        })
 
         if not os.path.exists(NRPE_D_DIR):
             logger.debug("NRPE directories not ready")
@@ -1508,15 +1521,13 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         else:
             icon_data = None
 
-        event.relation.data[self.app].update(
-            {
-                "name": "Landscape",
-                "url": root_url,
-                "subtitle": subtitle,
-                "group": group,
-                "icon": icon_data,
-            }
-        )
+        event.relation.data[self.app].update({
+            "name": "Landscape",
+            "url": root_url,
+            "subtitle": subtitle,
+            "group": group,
+            "icon": icon_data,
+        })
 
     def _update_debarchive_relations(
         self, notify_secret_token_changed: bool = False
@@ -1592,13 +1603,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             ip = str(self.model.get_binding(peer_relation).network.bind_address)
             peer_relation.data[self.app].update({"leader-ip": ip})
 
-            update_service_conf(
-                {
-                    "package-search": {
-                        "host": "localhost",
-                    },
-                }
-            )
+            update_service_conf({
+                "package-search": {
+                    "host": "localhost",
+                },
+            })
 
             # Now that we (may) have a leader IP, refresh any debarchive
             # relations that depend on it for their root URL fallback.
@@ -1619,13 +1628,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             leader_ip = peer_relation.data[self.app].get("leader-ip")
 
             if leader_ip:
-                update_service_conf(
-                    {
-                        "package-search": {
-                            "host": leader_ip,
-                        },
-                    }
-                )
+                update_service_conf({
+                    "package-search": {
+                        "host": leader_ip,
+                    },
+                })
 
         self._leader_changed()
 
@@ -1677,13 +1684,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         if not self.unit.is_leader():
             if leader_ip_value:
-                update_service_conf(
-                    {
-                        "package-search": {
-                            "host": leader_ip_value,
-                        },
-                    }
-                )
+                update_service_conf({
+                    "package-search": {
+                        "host": leader_ip_value,
+                    },
+                })
 
         self._leader_changed()
 
@@ -1796,14 +1801,12 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return
 
         self.unit.status = MaintenanceStatus("Configuring OpenID")
-        update_service_conf(
-            {
-                "landscape": {
-                    "openid-provider-url": self.charm_config.openid_provider_url,
-                    "openid-logout-url": self.charm_config.openid_logout_url,
-                },
-            }
-        )
+        update_service_conf({
+            "landscape": {
+                "openid-provider-url": self.charm_config.openid_provider_url,
+                "openid-logout-url": self.charm_config.openid_logout_url,
+            },
+        })
         self.unit.status = WaitingStatus("Waiting on relations")
 
     def _bootstrap_account(self):
