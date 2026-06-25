@@ -3310,7 +3310,7 @@ class TestPackageInstall:
     def test_install_landscape_server_hashids_hosted(self):
         """
         When passing `min_install=false` and running in SaaS mode,
-        only the all three packages are installed.
+        all three packages are installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
