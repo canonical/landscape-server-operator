@@ -8,8 +8,9 @@ variable "model_uuid" {
 variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
-    app_name = optional(string, "landscape-server")
-    channel  = optional(string, "25.10/edge")
+    app_name   = optional(string, "landscape-server")
+    channel    = optional(string, "26.04/edge")
+    charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
       autoregistration               = "true"
       landscape_ppa                  = "ppa:landscape/self-hosted-beta"
@@ -46,6 +47,7 @@ variable "postgresql" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -64,6 +66,7 @@ variable "haproxy" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -90,6 +93,7 @@ variable "rabbitmq_server" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -110,14 +114,16 @@ variable "pgbouncer" {
   nullable = true
 }
 
-variable "haproxy_self_signed_certs" {
-  description = "Configuration for the self-signed-certificates charm used by HAProxy. Set to null to skip deployment."
+variable "tls_certificates" {
+  description = "Configuration for the certificates charm deployed. Currently only integrated with HAProxy automatically. Set to null to skip deployment."
   type = object({
-    app_name    = optional(string, "self-signed-certificates")
+    app_name    = optional(string, "tls-certificates")
     channel     = optional(string, "1/stable")
+    charm_name  = optional(string, "self-signed-certificates")
     constraints = optional(string, "arch=amd64")
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
+    machines    = optional(set(string))
   })
 
   default  = {}

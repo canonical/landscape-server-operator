@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd
+# Copyright 2026 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at
@@ -12,8 +12,18 @@ import subprocess
 from subprocess import CalledProcessError
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMock
+from unittest.mock import (
+    ANY,
+    call,
+    DEFAULT,
+    Mock,
+    mock_open,
+    patch,
+    PropertyMock,
+)
 
+from charmlibs import apt
+from charmlibs.apt import PackageError, PackageNotFoundError
 from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
@@ -21,6 +31,7 @@ from charms.smtp_integrator.v0.smtp import TransportSecurity
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (
+    ActionFailed,
     Context,
     Harness,
     MaintenanceStatus,
@@ -31,6 +42,7 @@ from ops.testing import (
     StoredState,
     TCPPort,
 )
+import pytest
 
 from charm import (
     BOOTSTRAP_ACCOUNT_SCRIPT,
@@ -52,6 +64,7 @@ from charm import (
     UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
 )
 from settings_files import AMQP_USERNAME, VHOSTS
+from src.charm import LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED, LANDSCAPE_SERVER
 
 IS_CI = os.getenv("GITHUB_ACTIONS", None) is not None
 """
@@ -133,6 +146,186 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
 
         for scrape_job in config["metrics_scrape_jobs"]:
             self.assertEqual(scrape_interval, scrape_job["scrape_interval"])
+
+
+class TestDebarchiveRelation:
+    """
+    Tests for the `debarchive` provider relation.
+
+    When a debarchive charm relates, the leader publishes the Landscape
+    hostname to the relation app databag along with a secret holding the
+    Landscape secret token, which it grants to the relation.
+    """
+
+    def _debarchive_app_data(self, state: State) -> dict:
+        for relation in state.relations:
+            if relation.endpoint == "debarchive":
+                return dict(relation.local_app_data)
+        raise ValueError("No debarchive relation found.")
+
+    def _stored_leader_ip(self, leader_ip: str) -> StoredState:
+        return StoredState(
+            owner_path="LandscapeServerCharm",
+            content={"leader_ip": leader_ip},
+        )
+
+    def test_publishes_leader_ip_hostname_and_secret(self):
+        """
+        With no `root_url` configured, the leader publishes the stored leader IP
+        as the hostname and shares the secret token via a granted secret.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "10.0.0.1"
+
+        # The published secret-token-id resolves to a secret holding the token,
+        # granted to the debarchive relation.
+        secret_id = app_data["secret-token-id"]
+        secret = result.get_secret(id=secret_id)
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_relation_changed_refreshes_hostname_and_secret(self):
+        """The provider refreshes data when Juju fires relation-changed."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_changed(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "10.0.0.1"
+        secret = result.get_secret(id=app_data["secret-token-id"])
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_config_changed_republishes_updated_secret_token(self):
+        """Config changes bump relation data when the shared secret changes."""
+        context = Context(LandscapeServerCharm)
+        secret = Secret(
+            tracked_content={"secret-token": "old-s3cr3t"},
+            owner="app",
+        )
+        relation = Relation(
+            "debarchive",
+            local_app_data={
+                "hostname": "10.0.0.1",
+                "secret-token-id": secret.id,
+                "secret-token-revision": "1",
+            },
+        )
+        state = State(
+            leader=True,
+            relations=[relation],
+            secrets=[secret],
+            config={
+                "secret_token": "new-s3cr3t",
+                "cookie_encryption_key": "cookie-key",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.config_changed(), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["secret-token-id"] == secret.id
+        assert app_data["secret-token-revision"] == "2"
+        updated_secret = result.get_secret(id=secret.id)
+        assert updated_secret.latest_content == {"secret-token": "new-s3cr3t"}
+
+    def test_recreates_stale_secret_token_id(self):
+        """A stale published secret-token-id does not fail the relation hook."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation(
+            "debarchive",
+            local_app_data={"secret-token-id": "secret:doesnotexist"},
+        )
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"secret_token": "s3cr3t"},
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["secret-token-id"] != "secret:doesnotexist"
+        secret = result.get_secret(id=app_data["secret-token-id"])
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_configured_root_url_hostname_takes_precedence(self):
+        """The hostname from a configured `root_url` is published instead of the
+        leader IP."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result)["hostname"] == "landscape.example.com"
+
+    def test_configured_root_url_publishes_without_leader_ip(self):
+        """
+        With `root_url` configured, the leader can publish relation data even
+        before the leader IP is known.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._debarchive_app_data(result)
+        assert app_data["hostname"] == "landscape.example.com"
+        secret = result.get_secret(id=app_data["secret-token-id"])
+        assert secret.latest_content == {"secret-token": "s3cr3t"}
+
+    def test_non_leader_does_not_publish(self):
+        """Non-leader units never write to the relation app databag."""
+        context = Context(LandscapeServerCharm)
+        relation = Relation("debarchive")
+        state = State(
+            leader=False,
+            relations=[relation],
+            config={
+                "root_url": "https://landscape.example.com",
+                "secret_token": "s3cr3t",
+            },
+            stored_states=[self._stored_leader_ip("10.0.0.1")],
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._debarchive_app_data(result) == {}
 
 
 class TestOnConfigChanged:
@@ -289,6 +482,97 @@ root-url = https://overridden.example.com
         assert config["global"]["root-url"] == "https://overridden.example.com"
         assert config["api"]["root-url"] == "https://overridden.example.com"
         assert config["package-upload"]["root-url"] == "https://overridden.example.com"
+
+    def test_demo_data_enabled_is_forwarded_to_schema_migration(
+        self,
+        replicas_network_state,
+    ):
+        """
+        If `demo_data` is enabled and db config is present, pass it through to
+        schema migration.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            **replicas_network_state,
+            config={
+                "db_schema_user": "landscape",
+                "demo_data": True,
+            },
+        )
+
+        with (
+            patch("charm.update_db_conf"),
+            patch.object(
+                LandscapeServerCharm,
+                "_migrate_schema_bootstrap",
+                return_value=True,
+            ) as migrate_schema_bootstrap,
+        ):
+            ctx.run(ctx.on.config_changed(), state)
+
+        migrate_schema_bootstrap.assert_called_once_with(demo_data=True)
+
+    def test_demo_data_not_forced_when_disabled(
+        self,
+        replicas_network_state,
+    ):
+        """
+        If `demo_data` is disabled, schema migration must keep demo data off.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            **replicas_network_state,
+            config={
+                "db_schema_user": "landscape",
+                "demo_data": False,
+            },
+        )
+
+        with (
+            patch("charm.update_db_conf"),
+            patch.object(
+                LandscapeServerCharm,
+                "_migrate_schema_bootstrap",
+                return_value=True,
+            ) as migrate_schema_bootstrap,
+        ):
+            ctx.run(ctx.on.config_changed(), state)
+
+        migrate_schema_bootstrap.assert_called_once_with(demo_data=False)
+
+    def test_demo_data_standalone_updates_wsl_distributions(
+        self,
+        replicas_network_state,
+    ):
+        """
+        Standalone demo data bootstrap also refreshes stock WSL distributions.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            **replicas_network_state,
+            config={
+                "db_schema_user": "landscape",
+                "demo_data": True,
+                "deployment_mode": "standalone",
+            },
+        )
+
+        with (
+            patch("charm.update_db_conf"),
+            patch.object(
+                LandscapeServerCharm,
+                "_migrate_schema_bootstrap",
+                return_value=True,
+            ),
+            patch.object(
+                LandscapeServerCharm,
+                "_update_wsl_distributions",
+                return_value=True,
+            ) as update_wsl_distributions,
+        ):
+            ctx.run(ctx.on.config_changed(), state)
+
+        update_wsl_distributions.assert_called_once_with()
 
     def test_hostagent_services_default(
         self,
@@ -1060,6 +1344,9 @@ class TestCharm(unittest.TestCase):
             patch("charm.check_call") as check_call_mock,
             patch.object(self.harness.charm, "_bootstrap_account"),
             patch.object(self.harness.charm, "_set_autoregistration"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=True
+            ),
         ):
             result = self.harness.charm._migrate_schema_bootstrap("charmed_dba")
 
@@ -1067,6 +1354,146 @@ class TestCharm(unittest.TestCase):
             [SCHEMA_SCRIPT, "--bootstrap", "--db-owner-role", "charmed_dba"],
             env={"PATH": "/usr/bin"},
         )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_demo_data_flags(self, get_env):
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        check_call_mock.assert_called_once_with(
+            [
+                SCHEMA_SCRIPT,
+                "--bootstrap",
+                "--with-computers",
+                "--with-free-disk-space",
+                "--with-free-memory-and-swap",
+                "--with-load-averages",
+                "--with-temperatures",
+                "--with-network-traffic",
+                "--with-active-processes",
+                "--with-hardware",
+                "--with-packages",
+                "--with-package-activities",
+                "--with-script-activities",
+                "--with-users-and-groups",
+                "--with-cpu-usage",
+                "--with-ceph-usage",
+                "--with-compute-usage",
+                "--with-swift-usage",
+                "--with-user-and-group-activities",
+                "--with-custom-graph",
+                "--with-scripts",
+                "--with-account-password",
+                "foo",
+            ],
+            env={"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_standalone_includes_root_url_and_system_email(
+        self, get_env
+    ):
+        root_url = "https://landscape.local/"
+        system_email = "landscape-devel@lists.canonical.com"
+        self.harness.update_config(
+            {
+                "deployment_mode": "standalone",
+                "root_url": root_url,
+                "system_email": system_email,
+            }
+        )
+
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        called_args = check_call_mock.call_args.args[0]
+        assert "--with-root-url" in called_args
+        assert "--with-system-email" in called_args
+        assert root_url in called_args
+        assert system_email in called_args
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_demo_data_flags_saas(self, get_env):
+        self.harness.charm.charm_config.deployment_mode = "prod"
+
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        called_args = check_call_mock.call_args.args[0]
+        assert "--with-hardware" in called_args
+        assert "--with-account-password" in called_args
+        self.assertEqual(
+            check_call_mock.call_args.kwargs["env"],
+            {"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_override_args(self, get_env):
+        self.harness.update_config(
+            {
+                "bootstrap_schema_override_args": (
+                    "--with-openstack,--with-extra-computers,10"
+                )
+            }
+        )
+
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap()
+
+        check_call_mock.assert_called_once_with(
+            [
+                SCHEMA_SCRIPT,
+                "--bootstrap",
+                "--with-openstack",
+                "--with-extra-computers",
+                "10",
+            ],
+            env={"PATH": "/usr/bin"},
+        )
+        self.assertTrue(result)
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_uses_registration_key_for_account_password(
+        self, get_env
+    ):
+        registration_key = "super-secret-registration-key"
+        self.harness.update_config({"registration_key": registration_key})
+
+        with (
+            patch("charm.check_call") as check_call_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            result = self.harness.charm._migrate_schema_bootstrap(demo_data=True)
+
+        called_args = check_call_mock.call_args.args[0]
+        password_idx = called_args.index("--with-account-password") + 1
+        assert called_args[password_idx] == registration_key
         self.assertTrue(result)
 
     @patch.dict(
@@ -1270,6 +1697,9 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf") as update_service_conf_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             check_call_mock.side_effect = CalledProcessError(127, "ouch")
             self.harness.charm._db_relation_changed(mock_event)
@@ -1319,6 +1749,9 @@ class TestCharm(unittest.TestCase):
             patch(
                 "settings_files.update_service_conf",
             ) as update_service_conf_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             self.harness.charm._db_relation_changed(mock_event)
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1356,12 +1789,18 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             self.harness.charm._db_relation_changed(mock_event)
 
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             check_call_mock.side_effect = CalledProcessError(127, "ouch")
             self.harness.update_config({"db_host": "hello", "db_port": "world"})
@@ -1386,6 +1825,9 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             self.harness.charm._db_relation_changed(mock_event)
 
@@ -1412,6 +1854,9 @@ class TestCharm(unittest.TestCase):
         with (
             patch("charm.check_call") as check_call_mock,
             patch("settings_files.update_service_conf"),
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
         ):
             # Let bootstrap account go through
             check_call_mock.side_effect = [None, CalledProcessError(127, "ouch")]
@@ -1843,9 +2288,15 @@ class TestCharm(unittest.TestCase):
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_action_migrate_schema(self):
-        event = Mock(spec_set=ActionEvent)
+        event = Mock(spec=ActionEvent)
+        event.params = {}
 
-        with patch("subprocess.run") as run_mock:
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=False
+            ),
+        ):
             self.harness.charm._migrate_schema(event)
 
         event.log.assert_called_once()
@@ -1859,7 +2310,8 @@ class TestCharm(unittest.TestCase):
         Test that we do not perform a schema migration while Landscape is
         running.
         """
-        event = Mock(spec_set=ActionEvent)
+        event = Mock(spec=ActionEvent)
+        event.params = {}
         self.harness.charm._stored.running = True
 
         with patch("subprocess.run") as run_mock:
@@ -1869,19 +2321,26 @@ class TestCharm(unittest.TestCase):
         event.fail.assert_called_once()
         run_mock.assert_not_called()
 
-    def test_action_migrate_schema_CalledProcessError(self):
-        event = Mock(spec_set=ActionEvent)
+    def test_action_migrate_schema_running_with_allow_connections(self):
+        """
+        Test that we perform a schema migration while Landscape is
+        running if the allow-connections flag is `true`.
+        """
+        self.harness.charm._stored.running = True
 
-        with patch("subprocess.run") as run_mock:
-            run_mock.side_effect = CalledProcessError(127, "uhoh")
-            self.harness.charm._migrate_schema(event)
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                self.harness.charm, "_schema_supports_flag", return_value=True
+            ),
+        ):
+            self.harness.run_action(
+                "migrate-schema", params={"allow-connections": True}
+            )
 
-        event.log.assert_called_once()
-        event.fail.assert_called_once()
         run_mock.assert_called_once_with(
-            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+            [SCHEMA_SCRIPT, "--allow-connections"], check=True, text=True, env=ANY
         )
-        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
     def test_nrpe_external_master_relation_joined(self):
         mock_event = Mock()
@@ -2724,3 +3183,253 @@ class TestSmtpIntegration(unittest.TestCase):
         """_on_smtp_relation_broken does not raise if sasl files don't exist."""
         with patch("charm.POSTFIX_SASL_PASSWD", "/nonexistent/sasl_passwd"):
             self.harness.charm._on_smtp_relation_broken(Mock())
+
+
+_not_running = StoredState(
+    owner_path="LandscapeServerCharm", content={"running": False}
+)
+
+
+class TestSchemaFlags:
+    """Tests for _schema_supports_flag and the flag-gating in _migrate_schema_bootstrap
+    and the migrate-schema action."""
+
+    # --- _schema_supports_flag ---
+
+    def test_schema_supports_flag_returns_true_when_present(self):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with patch("charm.subprocess.run") as mock_run:
+                mock_run.return_value = Mock(
+                    stdout="usage: schema [--allow-connections] [--db-owner-role ROLE]",
+                    stderr="",
+                )
+                assert manager.charm._schema_supports_flag("--allow-connections")
+                assert manager.charm._schema_supports_flag("--db-owner-role")
+
+    def test_schema_supports_flag_returns_false_when_absent(self):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with patch("charm.subprocess.run") as mock_run:
+                mock_run.return_value = Mock(
+                    stdout="usage: schema [--bootstrap]",
+                    stderr="",
+                )
+                assert not manager.charm._schema_supports_flag("--allow-connections")
+                assert not manager.charm._schema_supports_flag("--db-owner-role")
+
+    def test_schema_supports_flag_returns_false_on_missing_script(self):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with patch("charm.subprocess.run", side_effect=OSError("No such file")):
+                assert not manager.charm._schema_supports_flag("--allow-connections")
+                assert not manager.charm._schema_supports_flag("--db-owner-role")
+
+    # --- _migrate_schema_bootstrap flag gating ---
+
+    @patch("charm.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    def test_migrate_schema_bootstrap_owner_role_flag(self, _get_env):
+        ctx = Context(LandscapeServerCharm)
+        with ctx(ctx.on.start(), State()) as manager:
+            with (
+                patch("charm.check_call") as check_call_mock,
+                patch.object(manager.charm, "_bootstrap_account"),
+                patch.object(manager.charm, "_set_autoregistration"),
+                patch.object(manager.charm, "_schema_supports_flag", return_value=True),
+            ):
+                result = manager.charm._migrate_schema_bootstrap("charmed_dba")
+
+        check_call_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT, "--bootstrap", "--db-owner-role", "charmed_dba"],
+            env={"PATH": "/usr/bin"},
+        )
+        assert result is True
+
+    # --- migrate-schema action ---
+
+    def test_action_migrate_schema_no_allow_connections_when_not_supported(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus("paused"),
+            stored_states=[_not_running],
+        )
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=False
+            ),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT], check=True, text=True, env=ANY
+        )
+
+    def test_action_migrate_schema_allow_connections_when_supported(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus("paused"),
+            stored_states=[_not_running],
+        )
+
+        with (
+            patch("subprocess.run") as run_mock,
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=True
+            ),
+        ):
+            ctx.run(
+                ctx.on.action("migrate-schema", params={"allow-connections": True}),
+                state,
+            )
+
+        run_mock.assert_called_once_with(
+            [SCHEMA_SCRIPT, "--allow-connections"], check=True, text=True, env=ANY
+        )
+
+    def test_action_migrate_schema_blocks_on_error(self):
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus("paused"),
+            stored_states=[_not_running],
+        )
+
+        with (
+            patch(
+                "subprocess.run",
+                side_effect=CalledProcessError(1, SCHEMA_SCRIPT),
+            ),
+            patch.object(
+                LandscapeServerCharm, "_schema_supports_flag", return_value=False
+            ),
+            pytest.raises(ActionFailed),
+        ):
+            ctx.run(ctx.on.action("migrate-schema"), state)
+
+        assert isinstance(ctx.action_results, dict) or ctx.action_results is None
+
+
+class TestPackageInstall:
+    def test_install_only_landscape_server(self):
+        """
+        When passing `min_install=true` and running in standalone mode,
+        only the landscape-server package is installed.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": True,
+                "deployment_mode": "standalone",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt),
+            patch("charm.check_call") as check_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            ctx.run(ctx.on.install(), state)
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert [
+            "apt-get",
+            "install",
+            "--no-install-recommends",
+            "-y",
+            LANDSCAPE_SERVER,
+        ] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
+
+    def test_install_landscape_server_hashids(self):
+        """
+        When passing `min_install=false` and running in standalone mode,
+        the landscape-server and landscape-hashids packages are installed.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": False,
+                "deployment_mode": "standalone",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_called_once_with(
+            [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS], update_cache=True
+        )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
+
+    def test_install_landscape_server_hashids_hosted(self):
+        """
+        When passing `min_install=false` and running in SaaS mode,
+        all three packages are installed.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": False,
+                "deployment_mode": "saas",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_called_once_with(
+            [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED],
+            update_cache=True,
+        )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
+
+    def test_install_landscape_server_hosted_min_install_blocked(self):
+        """
+        min_install=True with a non-standalone deployment_mode is a config error
+        since landscape-hosted depends on landscape-hashids.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": True,
+                "deployment_mode": "saas",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+            ctx(ctx.on.install(), state) as mgr,
+        ):
+            apt_mock.add_package.return_value = None
+            assert isinstance(mgr.charm.unit.status, BlockedStatus)

@@ -7,6 +7,7 @@ NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 
 import json
 import re
+import shlex
 from urllib.parse import urlparse
 
 import jubilant
@@ -33,6 +34,26 @@ from tests.integration.helpers import (
 LIVE_MODEL_SKIP_REASON = "Potentially destructive test skipped on live model."
 
 
+def _query_main_db(juju: jubilant.Juju, sql: str) -> str:
+    """Execute a read-only SQL query against the configured main Landscape DB."""
+    result = juju.run("landscape-server/leader", "get-service-conf")
+    stores = json.loads(result.results["config"])["stores"]
+    host, port = stores["host"].rsplit(":", 1)
+    password, user, dbname = stores["password"], stores["user"], stores["main"]
+
+    ssh_command = (
+        f"PGPASSWORD={shlex.quote(password)} "
+        "psql "
+        f"-h {shlex.quote(host)} "
+        f"-p {shlex.quote(port)} "
+        f"-U {shlex.quote(user)} "
+        f"-d {shlex.quote(dbname)} "
+        f"-tAc {shlex.quote(sql)}"
+    )
+
+    return juju.ssh("landscape-server/leader", ssh_command)
+
+
 def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
     """Return the haproxy IP from the local model, lbaas model, or skip."""
     haproxy = juju.status().apps.get("haproxy")
@@ -43,6 +64,63 @@ def _haproxy_ip(juju: jubilant.Juju, lbaas: jubilant.Juju) -> str:
         if lbaas_haproxy:
             return list(lbaas_haproxy.units.values())[0].public_address
     pytest.skip("No haproxy app found in local or lbaas model")
+
+
+def _leader_unit_name(juju: jubilant.Juju, app: str) -> str:
+    """Return the leader unit name for an application."""
+    app_status = juju.status().apps[app]
+    for name, unit_status in app_status.units.items():
+        if unit_status.leader:
+            return name
+    pytest.fail(f"No leader unit found for {app}")
+
+
+def _relation_app_data(juju: jubilant.Juju, unit: str, endpoint: str) -> dict:
+    """Return the local app databag for a unit's relation endpoint."""
+    ids_stdout = juju.cli("exec", "--unit", unit, "--", f"relation-ids {endpoint}")
+    ids = ids_stdout.strip().splitlines()
+    if not ids:
+        pytest.fail(f"No relation IDs found for endpoint {endpoint}")
+
+    data_stdout = juju.cli(
+        "exec",
+        "--unit",
+        unit,
+        "--",
+        f"relation-get --format=json -r {ids[0]} --app - {unit}",
+    )
+    data = json.loads(data_stdout)
+    return {k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()}
+
+
+def test_debarchive_relation(juju: jubilant.Juju):
+    """Landscape Server and debarchive publish and consume relation data."""
+    juju.wait(jubilant.all_active, timeout=300)
+    status = juju.status()
+
+    if "landscape-debarchive" not in status.apps:
+        pytest.skip("landscape-debarchive not deployed")
+
+    landscape_relations = status.apps["landscape-server"].relations
+    debarchive_relations = status.apps["landscape-debarchive"].relations
+    assert "debarchive" in landscape_relations
+    assert "landscape-server" in debarchive_relations
+    assert "database" in debarchive_relations
+
+    leader_unit = _leader_unit_name(juju, "landscape-server")
+    data = _relation_app_data(juju, leader_unit, "debarchive")
+    expected_hostname = urlparse(
+        juju.config("landscape-server").get("root_url", "https://landscape.local/")
+    ).hostname
+
+    assert data["hostname"] == expected_hostname
+    assert data["secret-token-id"].startswith("secret://")
+
+    token = juju.ssh(
+        "landscape-debarchive/leader",
+        "sudo snap get landscape-debarchive deb.archive.jwt.secret",
+    ).strip()
+    assert token and token != "-"
 
 
 @pytest.mark.skipif(
@@ -266,17 +344,48 @@ def test_bootstrap_account_created_with_modern_database(
 
     juju.wait(jubilant.all_active, timeout=300)
 
-    result = juju.run("landscape-server/leader", "get-service-conf")
-    stores = json.loads(result.results["config"])["stores"]
-    host, port = stores["host"].split(":")
-    password, user, dbname = stores["password"], stores["user"], stores["main"]
-    result = juju.ssh(
-        "landscape-server/leader",
-        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
-        " -tAc 'SELECT email FROM person;'",
-    )
+    result = _query_main_db(juju, "SELECT email FROM person;")
     assert admin_email in result, (
         f"Admin {admin_email} not found in person table after bootstrap. "
+    )
+
+
+def test_demo_data_created_when_config_enabled(juju: jubilant.Juju, bundle: None):
+    """
+    Non-mutative check: only validate demo data if the option is already enabled.
+    """
+    if not has_modern_pg(juju):
+        pytest.skip("Modern database relation not active")
+
+    if not juju.config("landscape-server").get("demo_data"):
+        pytest.skip("demo_data is not enabled in model config")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = _query_main_db(juju, "SELECT COUNT(*) FROM computer;")
+    assert int(result.strip()) > 0, "Expected demo computers when demo_data is enabled"
+
+
+def test_demo_data_registration_key_matches_config(juju: jubilant.Juju, bundle: None):
+    """
+    Non-mutative check: only validate registration key parity when already set.
+    """
+    if not has_modern_pg(juju):
+        pytest.skip("Modern database relation not active")
+
+    config = juju.config("landscape-server")
+    if not config.get("demo_data"):
+        pytest.skip("demo_data is not enabled in model config")
+
+    registration_key = config.get("registration_key")
+    if not registration_key:
+        pytest.skip("registration_key is not set in model config")
+
+    juju.wait(jubilant.all_active, timeout=300)
+
+    result = _query_main_db(juju, "SELECT registration_key FROM account LIMIT 1;")
+    assert result.strip() == registration_key, (
+        "Expected account.registration_key to match configured registration_key"
     )
 
 
@@ -355,16 +464,10 @@ def test_landscape_schema_migrated(juju: jubilant.Juju, bundle: None):
     """
     juju.wait(jubilant.all_active, timeout=300)
 
-    result = juju.run("landscape-server/leader", "get-service-conf")
-    stores = json.loads(result.results["config"])["stores"]
-    host, port = stores["host"].split(":")
-    password, user, dbname = stores["password"], stores["user"], stores["main"]
-
-    result = juju.ssh(
-        "landscape-server/leader",
-        f"PGPASSWORD={password} psql -h {host} -p {port} -U {user} -d {dbname}"
-        ' -tAc "SELECT COUNT(*) FROM information_schema.tables'
-        " WHERE table_schema = 'public' AND table_name = 'account';\"",
+    result = _query_main_db(
+        juju,
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'account';",
     ).strip()
 
     assert result == "1", (
@@ -931,3 +1034,118 @@ def test_outbox_snap_installed(juju: jubilant.Juju):
         "landscape-server", values={"outbox_snap_channel": DEFAULT_OUTBOX_SNAP_CHANNEL}
     )
     juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_pause_stops_services(juju: jubilant.Juju, bundle: None):
+    """
+    The pause action stops all Landscape systemd services on every unit.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    status = juju.status()
+    units = list(status.apps["landscape-server"].units)
+
+    try:
+        for unit in units:
+            juju.run(unit, "pause")
+
+        for unit in units:
+            result = juju.ssh(
+                unit, "systemctl is-active landscape-server.target || true"
+            )
+            assert "inactive" in result or "failed" in result, (
+                f"Expected landscape-server.target to be inactive after pause on {unit}"
+            )
+    finally:
+        for unit in units:
+            juju.run(unit, "resume")
+        juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_resume_starts_services(juju: jubilant.Juju, bundle: None):
+    """
+    The resume action starts all Landscape systemd services after a pause.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    status = juju.status()
+    units = list(status.apps["landscape-server"].units)
+
+    try:
+        for unit in units:
+            juju.run(unit, "pause")
+
+        for unit in units:
+            juju.run(unit, "resume")
+
+        for unit in units:
+            for service in DEFAULT_SERVICES:
+                wait_for_service(juju, unit, service)
+    finally:
+        juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_migrate_schema_fails_while_running(juju: jubilant.Juju, bundle: None):
+    """
+    Running migrate-schema while Landscape is running (not paused) must fail.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit = _leader_unit_name(juju, "landscape-server")
+
+    with pytest.raises(Exception):
+        juju.run(unit, "migrate-schema")
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_migrate_schema_while_paused(juju: jubilant.Juju, bundle: None):
+    """
+    migrate-schema succeeds on the leader unit when Landscape is paused.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit = _leader_unit_name(juju, "landscape-server")
+
+    try:
+        juju.run(unit, "pause")
+        result = juju.run(unit, "migrate-schema")
+        assert result.status == "completed", (
+            f"Expected migrate-schema to complete, got: {result.status}"
+        )
+    finally:
+        juju.run(unit, "resume")
+        juju.wait(jubilant.all_active, timeout=300)
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_action_migrate_schema_allow_connections(juju: jubilant.Juju, bundle: None):
+    """
+    migrate-schema with allow-connections=true succeeds while Landscape is running,
+    allowing schema migration via PgBouncer without a full pause.
+    """
+    juju.wait(jubilant.all_active, timeout=300)
+
+    unit = _leader_unit_name(juju, "landscape-server")
+
+    result = juju.run(unit, "migrate-schema", {"allow-connections": True})
+    assert result.status == "completed", (
+        f"Expected migrate-schema --allow-connections to complete, got: {result.status}"
+    )

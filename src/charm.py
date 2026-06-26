@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2025 Canonical Ltd
+# Copyright 2025-2026 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more at: https://juju.is/docs/sdk
@@ -22,7 +22,16 @@ from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
-from charmlibs import snap
+from charmlibs import apt, snap
+from charmlibs.apt import PackageError, PackageNotFoundError
+from charmlibs.passwd import group_exists, user_exists
+from charmlibs.systemd import (
+    service_pause,
+    service_reload,
+    service_resume,
+    service_running,
+    SystemdError,
+)
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -116,6 +125,8 @@ GPG_SERVICE_CONF_SECTIONS = (
 )
 
 LANDSCAPE_SERVER = "landscape-server"
+LANDSCAPE_HASH_IDS = "landscape-hashids"
+LANDSCAPE_HOSTED = "landscape-hosted"
 LANDSCAPE_PACKAGES = (
     LANDSCAPE_SERVER,
     "landscape-client",
@@ -156,6 +167,28 @@ PROXY_ENV_MAPPING = {
     "JUJU_CHARM_HTTPS_PROXY": "--with-https-proxy",
     "JUJU_CHARM_NO_PROXY": "--with-no-proxy",
 }
+
+DEMO_SCHEMA_ARGS = [
+    "--with-computers",
+    "--with-free-disk-space",
+    "--with-free-memory-and-swap",
+    "--with-load-averages",
+    "--with-temperatures",
+    "--with-network-traffic",
+    "--with-active-processes",
+    "--with-hardware",
+    "--with-packages",
+    "--with-package-activities",
+    "--with-script-activities",
+    "--with-users-and-groups",
+    "--with-cpu-usage",
+    "--with-ceph-usage",
+    "--with-compute-usage",
+    "--with-swift-usage",
+    "--with-user-and-group-activities",
+    "--with-custom-graph",
+    "--with-scripts",
+]
 
 METRIC_INSTRUMENTED_SERVICE_PORTS = [
     ("appserver", 8080),
@@ -263,6 +296,14 @@ class LandscapeServerCharm(CharmBase):
         self.framework.observe(
             self.on.application_dashboard_relation_joined,
             self._application_dashboard_relation_joined,
+        )
+        self.framework.observe(
+            self.on.debarchive_relation_joined,
+            self._update_debarchive_relations,
+        )
+        self.framework.observe(
+            self.on.debarchive_relation_changed,
+            self._update_debarchive_relations,
         )
 
         # Leadership/peering
@@ -516,20 +557,28 @@ class LandscapeServerCharm(CharmBase):
         self._configure_openid()
         self._configure_oidc()
 
-        db_kargs = {}
+        db_kwargs = {}
+        demo_data = False
         if config_host := self.charm_config.db_host:
-            db_kargs["host"] = config_host
+            db_kwargs["host"] = config_host
         if schema_password := self.charm_config.db_schema_password:
-            db_kargs["schema_password"] = schema_password
+            db_kwargs["schema_password"] = schema_password
         if config_port := self.charm_config.db_port:
-            db_kargs["port"] = config_port
+            db_kwargs["port"] = config_port
         if config_user := self.charm_config.db_schema_user:
-            db_kargs["user"] = config_user
+            db_kwargs["user"] = config_user
         if landscape_password := self.charm_config.db_landscape_password:
-            db_kargs["password"] = landscape_password
-        if db_kargs:
-            update_db_conf(**db_kargs)
-            if self._migrate_schema_bootstrap():
+            db_kwargs["password"] = landscape_password
+
+        if self.charm_config.demo_data:
+            demo_data = True
+
+        if db_kwargs:
+            update_db_conf(**db_kwargs)
+            if self._migrate_schema_bootstrap(demo_data=demo_data):
+                if demo_data and self.charm_config.deployment_mode == "standalone":
+                    if not self._update_wsl_distributions():
+                        return
                 self.unit.status = WaitingStatus("Waiting on relations")
                 self._stored.ready["db"] = True
             else:
@@ -558,7 +607,10 @@ class LandscapeServerCharm(CharmBase):
                     {"cookie-encryption-key": cookie_encryption_key}
                 )
 
-        if (secret_token) and (secret_token != self._stored.secret_token):
+        secret_token_changed = (
+            secret_token and secret_token != self._stored.secret_token
+        )
+        if secret_token_changed:
             self._write_secret_token(secret_token)
             self._stored.secret_token = secret_token
 
@@ -572,6 +624,9 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
+        self._update_debarchive_relations(
+            notify_secret_token_changed=bool(secret_token_changed)
+        )
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
@@ -737,6 +792,28 @@ class LandscapeServerCharm(CharmBase):
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
+    def _install_debian_packages_with_recommends(
+        self, package_names: list[str]
+    ) -> None:
+        """
+        Installs a Debian package via apt with `--install-recommends`.
+        """
+
+        # Explicitly ensure cache is up-to-date after adding the PPA.
+        try:
+            apt.add_package(package_names, update_cache=True)
+        except PackageError as e:
+            logger.error("Failed to install packages: %s", str(e))
+            raise e
+
+    def _hold_debian_packages(self, package_names: list[str]) -> None:
+        for p in package_names:
+            try:
+                check_call(["apt-mark", "hold", p])
+            except CalledProcessError as e:
+                logger.error("Error trying to hold %s: %s", p, str(e))
+                raise e
+
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
@@ -760,40 +837,46 @@ class LandscapeServerCharm(CharmBase):
         try:
             # This package is responsible for the hanging installs and ignores env vars
             apt.remove_package(["needrestart"])
+        except (PackageNotFoundError, PackageError) as e:
+            logger.error("Failed to remove needrestart package: %s", str(e))
+            raise e  # This will trigger juju's exponential retry
 
-            # Add the Landscape Server PPA and install via apt.
-            # add-apt-repository doesn't use the proxy configuration from apt or juju
-            # let's make sure to use the http(s) proxy settings from the charm or at
-            # least any juju_proxy setting, add the classic http(s)_proxy to the env
-            # that will be used only for add-apt-repository call
-            add_apt_repository_env = self._build_add_apt_repository_env()
-
-            for ppa in self.charm_config.landscape_ppas:
+        # Add the Landscape Server PPA and install via apt.
+        # add-apt-repository doesn't use the proxy configuration from apt or juju
+        # let's make sure to use the http(s) proxy settings from the charm or at
+        # least any juju_proxy setting, add the classic http(s)_proxy to the env
+        # that will be used only for add-apt-repository call
+        add_apt_repository_env = self._build_add_apt_repository_env()
+        for ppa in self.charm_config.landscape_ppas:
+            try:
                 check_call(
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
+            except CalledProcessError as e:
+                logger.error("Failed to add PPA '%s': %s", ppa, str(e))
+                raise e
 
-            if self.charm_config.min_install:
-                logger.info("Not installing hashids..")
+        if self.charm_config.min_install:
+            try:
                 check_call(
                     [
-                        "apt",
+                        "apt-get",
                         "install",
-                        LANDSCAPE_SERVER,
                         "--no-install-recommends",
                         "-y",
+                        LANDSCAPE_SERVER,
                     ]
                 )
-            else:
-                # Explicitly ensure cache is up-to-date after adding the PPA.
-                apt.add_package(
-                    [LANDSCAPE_SERVER, "landscape-hashids"], update_cache=True
-                )
-                check_call(["apt-mark", "hold", "landscape-hashids"])
-            check_call(["apt-mark", "hold", LANDSCAPE_SERVER])
-        except (PackageNotFoundError, PackageError, CalledProcessError) as exc:
-            logger.error("Failed to install packages")
-            raise exc  # This will trigger juju's exponential retry
+            except CalledProcessError as e:
+                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
+                raise e
+            self._hold_debian_packages([LANDSCAPE_SERVER])
+        else:
+            pkg_list = [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+            if self.charm_config.deployment_mode != "standalone":
+                pkg_list.append(LANDSCAPE_HOSTED)
+            self._install_debian_packages_with_recommends(pkg_list)
+            self._hold_debian_packages(pkg_list)
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:
@@ -955,7 +1038,7 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
-        if not self._migrate_schema_bootstrap():
+        if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
             return
 
         if not self._update_wsl_distributions():
@@ -1048,7 +1131,9 @@ class LandscapeServerCharm(CharmBase):
 
         roles = get_postgres_roles(db_ctx.version)
 
-        if not self._migrate_schema_bootstrap(roles.owner):
+        if not self._migrate_schema_bootstrap(
+            roles.owner, demo_data=self.charm_config.demo_data
+        ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
             )
@@ -1108,21 +1193,45 @@ class LandscapeServerCharm(CharmBase):
 
         return settings
 
-    def _migrate_schema_bootstrap(self, owner_role: str | None = None):
+    def _schema_supports_flag(self, flag: str) -> bool:
+        """Returns True if the installed schema script accepts the given flag."""
+        try:
+            result = subprocess.run(
+                [SCHEMA_SCRIPT, "--help"],
+                capture_output=True,
+                text=True,
+            )
+            return flag in result.stdout or flag in result.stderr
+        except OSError:
+            return False
+
+    def _migrate_schema_bootstrap(
+        self,
+        owner_role: str | None = None,
+        demo_data: bool = False,
+    ):
         """
         Migrates schema along with the bootstrap command which ensures that the
         databases and the landscape user exists, and that proxy settings are set.
-        In addition, creates admin if configured.
+        In addition, creates admin and demo data if configured.
+
+        :param owner_role: The Postgres role to own the database.
+        :param demo_data: Create demo data.
 
         :returns: True on success.
         """
         call = [SCHEMA_SCRIPT, "--bootstrap"]
 
-        if owner_role:
+        if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
 
         if self._proxy_settings:
             call.extend(self._proxy_settings)
+
+        if demo_data:
+            call.extend(self._demo_schema_args())
+
+        call.extend(self.charm_config.bootstrap_schema_override_args_list)
 
         try:
             check_call(call, env=get_modified_env_vars())
@@ -1137,6 +1246,16 @@ class LandscapeServerCharm(CharmBase):
         self._bootstrap_account()
         self._set_autoregistration()
         return True
+
+    def _demo_schema_args(self) -> list[str]:
+        args = DEMO_SCHEMA_ARGS.copy()
+        account_password = self.charm_config.registration_key or "foo"
+        args.extend(["--with-account-password", account_password])
+        if self.charm_config.root_url:
+            args.extend(["--with-root-url", self.charm_config.root_url])
+        if self.charm_config.system_email:
+            args.extend(["--with-system-email", self.charm_config.system_email])
+        return args
 
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
@@ -1264,6 +1383,7 @@ class LandscapeServerCharm(CharmBase):
                 "/api",
                 "/upload",
                 "/repository",
+                "/debarchive",
             ],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
@@ -1442,6 +1562,69 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             }
         )
 
+    def _update_debarchive_relations(
+        self, notify_secret_token_changed: bool = False
+    ) -> None:
+        """Publish the Landscape root URL to all related debarchive charms."""
+        if not self.unit.is_leader():
+            return
+
+        relations = self.model.relations.get("debarchive", [])
+        if not relations:
+            return
+
+        leader_ip = self._stored.leader_ip
+        if not leader_ip:
+            # `_stored.leader_ip` is only populated from replicas-relation-changed,
+            # which may not have fired yet (e.g. a single-unit deployment). Fall
+            # back to resolving our own bind address so we can still publish.
+            peer_relation = self.model.get_relation("replicas")
+            if peer_relation is not None:
+                binding = self.model.get_binding(peer_relation)
+                if binding and binding.network.bind_address:
+                    leader_ip = str(binding.network.bind_address)
+                    self._stored.leader_ip = leader_ip
+
+        secret_token = self._get_secret_token()
+        if not secret_token:
+            logger.warning(
+                "Skipping debarchive relation update: secret token is not yet available"
+            )
+            return
+
+        hostname = leader_ip
+        if self.charm_config.root_url:
+            parsed = urlparse(self.charm_config.root_url)
+            if parsed.hostname:
+                hostname = parsed.hostname
+
+        for relation in relations:
+            # Reuse the per-relation secret rather than creating (and leaking) a
+            # new one on every hook invocation.
+            existing_id = relation.data[self.app].get("secret-token-id")
+            if existing_id:
+                try:
+                    secret = self.model.get_secret(id=existing_id)
+                    if notify_secret_token_changed:
+                        secret.set_content({"secret-token": secret_token})
+                except (SecretNotFoundError, ModelError):
+                    logger.warning(
+                        "Debarchive relation has stale secret-token-id %s; "
+                        "creating a new secret",
+                        existing_id,
+                    )
+                    secret = self.app.add_secret({"secret-token": secret_token})
+            else:
+                secret = self.app.add_secret({"secret-token": secret_token})
+            secret.grant(relation)
+            relation.data[self.app]["hostname"] = hostname
+            relation.data[self.app]["secret-token-id"] = secret.id
+            if notify_secret_token_changed:
+                revision = int(
+                    relation.data[self.app].get("secret-token-revision", "0")
+                )
+                relation.data[self.app]["secret-token-revision"] = str(revision + 1)
+
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
         # guaranteed to be the leader by the time we process it. See
@@ -1460,6 +1643,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     },
                 }
             )
+
+            # Now that we (may) have a leader IP, refresh any debarchive
+            # relations that depend on it for their root URL fallback.
+            self._update_debarchive_relations()
 
         self._leader_changed()
 
@@ -1927,7 +2114,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = prev_status
 
     def _migrate_schema(self, event: ActionEvent) -> None:
-        if self._stored.running:
+        allow_conn = event.params.get("allow-connections")
+
+        if self._stored.running and not allow_conn:
             event.fail(
                 "Cannot migrate schema while running. Please run action"
                 " 'pause' prior to migration"
@@ -1938,9 +2127,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Migrating schemas...")
         event.log("Running schema migration...")
 
+        schema_args = [SCHEMA_SCRIPT]
+
+        if allow_conn and self._schema_supports_flag("--allow-connections"):
+            schema_args.append("--allow-connections")
+
         try:
             subprocess.run(
-                [SCHEMA_SCRIPT], check=True, text=True, env=get_modified_env_vars()
+                schema_args, check=True, text=True, env=get_modified_env_vars()
             )
         except CalledProcessError as e:
             logger.error("Schema migration failed with error code %s", e.returncode)

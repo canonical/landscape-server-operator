@@ -90,7 +90,7 @@ run "validate_self_signed_false_without_certs" {
   command = plan
 
   variables {
-    haproxy_self_signed_certs = null
+    tls_certificates = null
   }
 
   assert {
@@ -171,7 +171,7 @@ run "validate_haproxy_route_outputs" {
       revision = 216
     }
     haproxy                 = null
-    haproxy_route_offer_url = "admin/lbaas:haproxy-route"
+    haproxy_route_offer_url = "admin/lbaas.haproxy-route"
   }
 
   override_module {

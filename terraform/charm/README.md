@@ -117,6 +117,7 @@ No modules.
 | <a name="input_app_name"></a> [app\_name](#input\_app\_name) | Name of the application in the Juju model. | `string` | `"landscape-server"` | no |
 | <a name="input_base"></a> [base](#input\_base) | The operating system on which to deploy. | `string` | `"ubuntu@24.04"` | no |
 | <a name="input_channel"></a> [channel](#input\_channel) | The channel to use when deploying a charm. | `string` | `"25.10/edge"` | no |
+| <a name="input_charm_name"></a> [charm\_name](#input\_charm\_name) | The name of the charm to be deployed. | `string` | `"landscape-server"` | no |
 | <a name="input_config"></a> [config](#input\_config) | Application config. Details about available options can be found at https://charmhub.io/landscape-server/configurations. | `map(string)` | `{}` | no |
 | <a name="input_constraints"></a> [constraints](#input\_constraints) | Juju constraints to apply for this application. | `string` | `"arch=amd64"` | no |
 | <a name="input_machines"></a> [machines](#input\_machines) | Set of machine IDs to deploy units to. When specified, the 'units' variable is ignored. | `set(string)` | `null` | no |
