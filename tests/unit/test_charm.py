@@ -17,6 +17,7 @@ from unittest.mock import ANY, call, DEFAULT, Mock, mock_open, patch, PropertyMo
 from charmlibs.snap import SnapError
 from charms.operator_libs_linux.v0 import apt
 from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
+from charms.smtp_integrator.v0.smtp import TransportSecurity
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (
@@ -1578,7 +1579,9 @@ class TestCharm(unittest.TestCase):
         )
 
         with patches as mocks:
-            self.harness.charm._configure_smtp("smtp.example.com")
+            self.harness.charm._configure_smtp(
+                "smtp.example.com", TransportSecurity.NONE, False
+            )
 
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
@@ -1600,7 +1603,9 @@ class TestCharm(unittest.TestCase):
 
         with patches as mocks:
             mocks["service_reload"].return_value = False
-            self.harness.charm._configure_smtp("smtp.example.com")
+            self.harness.charm._configure_smtp(
+                "smtp.example.com", TransportSecurity.NONE, False
+            )
 
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
@@ -1609,6 +1614,59 @@ class TestCharm(unittest.TestCase):
                 mock_postfix_cf_file.read(),
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
+    def test_configure_smtp_with_sasl_auth(self):
+        mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
+        mock_sasl_passwd = os.path.join(self.tempdir.name, "sasl_passwd")
+        with open(mock_postfix_cf, "w") as mock_postfix_cf_file:
+            mock_postfix_cf_file.write("relayhost = \nothersetting = nada\n")
+
+        patches = patch.multiple(
+            "charm",
+            service_reload=DEFAULT,
+            POSTFIX_CF=mock_postfix_cf,
+            POSTFIX_SASL_PASSWD=mock_sasl_passwd,
+        )
+
+        with patches as mocks:
+            self.harness.charm._configure_smtp(
+                "[smtp.example.com]:587", TransportSecurity.STARTTLS, True
+            )
+
+        mocks["service_reload"].assert_called_once_with("postfix")
+        with open(mock_postfix_cf) as mock_postfix_cf_file:
+            content = mock_postfix_cf_file.read()
+        self.assertIn("relayhost = [smtp.example.com]:587", content)
+        self.assertIn("smtp_sasl_auth_enable = yes", content)
+        self.assertIn(f"smtp_sasl_password_maps = hash:{mock_sasl_passwd}", content)
+        self.assertIn("smtp_sasl_security_options = noanonymous", content)
+        self.assertIn("smtp_tls_security_level = encrypt", content)
+        self.assertNotIn("smtp_tls_wrappermode", content)
+
+    def test_configure_smtp_with_tls_wrappermode(self):
+        mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
+        mock_sasl_passwd = os.path.join(self.tempdir.name, "sasl_passwd")
+        with open(mock_postfix_cf, "w") as mock_postfix_cf_file:
+            mock_postfix_cf_file.write("relayhost = \nothersetting = nada\n")
+
+        patches = patch.multiple(
+            "charm",
+            service_reload=DEFAULT,
+            POSTFIX_CF=mock_postfix_cf,
+            POSTFIX_SASL_PASSWD=mock_sasl_passwd,
+        )
+
+        with patches as mocks:
+            self.harness.charm._configure_smtp(
+                "[smtp.example.com]:465", TransportSecurity.TLS, True
+            )
+
+        mocks["service_reload"].assert_called_once_with("postfix")
+        with open(mock_postfix_cf) as mock_postfix_cf_file:
+            content = mock_postfix_cf_file.read()
+        self.assertIn("relayhost = [smtp.example.com]:465", content)
+        self.assertIn("smtp_tls_security_level = encrypt", content)
+        self.assertIn("smtp_tls_wrappermode = yes", content)
 
     def test_action_pause(self):
         with (
@@ -2535,12 +2593,20 @@ class TestSmtpIntegration(unittest.TestCase):
         )
         return event
 
-    def _make_relation_data(self, host, port, user=None, password=None):
+    def _make_relation_data(
+        self,
+        host,
+        port,
+        user=None,
+        password=None,
+        transport_security=TransportSecurity.STARTTLS,
+    ):
         data = Mock()
         data.host = host
         data.port = port
         data.user = user
         data.password = password
+        data.transport_security = transport_security
         return data
 
     def test_smtp_data_available_no_credentials_calls_configure_smtp(self):
@@ -2549,7 +2615,7 @@ class TestSmtpIntegration(unittest.TestCase):
         self.harness.charm._on_smtp_data_available(event)
 
         self.harness.charm._configure_smtp.assert_called_once_with(
-            "[smtp.example.com]:587"
+            "[smtp.example.com]:587", TransportSecurity.STARTTLS, False
         )
 
     def test_smtp_data_available_no_port(self):
@@ -2557,7 +2623,9 @@ class TestSmtpIntegration(unittest.TestCase):
 
         self.harness.charm._on_smtp_data_available(event)
 
-        self.harness.charm._configure_smtp.assert_called_once_with("[smtp.example.com]")
+        self.harness.charm._configure_smtp.assert_called_once_with(
+            "[smtp.example.com]", TransportSecurity.STARTTLS, False
+        )
 
     def test_smtp_data_available_writes_sasl_passwd(self):
         event = self._make_event(

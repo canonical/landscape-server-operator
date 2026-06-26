@@ -40,7 +40,11 @@ from charms.operator_libs_linux.v1.systemd import (
     service_running,
     SystemdError,
 )
-from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
+from charms.smtp_integrator.v0.smtp import (
+    SmtpDataAvailableEvent,
+    SmtpRequires,
+    TransportSecurity,
+)
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -1559,18 +1563,45 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if should_update:
             self._update_ready_status(restart_services=True)
 
-    def _configure_smtp(self, relay_host: str) -> None:
+    def _configure_smtp(
+        self,
+        relay_host: str,
+        transport_security: TransportSecurity,
+        has_credentials: bool,
+    ) -> None:
+        smtp_settings = {
+            "relayhost": relay_host,
+        }
+
+        if has_credentials:
+            smtp_settings.update(
+                {
+                    "smtp_sasl_auth_enable": "yes",
+                    "smtp_sasl_password_maps": f"hash:{POSTFIX_SASL_PASSWD}",
+                    "smtp_sasl_security_options": "noanonymous",
+                }
+            )
+
+        if transport_security == TransportSecurity.STARTTLS:
+            smtp_settings["smtp_tls_security_level"] = "encrypt"
+        elif transport_security == TransportSecurity.TLS:
+            smtp_settings["smtp_tls_security_level"] = "encrypt"
+            smtp_settings["smtp_tls_wrappermode"] = "yes"
 
         # Rewrite postfix config.
         with open(POSTFIX_CF, "r") as postfix_config_file:
             new_lines = []
             for line in postfix_config_file:
-                if line.startswith("relayhost ="):
-                    new_line = "relayhost = " + relay_host
+                key = line.split("=")[0].strip() if "=" in line else None
+                if key in smtp_settings:
+                    new_line = f"{key} = {smtp_settings.pop(key)}"
                 else:
                     new_line = line
 
                 new_lines.append(new_line)
+
+        for key, value in smtp_settings.items():
+            new_lines.append(f"{key} = {value}")
 
         with open(POSTFIX_CF, "w") as postfix_config_file:
             postfix_config_file.write("\n".join(new_lines))
@@ -1593,8 +1624,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             host = f"[{host}]"
         relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
 
+        has_credentials = (
+            relation_data.user is not None and relation_data.password is not None
+        )
+
         logger.info("Configuring SMTP relay: %s", relay_host)
-        self._configure_smtp(relay_host)
+        self._configure_smtp(
+            relay_host, relation_data.transport_security, has_credentials
+        )
         self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
 
     def _on_smtp_relation_broken(self, _) -> None:
