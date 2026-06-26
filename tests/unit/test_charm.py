@@ -25,8 +25,6 @@ from unittest.mock import (
 from charmlibs import apt
 from charmlibs.apt import PackageError, PackageNotFoundError
 from charmlibs.snap import SnapError
-from charms.operator_libs_linux.v0 import apt
-from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
 from charms.smtp_integrator.v0.smtp import TransportSecurity
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
