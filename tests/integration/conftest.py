@@ -138,6 +138,12 @@ def lbaas(juju: jubilant.Juju):
     if not app_status or not has_haproxy_route_provider(juju, "landscape-server"):
         pytest.skip("HAProxy route not configured, skipping...")
 
+    if USE_HOST_JUJU_MODEL and not USE_HOST_LBAAS_MODEL:
+        pytest.skip(
+            "Cannot create models on JAAS controller; "
+            "set LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL to use an existing lbaas model"
+        )
+
     if USE_HOST_LBAAS_MODEL:
         lbaas_model = LBAAS_MODEL_NAME
         lbaas_juju = jubilant.Juju(model=lbaas_model)
