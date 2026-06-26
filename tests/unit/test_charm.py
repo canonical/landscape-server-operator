@@ -1,4 +1,4 @@
-# Copyright 2026 Canonical Ltd
+# Copyright 2025-2026 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at
