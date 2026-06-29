@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd
+# Copyright 2025-2026 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more about testing at
@@ -6,7 +6,9 @@
 
 from grp import struct_group
 import json
+import lzma
 import os
+from pathlib import Path
 from pwd import struct_passwd
 import subprocess
 from subprocess import CalledProcessError
@@ -25,6 +27,7 @@ from unittest.mock import (
 from charmlibs import apt
 from charmlibs.apt import PackageError, PackageNotFoundError
 from charmlibs.snap import SnapError
+from charms.smtp_integrator.v0.smtp import TransportSecurity
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import (
@@ -61,6 +64,7 @@ from charm import (
     UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
 )
 from settings_files import AMQP_USERNAME, VHOSTS
+from src.charm import LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED, LANDSCAPE_SERVER
 
 IS_CI = os.getenv("GITHUB_ACTIONS", None) is not None
 """
@@ -122,7 +126,7 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
 
         actual_static_configs = [scrape["static_configs"][0] for scrape in scrape_jobs]
 
-        self.assertListEqual(expected_static_configs, actual_static_configs)
+        self.assertCountEqual(expected_static_configs, actual_static_configs)
 
     def test_scrape_interval(self):
         """
@@ -142,6 +146,62 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
 
         for scrape_job in config["metrics_scrape_jobs"]:
             self.assertEqual(scrape_interval, scrape_job["scrape_interval"])
+
+    def test_dashboards_included_in_relation(self):
+        """
+        All Grafana dashboards from src/grafana_dashboards/ are included
+        in the cos-agent relation data.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("cos-agent")
+        state = State(relations=[relation])
+
+        result = context.run(context.on.relation_joined(relation), state)
+        config = self._get_cos_agent_relation_config(result)
+
+        self.assertIn("dashboards", config)
+
+        dashboard_dir = Path("src/grafana_dashboards")
+        expected_count = len(list(dashboard_dir.glob("*.json")))
+        self.assertEqual(len(config["dashboards"]), expected_count)
+
+    def test_dashboards_are_valid_json(self):
+        """
+        Each dashboard in the relation data decompresses to valid JSON.
+        """
+        context = Context(LandscapeServerCharm)
+        relation = Relation("cos-agent")
+        state = State(relations=[relation])
+
+        result = context.run(context.on.relation_joined(relation), state)
+        config = self._get_cos_agent_relation_config(result)
+
+        import base64
+
+        for encoded in config["dashboards"]:
+            raw = base64.b64decode(encoded)
+            dashboard = json.loads(lzma.decompress(raw))
+            self.assertIsInstance(dashboard, dict)
+            self.assertIn("panels", dashboard)
+
+    def test_dashboards_use_prometheusds_datasource(self):
+        """
+        All dashboard datasource references use ${prometheusds}.
+        """
+        dashboard_dir = Path("src/grafana_dashboards")
+        for path in dashboard_dir.glob("*.json"):
+            with open(path) as f:
+                dashboard = json.load(f)
+            for panel in dashboard.get("panels", []):
+                ds = panel.get("datasource", {})
+                if ds.get("type") == "prometheus":
+                    self.assertEqual(
+                        ds["uid"],
+                        "${prometheusds}",
+                        f"{path.name} panel"
+                        f" '{panel.get('title')}'"
+                        " should use ${{prometheusds}}",
+                    )
 
 
 class TestDebarchiveRelation:
@@ -2020,7 +2080,9 @@ class TestCharm(unittest.TestCase):
         )
 
         with patches as mocks:
-            self.harness.charm._configure_smtp("smtp.example.com")
+            self.harness.charm._configure_smtp(
+                "smtp.example.com", TransportSecurity.NONE, False
+            )
 
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
@@ -2042,7 +2104,9 @@ class TestCharm(unittest.TestCase):
 
         with patches as mocks:
             mocks["service_reload"].return_value = False
-            self.harness.charm._configure_smtp("smtp.example.com")
+            self.harness.charm._configure_smtp(
+                "smtp.example.com", TransportSecurity.NONE, False
+            )
 
         mocks["service_reload"].assert_called_once_with("postfix")
         with open(mock_postfix_cf) as mock_postfix_cf_file:
@@ -2051,6 +2115,59 @@ class TestCharm(unittest.TestCase):
                 mock_postfix_cf_file.read(),
             )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
+    def test_configure_smtp_with_sasl_auth(self):
+        mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
+        mock_sasl_passwd = os.path.join(self.tempdir.name, "sasl_passwd")
+        with open(mock_postfix_cf, "w") as mock_postfix_cf_file:
+            mock_postfix_cf_file.write("relayhost = \nothersetting = nada\n")
+
+        patches = patch.multiple(
+            "charm",
+            service_reload=DEFAULT,
+            POSTFIX_CF=mock_postfix_cf,
+            POSTFIX_SASL_PASSWD=mock_sasl_passwd,
+        )
+
+        with patches as mocks:
+            self.harness.charm._configure_smtp(
+                "[smtp.example.com]:587", TransportSecurity.STARTTLS, True
+            )
+
+        mocks["service_reload"].assert_called_once_with("postfix")
+        with open(mock_postfix_cf) as mock_postfix_cf_file:
+            content = mock_postfix_cf_file.read()
+        self.assertIn("relayhost = [smtp.example.com]:587", content)
+        self.assertIn("smtp_sasl_auth_enable = yes", content)
+        self.assertIn(f"smtp_sasl_password_maps = hash:{mock_sasl_passwd}", content)
+        self.assertIn("smtp_sasl_security_options = noanonymous", content)
+        self.assertIn("smtp_tls_security_level = encrypt", content)
+        self.assertNotIn("smtp_tls_wrappermode", content)
+
+    def test_configure_smtp_with_tls_wrappermode(self):
+        mock_postfix_cf = os.path.join(self.tempdir.name, "my_postfix.cf")
+        mock_sasl_passwd = os.path.join(self.tempdir.name, "sasl_passwd")
+        with open(mock_postfix_cf, "w") as mock_postfix_cf_file:
+            mock_postfix_cf_file.write("relayhost = \nothersetting = nada\n")
+
+        patches = patch.multiple(
+            "charm",
+            service_reload=DEFAULT,
+            POSTFIX_CF=mock_postfix_cf,
+            POSTFIX_SASL_PASSWD=mock_sasl_passwd,
+        )
+
+        with patches as mocks:
+            self.harness.charm._configure_smtp(
+                "[smtp.example.com]:465", TransportSecurity.TLS, True
+            )
+
+        mocks["service_reload"].assert_called_once_with("postfix")
+        with open(mock_postfix_cf) as mock_postfix_cf_file:
+            content = mock_postfix_cf_file.read()
+        self.assertIn("relayhost = [smtp.example.com]:465", content)
+        self.assertIn("smtp_tls_security_level = encrypt", content)
+        self.assertIn("smtp_tls_wrappermode = yes", content)
 
     def test_action_pause(self):
         with (
@@ -2991,12 +3108,20 @@ class TestSmtpIntegration(unittest.TestCase):
         )
         return event
 
-    def _make_relation_data(self, host, port, user=None, password=None):
+    def _make_relation_data(
+        self,
+        host,
+        port,
+        user=None,
+        password=None,
+        transport_security=TransportSecurity.STARTTLS,
+    ):
         data = Mock()
         data.host = host
         data.port = port
         data.user = user
         data.password = password
+        data.transport_security = transport_security
         return data
 
     def test_smtp_data_available_no_credentials_calls_configure_smtp(self):
@@ -3005,7 +3130,7 @@ class TestSmtpIntegration(unittest.TestCase):
         self.harness.charm._on_smtp_data_available(event)
 
         self.harness.charm._configure_smtp.assert_called_once_with(
-            "[smtp.example.com]:587"
+            "[smtp.example.com]:587", TransportSecurity.STARTTLS, False
         )
 
     def test_smtp_data_available_no_port(self):
@@ -3013,7 +3138,9 @@ class TestSmtpIntegration(unittest.TestCase):
 
         self.harness.charm._on_smtp_data_available(event)
 
-        self.harness.charm._configure_smtp.assert_called_once_with("[smtp.example.com]")
+        self.harness.charm._configure_smtp.assert_called_once_with(
+            "[smtp.example.com]", TransportSecurity.STARTTLS, False
+        )
 
     def test_smtp_data_available_writes_sasl_passwd(self):
         event = self._make_event(
@@ -3237,3 +3364,128 @@ class TestSchemaFlags:
             ctx.run(ctx.on.action("migrate-schema"), state)
 
         assert isinstance(ctx.action_results, dict) or ctx.action_results is None
+
+
+class TestPackageInstall:
+    def test_install_only_landscape_server(self):
+        """
+        When passing `min_install=true` and running in standalone mode,
+        only the landscape-server package is installed.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": True,
+                "deployment_mode": "standalone",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt),
+            patch("charm.check_call") as check_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            ctx.run(ctx.on.install(), state)
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert [
+            "apt-get",
+            "install",
+            "--no-install-recommends",
+            "-y",
+            LANDSCAPE_SERVER,
+        ] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
+
+    def test_install_landscape_server_hashids(self):
+        """
+        When passing `min_install=false` and running in standalone mode,
+        the landscape-server and landscape-hashids packages are installed.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": False,
+                "deployment_mode": "standalone",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_called_once_with(
+            [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS], update_cache=True
+        )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
+
+    def test_install_landscape_server_hashids_hosted(self):
+        """
+        When passing `min_install=false` and running in SaaS mode,
+        all three packages are installed.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": False,
+                "deployment_mode": "saas",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_mock,
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+        ):
+            apt_mock.add_package.return_value = None
+            ctx.run(ctx.on.install(), state)
+
+        apt_mock.add_package.assert_called_once_with(
+            [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED],
+            update_cache=True,
+        )
+
+        check_mock_call_args = [c.args[0] for c in check_mock.call_args_list]
+        assert ["apt-mark", "hold", LANDSCAPE_SERVER] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
+        assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
+
+    def test_install_landscape_server_hosted_min_install_blocked(self):
+        """
+        min_install=True with a non-standalone deployment_mode is a config error
+        since landscape-hosted depends on landscape-hashids.
+        """
+        ctx = Context(LandscapeServerCharm)
+        state = State(
+            unit_status=MaintenanceStatus(),
+            config={
+                "min_install": True,
+                "deployment_mode": "saas",
+            },
+        )
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+            patch("charm.prepend_default_settings"),
+            patch("charm.update_service_conf"),
+            ctx(ctx.on.install(), state) as mgr,
+        ):
+            apt_mock.add_package.return_value = None
+            assert isinstance(mgr.charm.unit.status, BlockedStatus)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2025 Canonical Ltd
+# Copyright 2025-2026 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more at: https://juju.is/docs/sdk
@@ -39,7 +39,11 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
-from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
+from charms.smtp_integrator.v0.smtp import (
+    SmtpDataAvailableEvent,
+    SmtpRequires,
+    TransportSecurity,
+)
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -111,6 +115,8 @@ GPG_SERVICE_CONF_SECTIONS = (
 )
 
 LANDSCAPE_SERVER = "landscape-server"
+LANDSCAPE_HASH_IDS = "landscape-hashids"
+LANDSCAPE_HOSTED = "landscape-hosted"
 LANDSCAPE_PACKAGES = (
     LANDSCAPE_SERVER,
     "landscape-client",
@@ -776,6 +782,28 @@ class LandscapeServerCharm(CharmBase):
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
+    def _install_debian_packages_with_recommends(
+        self, package_names: list[str]
+    ) -> None:
+        """
+        Installs a Debian package via apt with `--install-recommends`.
+        """
+
+        # Explicitly ensure cache is up-to-date after adding the PPA.
+        try:
+            apt.add_package(package_names, update_cache=True)
+        except PackageError as e:
+            logger.error("Failed to install packages: %s", str(e))
+            raise e
+
+    def _hold_debian_packages(self, package_names: list[str]) -> None:
+        for p in package_names:
+            try:
+                check_call(["apt-mark", "hold", p])
+            except CalledProcessError as e:
+                logger.error("Error trying to hold %s: %s", p, str(e))
+                raise e
+
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
@@ -799,40 +827,46 @@ class LandscapeServerCharm(CharmBase):
         try:
             # This package is responsible for the hanging installs and ignores env vars
             apt.remove_package(["needrestart"])
+        except (PackageNotFoundError, PackageError) as e:
+            logger.error("Failed to remove needrestart package: %s", str(e))
+            raise e  # This will trigger juju's exponential retry
 
-            # Add the Landscape Server PPA and install via apt.
-            # add-apt-repository doesn't use the proxy configuration from apt or juju
-            # let's make sure to use the http(s) proxy settings from the charm or at
-            # least any juju_proxy setting, add the classic http(s)_proxy to the env
-            # that will be used only for add-apt-repository call
-            add_apt_repository_env = self._build_add_apt_repository_env()
-
-            for ppa in self.charm_config.landscape_ppas:
+        # Add the Landscape Server PPA and install via apt.
+        # add-apt-repository doesn't use the proxy configuration from apt or juju
+        # let's make sure to use the http(s) proxy settings from the charm or at
+        # least any juju_proxy setting, add the classic http(s)_proxy to the env
+        # that will be used only for add-apt-repository call
+        add_apt_repository_env = self._build_add_apt_repository_env()
+        for ppa in self.charm_config.landscape_ppas:
+            try:
                 check_call(
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
+            except CalledProcessError as e:
+                logger.error("Failed to add PPA '%s': %s", ppa, str(e))
+                raise e
 
-            if self.charm_config.min_install:
-                logger.info("Not installing hashids..")
+        if self.charm_config.min_install:
+            try:
                 check_call(
                     [
-                        "apt",
+                        "apt-get",
                         "install",
-                        LANDSCAPE_SERVER,
                         "--no-install-recommends",
                         "-y",
+                        LANDSCAPE_SERVER,
                     ]
                 )
-            else:
-                # Explicitly ensure cache is up-to-date after adding the PPA.
-                apt.add_package(
-                    [LANDSCAPE_SERVER, "landscape-hashids"], update_cache=True
-                )
-                check_call(["apt-mark", "hold", "landscape-hashids"])
-            check_call(["apt-mark", "hold", LANDSCAPE_SERVER])
-        except (PackageNotFoundError, PackageError, CalledProcessError) as exc:
-            logger.error("Failed to install packages")
-            raise exc  # This will trigger juju's exponential retry
+            except CalledProcessError as e:
+                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
+                raise e
+            self._hold_debian_packages([LANDSCAPE_SERVER])
+        else:
+            pkg_list = [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+            if self.charm_config.deployment_mode != "standalone":
+                pkg_list.append(LANDSCAPE_HOSTED)
+            self._install_debian_packages_with_recommends(pkg_list)
+            self._hold_debian_packages(pkg_list)
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:
@@ -1706,18 +1740,45 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if should_update:
             self._update_ready_status(restart_services=True)
 
-    def _configure_smtp(self, relay_host: str) -> None:
+    def _configure_smtp(
+        self,
+        relay_host: str,
+        transport_security: TransportSecurity,
+        has_credentials: bool,
+    ) -> None:
+        smtp_settings = {
+            "relayhost": relay_host,
+        }
+
+        if has_credentials:
+            smtp_settings.update(
+                {
+                    "smtp_sasl_auth_enable": "yes",
+                    "smtp_sasl_password_maps": f"hash:{POSTFIX_SASL_PASSWD}",
+                    "smtp_sasl_security_options": "noanonymous",
+                }
+            )
+
+        if transport_security == TransportSecurity.STARTTLS:
+            smtp_settings["smtp_tls_security_level"] = "encrypt"
+        elif transport_security == TransportSecurity.TLS:
+            smtp_settings["smtp_tls_security_level"] = "encrypt"
+            smtp_settings["smtp_tls_wrappermode"] = "yes"
 
         # Rewrite postfix config.
         with open(POSTFIX_CF, "r") as postfix_config_file:
             new_lines = []
             for line in postfix_config_file:
-                if line.startswith("relayhost ="):
-                    new_line = "relayhost = " + relay_host
+                key = line.split("=")[0].strip() if "=" in line else None
+                if key in smtp_settings:
+                    new_line = f"{key} = {smtp_settings.pop(key)}"
                 else:
                     new_line = line
 
                 new_lines.append(new_line)
+
+        for key, value in smtp_settings.items():
+            new_lines.append(f"{key} = {value}")
 
         with open(POSTFIX_CF, "w") as postfix_config_file:
             postfix_config_file.write("\n".join(new_lines))
@@ -1740,8 +1801,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             host = f"[{host}]"
         relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
 
+        has_credentials = (
+            relation_data.user is not None and relation_data.password is not None
+        )
+
         logger.info("Configuring SMTP relay: %s", relay_host)
-        self._configure_smtp(relay_host)
+        self._configure_smtp(
+            relay_host, relation_data.transport_security, has_credentials
+        )
         self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
 
     def _on_smtp_relation_broken(self, _) -> None:
