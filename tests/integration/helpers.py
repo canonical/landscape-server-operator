@@ -253,8 +253,6 @@ def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
     )
 
 
-<<<<<<< fix/jaas-compat
-=======
 def has_cos_agent(juju: jubilant.Juju) -> bool:
     """Check if a cos-agent relation exists."""
     relations = juju.status().apps["landscape-server"].relations
@@ -282,7 +280,6 @@ def get_cos_agent_config(juju: jubilant.Juju) -> dict:
     return json.loads(raw)
 
 
->>>>>>> main
 def leader_unit_name(juju: jubilant.Juju, app: str) -> str:
     """Return the leader unit name for an application."""
     app_status = juju.status().apps[app]
