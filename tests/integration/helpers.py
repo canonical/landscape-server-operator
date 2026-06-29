@@ -1,9 +1,19 @@
+import json
 import time
 
 import jubilant
+import pytest
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+
+SKIP_ACTIVE_CHECK = {"opentelemetry-collector"}
+
+
+def all_landscape_active(status: jubilant.Status) -> bool:
+    """Like jubilant.all_active but ignores apps that may be blocked."""
+    apps = [name for name in status.apps if name not in SKIP_ACTIVE_CHECK]
+    return jubilant.all_active(status, *apps)
 
 
 def get_session(
@@ -137,7 +147,7 @@ def restore_db_relations(juju: jubilant.Juju, expected: set[str]) -> None:
             )
             juju.wait(lambda status: not has_legacy_pg(juju), timeout=120)
 
-    juju.wait(jubilant.all_active, timeout=300)
+    juju.wait(all_landscape_active, timeout=300)
 
 
 def wait_for_service(
@@ -154,12 +164,15 @@ def wait_for_service(
     starting, so this retries until `timeout` seconds have elapsed.
     """
     deadline = time.monotonic() + timeout
-    last_exc: jubilant.CLIError | None = None
+    last_exc: jubilant.TaskError | None = None
     while time.monotonic() < deadline:
         try:
-            juju.ssh(unit, f"systemctl is-active {service}.service")
+            juju.exec(
+                f"systemctl is-active {service}.service",
+                unit=unit,
+            )
             return
-        except jubilant.CLIError as e:
+        except jubilant.TaskError as e:
             last_exc = e
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -238,3 +251,57 @@ def has_haproxy_route_provider(juju: jubilant.Juju, app: str) -> bool:
         for rels in status.apps[app].relations.values()
         for rel in rels
     )
+
+
+def has_cos_agent(juju: jubilant.Juju) -> bool:
+    """Check if a cos-agent relation exists."""
+    relations = juju.status().apps["landscape-server"].relations
+    return "cos-agent" in relations
+
+
+def get_cos_agent_config(juju: jubilant.Juju) -> dict:
+    """Return the parsed cos-agent relation config from the leader."""
+    leader = leader_unit_name(juju, "landscape-server")
+    ids_raw = juju.cli(
+        "exec",
+        "--unit",
+        leader,
+        "--",
+        "relation-ids cos-agent",
+    ).strip()
+    rel_id = ids_raw.split(":")[1]
+    raw = juju.cli(
+        "exec",
+        "--unit",
+        leader,
+        "--",
+        f"relation-get -r {rel_id} config {leader}",
+    ).strip()
+    return json.loads(raw)
+
+
+def leader_unit_name(juju: jubilant.Juju, app: str) -> str:
+    """Return the leader unit name for an application."""
+    app_status = juju.status().apps[app]
+    for name, unit_status in app_status.units.items():
+        if unit_status.leader:
+            return name
+    pytest.fail(f"No leader unit found for {app}")
+
+
+def relation_app_data(juju: jubilant.Juju, unit: str, endpoint: str) -> dict:
+    """Return the local app databag for a unit's relation endpoint."""
+    ids_stdout = juju.cli("exec", "--unit", unit, "--", f"relation-ids {endpoint}")
+    ids = ids_stdout.strip().splitlines()
+    if not ids:
+        pytest.fail(f"No relation IDs found for endpoint {endpoint}")
+
+    data_stdout = juju.cli(
+        "exec",
+        "--unit",
+        unit,
+        "--",
+        f"relation-get --format=json -r {ids[0]} --app - {unit}",
+    )
+    data = json.loads(data_stdout)
+    return {k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()}
