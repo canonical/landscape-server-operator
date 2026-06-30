@@ -1444,7 +1444,6 @@ class LandscapeServerCharm(CharmBase):
             ports=appserver_ports,
             paths=["/repository"],
             protocol="http",
-            check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,

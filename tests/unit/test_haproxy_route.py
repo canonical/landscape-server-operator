@@ -299,12 +299,13 @@ class TestHealthChecks:
         calls = _calls_for(mock, "package-upload")
         assert calls[0].kwargs.get("check_path") == "/upload"
 
-    def test_repository_check_path(self, replicas_network_state):
+    def test_repository_has_no_health_check(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "repository")
-        assert calls[0].kwargs.get("check_path") == "/"
+        assert "check_path" not in calls[0].kwargs
+        assert "check_interval" not in calls[0].kwargs
 
     def test_appserver_has_health_check_timing(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
