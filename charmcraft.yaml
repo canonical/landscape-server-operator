@@ -14,7 +14,7 @@ charm-libs:
   - lib: data_platform_libs.data_interfaces
     version: "0.54"
   - lib: grafana_agent.cos_agent
-    version: "0.20"
+    version: "0.25"
   - lib: haproxy.haproxy_route
     version: "1.13"
   - lib: smtp_integrator.smtp
