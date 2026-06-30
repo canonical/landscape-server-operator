@@ -353,9 +353,7 @@ class TestHealthChecks:
     def test_custom_base_port_reflected_in_check_port(self, replicas_network_state):
         """check_port follows config, not a hardcoded value."""
         context = Context(LandscapeServerCharm)
-        state = State(
-            config={"appserver_base_port": 18080}, **replicas_network_state
-        )
+        state = State(config={"appserver_base_port": 18080}, **replicas_network_state)
         mock = _run_provide(context, state)
         assert self._check_port_for(mock, "appserver") == 18080
 
