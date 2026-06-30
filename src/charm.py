@@ -1412,7 +1412,7 @@ class LandscapeServerCharm(CharmBase):
             ports=api_ports,
             paths=["/api"],
             protocol="http",
-            check_path="/api",
+            check_path="/api/about",
             check_interval=2,
             check_rise=2,
             check_fall=3,
