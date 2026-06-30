@@ -183,7 +183,7 @@ class TestLeaderRoutes:
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "package-upload")
         assert calls
-        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
 
@@ -319,7 +319,7 @@ class TestHealthChecks:
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "appserver")
-        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
 
@@ -328,7 +328,7 @@ class TestHealthChecks:
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "pingserver")
-        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
 
@@ -337,7 +337,7 @@ class TestHealthChecks:
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "message-server")
-        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
 
@@ -346,7 +346,7 @@ class TestHealthChecks:
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "api")
-        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
 
