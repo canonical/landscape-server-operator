@@ -336,12 +336,12 @@ run "in_model_haproxy_null_revision" {
 
   assert {
     condition     = can(output.requires.appserver_haproxy_route)
-    error_message = "Null revision on 26.04/beta should have haproxy-route relations"
+    error_message = "Null revision on 26.04/edge should have haproxy-route relations"
   }
 
   assert {
     condition     = !can(output.requires.website)
-    error_message = "Null revision on 26.04/beta should not have legacy website relation"
+    error_message = "Null revision on 26.04/edge should not have legacy website relation"
   }
 }
 

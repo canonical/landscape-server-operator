@@ -1,0 +1,1195 @@
+{
+    "__inputs": [],
+    "__elements": {},
+    "__requires": [
+        {
+            "type": "grafana",
+            "id": "grafana",
+            "name": "Grafana",
+            "version": "12.1.1"
+        },
+        {
+            "type": "datasource",
+            "id": "prometheus",
+            "name": "Prometheus",
+            "version": "1.0.0"
+        },
+        {
+            "type": "panel",
+            "id": "timeseries",
+            "name": "Time series",
+            "version": ""
+        }
+    ],
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            },
+            {
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": false,
+                "iconColor": "rgba(255, 96, 96, 1)",
+                "name": "Landscape Server Events",
+                "tags": [
+                    "service:landscape-server"
+                ],
+                "type": "tags"
+            }
+        ]
+    },
+    "description": "High-level view of Landscape message server performance",
+    "editable": false,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "panels": [
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "Number of messages remaining on a client after each exchange",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "short"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 6,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.50, sum(rate(landscape_message_server_message_remaining_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p50",
+                    "range": true,
+                    "refId": "P50",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.95, sum(rate(landscape_message_server_message_remaining_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p95",
+                    "range": true,
+                    "refId": "P95",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.99, sum(rate(landscape_message_server_message_remaining_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p99",
+                    "range": true,
+                    "refId": "P99",
+                    "useBackend": false
+                }
+            ],
+            "title": "Remaining messages per client",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "Distribution of remaining messages per client over time",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "% of clients in range",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 50,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "normal"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "max": 100,
+                    "min": 0,
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "percent"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "total obs/sec"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.axisPlacement",
+                                "value": "right"
+                            },
+                            {
+                                "id": "custom.axisLabel",
+                                "value": "observations/sec"
+                            },
+                            {
+                                "id": "unit",
+                                "value": "short"
+                            },
+                            {
+                                "id": "custom.lineWidth",
+                                "value": 2
+                            },
+                            {
+                                "id": "custom.fillOpacity",
+                                "value": 0
+                            },
+                            {
+                                "id": "custom.stacking",
+                                "value": {
+                                    "group": "A",
+                                    "mode": "none"
+                                }
+                            },
+                            {
+                                "id": "custom.lineStyle",
+                                "value": {
+                                    "dash": [
+                                        6,
+                                        4
+                                    ],
+                                    "fill": "dash"
+                                }
+                            },
+                            {
+                                "id": "color",
+                                "value": {
+                                    "fixedColor": "#FF9900",
+                                    "mode": "fixed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 10
+            },
+            "id": 7,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "sum(rate(landscape_message_server_message_remaining_bucket{le=\"50.0\"}[$rate_interval])) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "0-50",
+                    "range": true,
+                    "refId": "B0",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"250.0\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"50.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "50-250",
+                    "range": true,
+                    "refId": "B1",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"1000.0\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"250.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "250-1K",
+                    "range": true,
+                    "refId": "B2",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"5000.0\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"1000.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "1K-5K",
+                    "range": true,
+                    "refId": "B3",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"10000.0\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"5000.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "5K-10K",
+                    "range": true,
+                    "refId": "B4",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"50000.0\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"10000.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "10K-50K",
+                    "range": true,
+                    "refId": "B5",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"100000.0\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"50000.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "50K-100K",
+                    "range": true,
+                    "refId": "B6",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "(sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) - sum(rate(landscape_message_server_message_remaining_bucket{le=\"100000.0\"}[$rate_interval]))) / sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval])) * 100",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "100K+",
+                    "range": true,
+                    "refId": "B7",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "sum(rate(landscape_message_server_message_remaining_bucket{le=\"+Inf\"}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "total obs/sec",
+                    "range": true,
+                    "refId": "TOTAL",
+                    "useBackend": false
+                }
+            ],
+            "title": "Remaining messages distribution",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "Messages per second",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 20
+            },
+            "id": 1,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "sum(rate(landscape_message_server_message_dropped_total{}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "dropped",
+                    "range": true,
+                    "refId": "DROPPED",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "sum(rate(landscape_message_server_message_ignored_total{}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "hide": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "ignored",
+                    "range": true,
+                    "refId": "IGNORED",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "sum(rate(landscape_message_server_message_processed_total{}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "hide": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "processed",
+                    "range": true,
+                    "refId": "PROCESSED",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "builder",
+                    "expr": "sum(rate(landscape_message_server_message_skipped_total{}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "hide": false,
+                    "includeNullMetadata": false,
+                    "instant": false,
+                    "interval": "30s",
+                    "legendFormat": "skipped",
+                    "range": true,
+                    "refId": "SKIPPED",
+                    "useBackend": false
+                }
+            ],
+            "title": "Message processing rates",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "Message processing time percentiles",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 30
+            },
+            "id": 2,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.50, sum(rate(landscape_message_server_message_duration_seconds_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p50",
+                    "range": true,
+                    "refId": "P50",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.95, sum(rate(landscape_message_server_message_duration_seconds_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p95",
+                    "range": true,
+                    "refId": "P95",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.99, sum(rate(landscape_message_server_message_duration_seconds_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p99",
+                    "range": true,
+                    "refId": "P99",
+                    "useBackend": false
+                }
+            ],
+            "title": "Message processing time",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "HTTP requests per second by route",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 40
+            },
+            "id": 3,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "sum by (http_route, http_request_method) (rate(landscape_message_server_http_request_total{}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "{{http_request_method}} {{http_route}}",
+                    "range": true,
+                    "refId": "A",
+                    "useBackend": false
+                }
+            ],
+            "title": "HTTP request rate",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "HTTP request latency percentiles",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "s"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 48
+            },
+            "id": 4,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.50, sum(rate(landscape_message_server_http_server_request_duration_seconds_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p50",
+                    "range": true,
+                    "refId": "P50",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.95, sum(rate(landscape_message_server_http_server_request_duration_seconds_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p95",
+                    "range": true,
+                    "refId": "P95",
+                    "useBackend": false
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "histogram_quantile(0.99, sum(rate(landscape_message_server_http_server_request_duration_seconds_bucket{}[$rate_interval])) by (le))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "p99",
+                    "range": true,
+                    "refId": "P99",
+                    "useBackend": false
+                }
+            ],
+            "title": "HTTP request latency",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheusds}"
+            },
+            "description": "HTTP error rate by status code",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisBorderShow": false,
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "barWidthFactor": 0.6,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "insertNulls": false,
+                        "lineInterpolation": "linear",
+                        "lineWidth": 2,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": 0
+                            }
+                        ]
+                    },
+                    "unit": "reqps"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 56
+            },
+            "id": 5,
+            "options": {
+                "legend": {
+                    "calcs": [
+                        "lastNotNull",
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "hideZeros": false,
+                    "mode": "multi",
+                    "sort": "desc"
+                }
+            },
+            "pluginVersion": "12.1.1",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "${prometheusds}"
+                    },
+                    "disableTextWrap": false,
+                    "editorMode": "code",
+                    "expr": "sum by (http_response_status_code) (rate(landscape_message_server_http_request_total{http_response_status_code!~\"2..\"}[$rate_interval]))",
+                    "fullMetaSearch": false,
+                    "includeNullMetadata": false,
+                    "interval": "30s",
+                    "legendFormat": "{{http_response_status_code}}",
+                    "range": true,
+                    "refId": "A",
+                    "useBackend": false
+                }
+            ],
+            "title": "HTTP error rate",
+            "type": "timeseries"
+        }
+    ],
+    "schemaVersion": 41,
+    "tags": [
+        "landscape",
+        "message-server"
+    ],
+    "templating": {
+        "list": [
+            {
+                "current": {
+                    "text": "1h",
+                    "value": "1h"
+                },
+                "description": "Sampling interval for rate averages",
+                "includeAll": false,
+                "label": "Rate Interval",
+                "name": "rate_interval",
+                "options": [
+                    {
+                        "selected": false,
+                        "text": "2m",
+                        "value": "2m"
+                    },
+                    {
+                        "selected": false,
+                        "text": "5m",
+                        "value": "5m"
+                    },
+                    {
+                        "selected": false,
+                        "text": "15m",
+                        "value": "15m"
+                    },
+                    {
+                        "selected": true,
+                        "text": "1h",
+                        "value": "1h"
+                    },
+                    {
+                        "selected": false,
+                        "text": "6h",
+                        "value": "6h"
+                    },
+                    {
+                        "selected": false,
+                        "text": "24h",
+                        "value": "24h"
+                    }
+                ],
+                "query": "2m,5m,15m,1h,6h,24h",
+                "type": "custom"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "utc",
+    "title": "Overview",
+    "uid": "5b1f76bc-6e54-4f20-a536-220641982b94",
+    "version": 3,
+    "weekStart": ""
+}

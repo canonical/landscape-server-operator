@@ -180,7 +180,7 @@ run "validate_haproxy_route_outputs" {
       revision = 216
     }
     haproxy                 = null
-    haproxy_route_offer_url = "admin/lbaas:haproxy-route"
+    haproxy_route_offer_url = "admin/lbaas.haproxy-route"
   }
 
   override_module {
