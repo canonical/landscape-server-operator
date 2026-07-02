@@ -9,7 +9,7 @@ variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
     app_name   = optional(string, "landscape-server")
-    channel    = optional(string, "24.04/edge")
+    channel    = optional(string, "24.04/stable")
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
       landscape_ppa = "ppa:landscape/self-hosted-24.04"
@@ -56,10 +56,10 @@ variable "haproxy" {
     app_name = optional(string, "haproxy")
     channel  = optional(string, "latest/stable")
     config = optional(map(string), {
-      default_timeouts           = "queue 60000, connect 5000, client 120000, server 120000"
+      default_timeouts            = "queue 60000, connect 5000, client 120000, server 120000"
       global_default_bind_options = "no-tlsv10"
-      services                   = ""
-      ssl_cert                   = "SELFSIGNED"
+      services                    = ""
+      ssl_cert                    = "SELFSIGNED"
     })
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})

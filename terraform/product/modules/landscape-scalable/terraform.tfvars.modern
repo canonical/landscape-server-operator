@@ -19,4 +19,5 @@ postgresql = {
 haproxy = {
   channel = "2.8/edge"
   base    = "ubuntu@24.04"
+  config  = {}
 }
