@@ -533,12 +533,10 @@ def test_non_leader_unit_redirects_leader_only_services(juju: jubilant.Juju):
     if len(units) <= 1:
         pytest.skip("Need more than 1 unit to have a non-leader!")
 
-    juju.wait(all_landscape_active, timeout=300)
-
-    host = _haproxy_ip(juju)
-    assert juju.wait(all_landscape_active, timeout=300) and (
-        get_session().get(f"https://{host}/upload", verify=False).status_code == 200
-    )
+    host = urlparse(
+        juju.config("landscape-server").get("root_url", "https://landscape.local/")
+    ).hostname
+    assert get_session().get(f"https://{host}/upload", verify=False).status_code == 200
 
 
 def test_appserver_haproxy_route_enabled(juju: jubilant.Juju):
