@@ -101,8 +101,13 @@ run "validate_config_defaults" {
   }
 
   assert {
-    condition     = length(var.haproxy.config) == 0
-    error_message = "HAProxy should default to empty config"
+    condition     = lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
+    error_message = "HAProxy should default to ssl_cert = SELFSIGNED"
+  }
+
+  assert {
+    condition     = lookup(var.haproxy.config, "services", null) == ""
+    error_message = "HAProxy should default to empty services"
   }
 }
 
