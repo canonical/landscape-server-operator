@@ -13,7 +13,7 @@ variable "landscape_server" {
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
       autoregistration               = "true"
-      landscape_ppa                  = "ppa:landscape/self-hosted-beta"
+      landscape_ppa                  = "ppa:landscape/self-hosted-24.04"
       min_install                    = "true"
       root_url                       = "https://landscape.local/"
       enable_hostagent_messenger     = "true"
@@ -33,7 +33,7 @@ variable "postgresql" {
   description = "Configuration for the PostgreSQL charm. Set to null to skip deployment."
   type = object({
     app_name = optional(string, "postgresql")
-    channel  = optional(string, "16/stable")
+    channel  = optional(string, "14/stable")
     config = optional(map(string), {
       plugin_plpython3u_enable     = "true"
       plugin_ltree_enable          = "true"
@@ -45,7 +45,7 @@ variable "postgresql" {
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
     revision    = optional(number)
-    base        = optional(string, "ubuntu@24.04")
+    base        = optional(string, "ubuntu@22.04")
     units       = optional(number, 1)
     machines    = optional(set(string))
   })
@@ -59,7 +59,7 @@ variable "haproxy" {
   description = "Configuration for the HAProxy charm. Set to null to skip deployment."
   type = object({
     app_name    = optional(string, "haproxy")
-    channel     = optional(string, "2.8/edge")
+    channel     = optional(string, "latest/stable")
     config      = optional(map(string), {})
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})

@@ -291,6 +291,10 @@ run "test_haproxy_route_integrations_created" {
   variables {
     landscape_server = {
       revision = 216
+      config = {
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
+      }
     }
     haproxy_route_offer_url = "admin/lbaas.haproxy-route"
   }
