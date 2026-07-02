@@ -12,12 +12,7 @@ variable "landscape_server" {
     channel    = optional(string, "24.04/edge")
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
-      autoregistration               = "true"
       landscape_ppa                  = "ppa:landscape/self-hosted-24.04"
-      min_install                    = "true"
-      root_url                       = "https://landscape.local/"
-      enable_hostagent_messenger     = "true"
-      enable_ubuntu_installer_attach = "true"
     })
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
