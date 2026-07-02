@@ -910,12 +910,10 @@ def test_action_migrate_schema_allow_connections(juju: jubilant.Juju, bundle: No
     )
 
 
-def test_cos_agent_metrics_scrape_jobs(
-    juju: jubilant.Juju,
-    bundle: None,
-):
+def test_cos_agent_scrape_jobs(juju: jubilant.Juju, bundle: None):
     """
-    The cos-agent relation publishes one scrape job per metric-instrumented service.
+    The cos-agent relation publishes scrape configs for every
+    metric-instrumented Landscape service.
     """
     if not has_cos_agent(juju):
         pytest.skip("No cos-agent relation")
@@ -979,6 +977,7 @@ def test_cos_agent_dashboards_valid(
             ds = panel.get("datasource", {})
             if ds.get("type") == "prometheus":
                 assert ds["uid"] == "${prometheusds}", (
-                    f"'{title}' panel '{panel.get('title')}'"
+                    f"'{title}' panel"
+                    f" '{panel.get('title')}'"
                     " should use ${{prometheusds}}"
                 )
