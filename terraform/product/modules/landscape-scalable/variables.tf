@@ -9,7 +9,7 @@ variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
     app_name   = optional(string, "landscape-server")
-    channel    = optional(string, "26.04/edge")
+    channel    = optional(string, "24.04/edge")
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
       autoregistration               = "true"

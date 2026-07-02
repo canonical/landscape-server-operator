@@ -484,7 +484,7 @@ resource "juju_application" "tls_certificates" {
     base     = var.tls_certificates.base
   }
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -501,7 +501,7 @@ resource "juju_integration" "haproxy_certificates" {
 
   depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_receive_ca_certs" {
@@ -518,7 +518,7 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 
   depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer" {
