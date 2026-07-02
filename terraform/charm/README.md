@@ -98,7 +98,7 @@ make fix-charm-module
 
 | Name | Version |
 |------|---------|
-| <a name="provider_juju"></a> [juju](#provider\_juju) | ~> 1.0 |
+| <a name="provider_juju"></a> [juju](#provider\_juju) | 1.2.0 |
 
 ## Modules
 
@@ -116,7 +116,7 @@ No modules.
 |------|-------------|------|---------|:--------:|
 | <a name="input_app_name"></a> [app\_name](#input\_app\_name) | Name of the application in the Juju model. | `string` | `"landscape-server"` | no |
 | <a name="input_base"></a> [base](#input\_base) | The operating system on which to deploy. | `string` | `"ubuntu@24.04"` | no |
-| <a name="input_channel"></a> [channel](#input\_channel) | The channel to use when deploying a charm. | `string` | `"25.10/edge"` | no |
+| <a name="input_channel"></a> [channel](#input\_channel) | The channel to use when deploying a charm. | `string` | `"26.04/edge"` | no |
 | <a name="input_charm_name"></a> [charm\_name](#input\_charm\_name) | The name of the charm to be deployed. | `string` | `"landscape-server"` | no |
 | <a name="input_config"></a> [config](#input\_config) | Application config. Details about available options can be found at https://charmhub.io/landscape-server/configurations. | `map(string)` | `{}` | no |
 | <a name="input_constraints"></a> [constraints](#input\_constraints) | Juju constraints to apply for this application. | `string` | `"arch=amd64"` | no |
@@ -130,7 +130,7 @@ No modules.
 | Name | Description |
 |------|-------------|
 | <a name="output_app_name"></a> [app\_name](#output\_app\_name) | Name of the deployed application. |
-| <a name="output_has_haproxy_route_interface"></a> [has\_haproxy\_route\_interface](#output\_has\_haproxy\_route\_interface) | Indicates whether the deployed revision uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint. |
-| <a name="output_provides"></a> [provides](#output\_provides) | Map of integration endpoints this charm provides (`cos-agent`, `data`, `hosted`, `nrpe-external-master`, `website`). |
+| <a name="output_has_modern_haproxy_interface"></a> [has\_modern\_haproxy\_interface](#output\_has\_modern\_haproxy\_interface) | Indicates whether the deployed revision uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint. |
+| <a name="output_provides"></a> [provides](#output\_provides) | Map of integration endpoints this charm provides. |
 | <a name="output_requires"></a> [requires](#output\_requires) | Map of integration endpoints this charm requires. |
 <!-- END_TF_DOCS -->
