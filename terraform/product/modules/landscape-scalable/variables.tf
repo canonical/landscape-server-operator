@@ -12,7 +12,7 @@ variable "landscape_server" {
     channel    = optional(string, "24.04/edge")
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
-      landscape_ppa                  = "ppa:landscape/self-hosted-24.04"
+      landscape_ppa = "ppa:landscape/self-hosted-24.04"
     })
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
