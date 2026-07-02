@@ -130,7 +130,7 @@ deploy-landscape-scalable: check-terraform check-jq
 .PHONY: deploy-landscape-scalable-modern
 deploy-landscape-scalable-modern: check-terraform check-jq
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
-	$(MAKE) add-model
+	@if [ "$(SKIP_ADD_MODEL)" != "true" ]; then $(MAKE) add-model; else echo "skipping add-model..."; fi
 	cd terraform/product/modules/landscape-scalable && \
 	terraform init && \
 	terraform apply -auto-approve \
