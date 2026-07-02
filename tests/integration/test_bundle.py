@@ -63,7 +63,7 @@ def _haproxy_ip(juju: jubilant.Juju) -> str:
     haproxy = juju.status().apps.get("haproxy")
     if haproxy:
         return list(haproxy.units.values())[0].public_address
-    pytest.skip("No haproxy app found in local or lbaas model")
+    pytest.skip("No haproxy app found in current model")
 
 
 def test_debarchive_relation(juju: jubilant.Juju):
@@ -228,6 +228,10 @@ def test_redirect_https_default_routes_redirect_to_https(juju: jubilant.Juju):
         juju.wait(all_landscape_active, timeout=300)
 
 
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
 def test_services_up_over_https(juju: jubilant.Juju):
     """
     Services are responding over HTTPS.
@@ -464,8 +468,6 @@ def test_ubuntu_installer_attach_service(juju: jubilant.Juju):
     if not has_installer_attach:
         pytest.skip("Ubuntu Installer Attach not configured.")
 
-    juju.config("landscape-server", values={"enable_ubuntu_installer_attach": "true"})
-    juju.wait(all_landscape_active, timeout=300)
     for name in units.keys():
         wait_for_service(juju, name, LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
 
@@ -519,6 +521,7 @@ def test_ubuntu_installer_attach_toggle_no_maintenance(juju: jubilant.Juju):
 
 
 def test_non_leader_unit_redirects_leader_only_services(juju: jubilant.Juju):
+    juju.wait(all_landscape_active, timeout=300)
     status = juju.status()
     units = status.apps["landscape-server"].units
 
@@ -575,6 +578,103 @@ def test_appserver_haproxy_route_enabled(juju: jubilant.Juju):
     appserver_data = get_relation_data("appserver-haproxy-route")
 
     assert appserver_data.get("service", "").startswith("landscape-appserver-")
+
+
+@pytest.mark.skipif(
+    USE_HOST_JUJU_MODEL,
+    reason=LIVE_MODEL_SKIP_REASON,
+)
+def test_grpc_haproxy_route_config_enabled(juju: jubilant.Juju):
+    """
+    Verify that when haproxy-route configs are enabled, the charm creates the
+    relations and publishes the correct data to the relation databags.
+    """
+    status = juju.status()
+    app_status = status.apps["landscape-server"]
+    if (
+        "hostagent-messenger-haproxy-route" not in app_status.relations
+        or "ubuntu-installer-attach-haproxy-route" not in app_status.relations
+    ):
+        pytest.skip("gRPC haproxy-route not integrated, skipping...")
+
+    juju.wait(all_landscape_active, timeout=300)
+    config = juju.config("landscape-server")
+    original_hostagent = config.get("enable_hostagent_messenger")
+    original_installer = config.get("enable_ubuntu_installer_attach")
+
+    try:
+        juju.config(
+            "landscape-server",
+            values={
+                "enable_hostagent_messenger": "true",
+                "enable_ubuntu_installer_attach": "true",
+            },
+        )
+        juju.wait(all_landscape_active, timeout=300)
+        status = juju.status()
+        app_status = status.apps["landscape-server"]
+        assert "hostagent-messenger-haproxy-route" in app_status.relations
+        assert "ubuntu-installer-attach-haproxy-route" in app_status.relations
+
+        _leader_unit = None
+        for name, unit_status in app_status.units.items():
+            if unit_status.leader:
+                _leader_unit = name
+                break
+
+        if not _leader_unit:
+            pytest.fail("No leader unit found for landscape-server")
+
+        def get_relation_data(endpoint):
+            ids_stdout = juju.cli(
+                "exec", "--unit", _leader_unit, "--", f"relation-ids {endpoint}"
+            )
+            ids = ids_stdout.strip().splitlines()
+            if not ids:
+                pytest.fail(f"No relation IDs found for endpoint {endpoint}")
+            rel_id = ids[0]
+            data_stdout = juju.cli(
+                "exec",
+                "--unit",
+                _leader_unit,
+                "--",
+                f"relation-get --format=json -r {rel_id} --app - {_leader_unit}",
+            )
+            data = json.loads(data_stdout)
+            return {
+                k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()
+            }
+
+        hostagent_data = get_relation_data("hostagent-messenger-haproxy-route")
+        assert hostagent_data.get("external_grpc_port") == "6554", (
+            "Expected external_grpc_port 6554, "
+            f"got {hostagent_data.get('external_grpc_port')}"
+        )
+        assert hostagent_data.get("service", "").startswith(
+            "landscape-hostagent-messenger-"
+        )
+
+        installer_data = get_relation_data("ubuntu-installer-attach-haproxy-route")
+        assert installer_data.get("external_grpc_port") == "50051", (
+            "Expected external_grpc_port 50051, "
+            f"got {installer_data.get('external_grpc_port')}"
+        )
+        assert installer_data.get("service", "").startswith(
+            "landscape-ubuntu-installer-attach-"
+        )
+    finally:
+        juju.config(
+            "landscape-server",
+            values={
+                "enable_hostagent_messenger": (
+                    "true" if original_hostagent else "false"
+                ),
+                "enable_ubuntu_installer_attach": (
+                    "true" if original_installer else "false"
+                ),
+            },
+        )
+        juju.wait(all_landscape_active, timeout=300)
 
 
 @pytest.mark.skipif(
