@@ -5,7 +5,9 @@ and Landscape Server.
 NOTE: These tests assume an IPv4 public address for the Landscape Server charm.
 """
 
+from base64 import b64decode
 import json
+import lzma
 import re
 import shlex
 from urllib.parse import urlparse
@@ -20,11 +22,14 @@ from charm import (
     LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LEADER_SERVICES,
+    METRIC_INSTRUMENTED_SERVICE_PORTS,
 )
 from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
     all_landscape_active,
+    get_cos_agent_config,
     get_session,
+    has_cos_agent,
     has_legacy_pg,
     has_modern_pg,
     has_pgbouncer,
@@ -903,3 +908,77 @@ def test_action_migrate_schema_allow_connections(juju: jubilant.Juju, bundle: No
     assert result.status == "completed", (
         f"Expected migrate-schema --allow-connections to complete, got: {result.status}"
     )
+
+
+def test_cos_agent_metrics_scrape_jobs(
+    juju: jubilant.Juju,
+    bundle: None,
+):
+    """
+    The cos-agent relation publishes one scrape job per metric-instrumented service.
+    """
+    if not has_cos_agent(juju):
+        pytest.skip("No cos-agent relation")
+
+    config = get_cos_agent_config(juju)
+    scrape_jobs = config["metrics_scrape_jobs"]
+
+    expected_services = {svc for svc, _ in METRIC_INSTRUMENTED_SERVICE_PORTS}
+    actual_services = {
+        job["static_configs"][0]["labels"]["landscape_service"] for job in scrape_jobs
+    }
+    assert expected_services == actual_services, (
+        f"Missing services: {expected_services - actual_services}"
+    )
+
+
+def test_cos_agent_dashboards_present(
+    juju: jubilant.Juju,
+    bundle: None,
+):
+    """
+    The cos-agent relation publishes one dashboard per JSON file
+    in src/grafana_dashboards/.
+    """
+    if not has_cos_agent(juju):
+        pytest.skip("No cos-agent relation")
+
+    config = get_cos_agent_config(juju)
+    dashboards = config["dashboards"]
+
+    file_count = int(
+        juju.exec(
+            "ls src/grafana_dashboards/*.json | wc -l",
+            unit="landscape-server/leader",
+        ).stdout.strip()
+    )
+    assert len(dashboards) == file_count, (
+        f"Expected {file_count} dashboards, got {len(dashboards)}"
+    )
+
+
+def test_cos_agent_dashboards_valid(
+    juju: jubilant.Juju,
+    bundle: None,
+):
+    """
+    Each dashboard in the cos-agent relation decompresses to valid
+    JSON with panels and uses ${prometheusds} datasource.
+    """
+    if not has_cos_agent(juju):
+        pytest.skip("No cos-agent relation")
+
+    config = get_cos_agent_config(juju)
+
+    for encoded in config["dashboards"]:
+        raw = b64decode(encoded)
+        dashboard = json.loads(lzma.decompress(raw))
+        title = dashboard.get("title", "<untitled>")
+        assert "panels" in dashboard, f"'{title}' missing panels"
+        for panel in dashboard["panels"]:
+            ds = panel.get("datasource", {})
+            if ds.get("type") == "prometheus":
+                assert ds["uid"] == "${prometheusds}", (
+                    f"'{title}' panel '{panel.get('title')}'"
+                    " should use ${{prometheusds}}"
+                )
