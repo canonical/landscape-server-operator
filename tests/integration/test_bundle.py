@@ -593,6 +593,9 @@ def test_hostagent_messenger_grpc_haproxy_route(juju: jubilant.Juju):
     if "hostagent-messenger-haproxy-route" not in app_status.relations:
         pytest.skip("hostagent-messenger-haproxy-route not integrated, skipping...")
 
+    if not juju.config("landscape-server").get("enable_hostagent_messenger"):
+        pytest.skip("enable_hostagent_messenger is disabled, skipping...")
+
     juju.wait(all_landscape_active, timeout=300)
     unit = leader_unit_name(juju, "landscape-server")
     data = relation_app_data(juju, unit, "hostagent-messenger-haproxy-route")
@@ -610,6 +613,9 @@ def test_ubuntu_installer_attach_grpc_haproxy_route(juju: jubilant.Juju):
     app_status = juju.status().apps["landscape-server"]
     if "ubuntu-installer-attach-haproxy-route" not in app_status.relations:
         pytest.skip("ubuntu-installer-attach-haproxy-route not integrated, skipping...")
+
+    if not juju.config("landscape-server").get("enable_ubuntu_installer_attach"):
+        pytest.skip("enable_ubuntu_installer_attach is disabled, skipping...")
 
     juju.wait(all_landscape_active, timeout=300)
     unit = leader_unit_name(juju, "landscape-server")
