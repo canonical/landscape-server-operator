@@ -61,7 +61,7 @@ output "requires" {
   }, local.amqp_relations, local.db_relations, local.haproxy_relations)
 }
 
-output "has_haproxy_route_interface" {
+output "has_modern_haproxy_interface" {
   description = "Indicates whether the deployed revision uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint."
   value       = local.has_modern_haproxy_interface
 }

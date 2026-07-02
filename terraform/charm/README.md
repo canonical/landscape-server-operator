@@ -130,7 +130,7 @@ No modules.
 | Name | Description |
 |------|-------------|
 | <a name="output_app_name"></a> [app\_name](#output\_app\_name) | Name of the deployed application. |
-| <a name="output_has_haproxy_route_interface"></a> [has\_haproxy\_route\_interface](#output\_has\_haproxy\_route\_interface) | Indicates whether the deployed revision uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint. |
+| <a name="output_has_modern_haproxy_interface"></a> [has\_haproxy\_route\_interface](#output\_has\_haproxy\_route\_interface) | Indicates whether the deployed revision uses haproxy-route relations (26.04+) rather than the legacy external HAProxy website endpoint. |
 | <a name="output_provides"></a> [provides](#output\_provides) | Map of integration endpoints this charm provides. |
 | <a name="output_requires"></a> [requires](#output\_requires) | Map of integration endpoints this charm requires. |
 <!-- END_TF_DOCS -->

@@ -18,8 +18,8 @@ run "test_local_has_modern_amqp_relations_true" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = true
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
       requires = {
         inbound_amqp                          = "inbound-amqp"
         outbound_amqp                         = "outbound-amqp"
@@ -54,8 +54,8 @@ run "test_local_has_modern_amqp_relations_false" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = true
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
       requires = {
         database                              = "database"
         db                                    = "db"
@@ -142,8 +142,8 @@ run "validate_all_modules_created" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = true
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
       requires = {
         website                               = "website"
         amqp                                  = "amqp"
@@ -194,8 +194,8 @@ run "validate_all_integrations_created" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = false
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = false
       provides = {
         website = "website"
       }
@@ -314,7 +314,7 @@ run "test_haproxy_route_integrations_created" {
         db                                    = "db"
         application_dashboard                 = "application-dashboard"
       }
-      has_haproxy_route_interface = true
+      has_modern_haproxy_interface = true
     }
   }
 
@@ -385,8 +385,8 @@ run "test_pgbouncer_integration" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = true
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
       requires = {
         inbound_amqp                          = "inbound-amqp"
         outbound_amqp                         = "outbound-amqp"
@@ -435,8 +435,8 @@ run "test_pgbouncer_skipped" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = true
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
       requires = {
         inbound_amqp                          = "inbound-amqp"
         outbound_amqp                         = "outbound-amqp"
@@ -485,8 +485,8 @@ run "test_legacy_haproxy_reverseproxy_created" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = false
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = false
       provides = {
         website = "website"
       }
@@ -537,8 +537,8 @@ run "test_modern_haproxy_reverseproxy_not_created" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = true
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
       requires = {
         appserver_haproxy_route               = "appserver-haproxy-route"
         pingserver_haproxy_route              = "pingserver-haproxy-route"
@@ -592,8 +592,8 @@ run "test_legacy_haproxy_skipped_when_null" {
   override_module {
     target = module.landscape_server
     outputs = {
-      app_name                    = "landscape-server"
-      has_haproxy_route_interface = false
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = false
       requires = {
         website               = "website"
         amqp                  = "amqp"

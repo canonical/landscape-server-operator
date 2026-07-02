@@ -28,15 +28,6 @@ output "applications" {
   }
 }
 
-locals {
-  haproxy_self_signed = var.haproxy != null && length(juju_application.tls_certificates) > 0 && try(var.tls_certificates.charm_name == "self-signed-certificates", false)
-}
-
-output "haproxy_self_signed" {
-  description = "Indicates whether HAProxy is using self-signed TLS certificates. True when self-signed-certificates is deployed alongside haproxy, null when haproxy is not deployed."
-  value       = var.haproxy != null && length(module.haproxy) > 0 ? local.haproxy_self_signed : null
-}
-
 output "has_modern_amqp_relations" {
   description = "Indicates whether the deployment uses the modern inbound/outbound AMQP endpoints."
   value       = local.has_modern_amqp_relations
@@ -47,7 +38,7 @@ output "has_modern_postgres_interface" {
   value       = local.has_modern_pg_interface
 }
 
-output "has_haproxy_route_interface" {
+output "has_modern_haproxy_interface" {
   description = "Indicates whether the deployment uses the modern haproxy-route relation/interface instead of the legacy website interface."
-  value       = module.landscape_server.has_haproxy_route_interface
+  value       = module.landscape_server.has_modern_haproxy_interface
 }

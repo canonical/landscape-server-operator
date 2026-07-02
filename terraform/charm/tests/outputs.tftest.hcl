@@ -366,7 +366,7 @@ run "external_haproxy_null_revision" {
 }
 
 
-run "has_haproxy_route_interface_true_for_modern" {
+run "has_modern_haproxy_interface_true_for_modern" {
   command = plan
 
   variables {
@@ -377,12 +377,12 @@ run "has_haproxy_route_interface_true_for_modern" {
   }
 
   assert {
-    condition     = output.has_haproxy_route_interface == true
-    error_message = "has_haproxy_route_interface should be true for modern revisions"
+    condition     = output.has_modern_haproxy_interface == true
+    error_message = "has_modern_haproxy_interface should be true for modern revisions"
   }
 }
 
-run "has_haproxy_route_interface_false_for_legacy" {
+run "has_modern_haproxy_interface_false_for_legacy" {
   command = plan
 
   variables {
@@ -393,12 +393,12 @@ run "has_haproxy_route_interface_false_for_legacy" {
   }
 
   assert {
-    condition     = output.has_haproxy_route_interface == false
-    error_message = "has_haproxy_route_interface should be false for legacy channels"
+    condition     = output.has_modern_haproxy_interface == false
+    error_message = "has_modern_haproxy_interface should be false for legacy channels"
   }
 }
 
-run "has_haproxy_route_interface_false_for_legacy_stable" {
+run "has_modern_haproxy_interface_false_for_legacy_stable" {
   command = plan
 
   variables {
@@ -409,7 +409,7 @@ run "has_haproxy_route_interface_false_for_legacy_stable" {
   }
 
   assert {
-    condition     = output.has_haproxy_route_interface == false
-    error_message = "has_haproxy_route_interface should be false for legacy stable channels"
+    condition     = output.has_modern_haproxy_interface == false
+    error_message = "has_modern_haproxy_interface should be false for legacy stable channels"
   }
 }
