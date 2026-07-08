@@ -183,7 +183,7 @@ class TestLeaderRoutes:
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "package-upload")
         assert calls
-        assert calls[0].kwargs.get("check_interval") == 2000
+        assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
 
@@ -250,6 +250,98 @@ class TestServiceNames:
         calls = _calls_for(mock, "pingserver")
         assert calls
         assert calls[0].kwargs["service"].startswith("landscape-pingserver-")
+
+
+class TestHealthChecks:
+    """Each route uses check_path with the path the backend actually serves."""
+
+    def test_no_check_port_on_any_route(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        for c in mock.call_args_list:
+            assert "check_port" not in c.kwargs, (
+                f"check_port should not be set for {c.kwargs.get('service')}"
+            )
+
+    def test_appserver_check_path(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "appserver")
+        assert calls[0].kwargs.get("check_path") == "/"
+
+    def test_pingserver_check_path(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "pingserver")
+        assert calls[0].kwargs.get("check_path") == "/ping"
+
+    def test_message_server_check_path(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "message-server")
+        assert calls[0].kwargs.get("check_path") == "/message-system"
+
+    def test_api_check_path(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "api")
+        assert calls[0].kwargs.get("check_path") == "/api/about"
+
+    def test_package_upload_check_path(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "package-upload")
+        assert calls[0].kwargs.get("check_path") == "/upload"
+
+    def test_repository_has_no_health_check(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "repository")
+        assert "check_path" not in calls[0].kwargs
+        assert "check_interval" not in calls[0].kwargs
+
+    def test_appserver_has_health_check_timing(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "appserver")
+        assert calls[0].kwargs.get("check_interval") == 2
+        assert calls[0].kwargs.get("check_rise") == 2
+        assert calls[0].kwargs.get("check_fall") == 3
+
+    def test_pingserver_has_health_check_timing(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "pingserver")
+        assert calls[0].kwargs.get("check_interval") == 2
+        assert calls[0].kwargs.get("check_rise") == 2
+        assert calls[0].kwargs.get("check_fall") == 3
+
+    def test_message_server_has_health_check_timing(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "message-server")
+        assert calls[0].kwargs.get("check_interval") == 2
+        assert calls[0].kwargs.get("check_rise") == 2
+        assert calls[0].kwargs.get("check_fall") == 3
+
+    def test_api_has_health_check_timing(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        calls = _calls_for(mock, "api")
+        assert calls[0].kwargs.get("check_interval") == 2
+        assert calls[0].kwargs.get("check_rise") == 2
+        assert calls[0].kwargs.get("check_fall") == 3
 
 
 class TestConditionalRoutes:
