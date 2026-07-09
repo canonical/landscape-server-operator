@@ -425,6 +425,7 @@ class EnableLandscapeHostedCronJobsTestCase(TestCase):
             "# m h dom mon dow user command\n"
             "#0 * * * * landscape /opt/canonical/landscape/scripts/update_alerts.sh\n"
             "#15 2 * * * landscape /opt/canonical/landscape/scripts/cleanup.sh\n"
+            "#* * * * * landscape /opt/canonical/landscape/scripts/rotate_logs.sh\n"
         )
         expected_output = (
             "# This is a header comment\n"
@@ -434,6 +435,7 @@ class EnableLandscapeHostedCronJobsTestCase(TestCase):
             "# m h dom mon dow user command\n"
             "0 * * * * landscape /opt/canonical/landscape/scripts/update_alerts.sh\n"
             "15 2 * * * landscape /opt/canonical/landscape/scripts/cleanup.sh\n"
+            "* * * * * landscape /opt/canonical/landscape/scripts/rotate_logs.sh\n"
         )
 
         with TemporaryDirectory() as tmpdir:

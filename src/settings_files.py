@@ -121,7 +121,9 @@ def enable_landscape_hosted_cron_jobs() -> None:
         lines = f.readlines()
 
     cron_dir = os.path.dirname(LANDSCAPE_HOSTED_CRON)
-    with tempfile.NamedTemporaryFile(mode="w", dir=cron_dir, delete=False) as temp_f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=cron_dir, prefix=".tmp", delete=False
+    ) as temp_f:
         temp_path = temp_f.name
         for line in lines:
             # Uncomment lines that start with #<whitespace><cron-schedule>
@@ -131,7 +133,7 @@ def enable_landscape_hosted_cron_jobs() -> None:
                 # Check if this looks like a cron job
                 # (starts with # followed by schedule)
                 after_hash = stripped[1:].lstrip()
-                if after_hash and after_hash[0].isdigit():
+                if after_hash and (after_hash[0].isdigit() or after_hash[0] in "*@"):
                     # Remove the leading # and write the uncommented line
                     temp_f.write(line.replace("#", "", 1))
                 else:
