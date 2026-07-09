@@ -203,6 +203,28 @@ class TestGrafanaMachineAgentRelation(unittest.TestCase):
                         " should use ${{prometheusds}}",
                     )
 
+    def test_dashboards_define_prometheusds_variable(self):
+        """
+        Each dashboard defines prometheusds as a datasource template variable
+        so Grafana can resolve the ${prometheusds} references used in panels.
+        """
+        dashboard_dir = Path("src/grafana_dashboards")
+        for path in dashboard_dir.glob("*.json"):
+            with open(path) as f:
+                dashboard = json.load(f)
+            template_vars = dashboard.get("templating", {}).get("list", [])
+            prometheusds_vars = [
+                v
+                for v in template_vars
+                if v.get("name") == "prometheusds" and v.get("type") == "datasource"
+            ]
+            self.assertEqual(
+                len(prometheusds_vars),
+                1,
+                f"{path.name} must define exactly one"
+                " 'prometheusds' datasource template variable",
+            )
+
 
 class TestDebarchiveRelation:
     """
