@@ -121,12 +121,13 @@ resource "juju_integration" "landscape_server_haproxy" {
   model_uuid = var.model_uuid
 
   application {
-    name = module.landscape_server.app_name
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.provides.website
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].requires.reverseproxy
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -139,12 +140,12 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_in_model" 
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "appserver-haproxy-route"
+    endpoint = module.landscape_server.requires.appserver_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -157,12 +158,12 @@ resource "juju_integration" "landscape_server_pingserver_haproxy_route_in_model"
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "pingserver-haproxy-route"
+    endpoint = module.landscape_server.requires.pingserver_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -175,12 +176,12 @@ resource "juju_integration" "landscape_server_message_server_haproxy_route_in_mo
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "message-server-haproxy-route"
+    endpoint = module.landscape_server.requires.message_server_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -193,12 +194,12 @@ resource "juju_integration" "landscape_server_api_haproxy_route_in_model" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "api-haproxy-route"
+    endpoint = module.landscape_server.requires.api_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -211,12 +212,12 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route_in_mo
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "package-upload-haproxy-route"
+    endpoint = module.landscape_server.requires.package_upload_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -229,12 +230,12 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_in_model"
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "repository-haproxy-route"
+    endpoint = module.landscape_server.requires.repository_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -247,12 +248,12 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "hostagent-messenger-haproxy-route"
+    endpoint = module.landscape_server.requires.hostagent_messenger_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -265,12 +266,12 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "ubuntu-installer-attach-haproxy-route"
+    endpoint = module.landscape_server.requires.ubuntu_installer_attach_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -283,7 +284,7 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "appserver-haproxy-route"
+    endpoint = module.landscape_server.requires.appserver_haproxy_route
   }
 
   application {
@@ -309,7 +310,7 @@ resource "juju_integration" "landscape_server_pingserver_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "pingserver-haproxy-route"
+    endpoint = module.landscape_server.requires.pingserver_haproxy_route
   }
 
   application {
@@ -326,7 +327,7 @@ resource "juju_integration" "landscape_server_message_server_haproxy_route_lbaas
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "message-server-haproxy-route"
+    endpoint = module.landscape_server.requires.message_server_haproxy_route
   }
 
   application {
@@ -343,7 +344,7 @@ resource "juju_integration" "landscape_server_api_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "api-haproxy-route"
+    endpoint = module.landscape_server.requires.api_haproxy_route
   }
 
   application {
@@ -360,7 +361,7 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route_lbaas
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "package-upload-haproxy-route"
+    endpoint = module.landscape_server.requires.package_upload_haproxy_route
   }
 
   application {
@@ -377,7 +378,7 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "repository-haproxy-route"
+    endpoint = module.landscape_server.requires.repository_haproxy_route
   }
 
   application {
@@ -394,7 +395,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "hostagent-messenger-haproxy-route"
+    endpoint = module.landscape_server.requires.hostagent_messenger_haproxy_route
   }
 
   application {
@@ -411,7 +412,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "ubuntu-installer-attach-haproxy-route"
+    endpoint = module.landscape_server.requires.ubuntu_installer_attach_haproxy_route
   }
 
   application {
@@ -425,7 +426,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
 locals {
   has_modern_pg_interface    = can(module.landscape_server.requires.database)
-  has_haproxy_route          = coalesce(module.landscape_server.has_haproxy_route_interface, false)
+  has_haproxy_route          = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
 }
@@ -483,7 +484,7 @@ resource "juju_application" "tls_certificates" {
     base     = var.tls_certificates.base
   }
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -491,7 +492,7 @@ resource "juju_integration" "haproxy_certificates" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "certificates"
+    endpoint = module.haproxy[0].requires.certificates
   }
 
   application {
@@ -500,7 +501,7 @@ resource "juju_integration" "haproxy_certificates" {
 
   depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_receive_ca_certs" {
@@ -508,7 +509,7 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "receive-ca-certs"
+    endpoint = module.haproxy[0].requires.receive_ca_certs
   }
 
   application {
@@ -517,7 +518,7 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 
   depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer" {

@@ -1,10 +1,8 @@
 landscape_server = {
-  channel  = "25.10/edge"
-  revision = 278
-  base     = "ubuntu@22.04"
+  channel  = "24.04/stable"
+  base     = "ubuntu@24.04"
   config = {
     min_install      = "true"
-    autoregistration = "true"
     landscape_ppa    = "ppa:landscape/self-hosted-beta"
   }
 }

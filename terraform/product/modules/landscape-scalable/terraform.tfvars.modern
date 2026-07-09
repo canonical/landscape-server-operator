@@ -1,0 +1,23 @@
+landscape_server = {
+  channel = "26.04/edge"
+  config = {
+    autoregistration               = "true"
+    landscape_ppa                  = "ppa:landscape/self-hosted-beta"
+    min_install                    = "true"
+    root_url                       = "https://landscape.local/"
+    enable_hostagent_messenger     = "true"
+    enable_ubuntu_installer_attach = "true"
+  }
+  base = "ubuntu@24.04"
+}
+
+postgresql = {
+  channel = "16/stable"
+  base    = "ubuntu@24.04"
+}
+
+haproxy = {
+  channel = "2.8/edge"
+  base    = "ubuntu@24.04"
+  config  = {}
+}
