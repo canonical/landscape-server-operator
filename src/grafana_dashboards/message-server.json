@@ -1138,6 +1138,24 @@
         "list": [
             {
                 "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                },
+                "hide": 0,
+                "includeAll": true,
+                "label": "Prometheus datasource",
+                "multi": true,
+                "name": "prometheusds",
+                "options": [],
+                "query": "prometheus",
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "type": "datasource"
+            },
+            {
+                "current": {
                     "text": "1h",
                     "value": "1h"
                 },

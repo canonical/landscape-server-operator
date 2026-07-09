@@ -539,7 +539,7 @@
                     "color": "rgba(255,0,255,0.7)"
                 },
                 "filterValues": {
-                    "le": 1e-9
+                    "le": 1e-09
                 },
                 "legend": {
                     "show": true
@@ -850,6 +850,24 @@
     ],
     "templating": {
         "list": [
+            {
+                "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                },
+                "hide": 0,
+                "includeAll": true,
+                "label": "Prometheus datasource",
+                "multi": true,
+                "name": "prometheusds",
+                "options": [],
+                "query": "prometheus",
+                "refresh": 1,
+                "regex": "",
+                "skipUrlSync": false,
+                "type": "datasource"
+            },
             {
                 "current": {},
                 "datasource": {
