@@ -81,6 +81,7 @@ from settings_files import (
     AMQP_USERNAME,
     configure_for_deployment_mode,
     DEFAULT_POSTGRES_PORT,
+    enable_landscape_hosted_cron_jobs,
     generate_cookie_encryption_key,
     generate_secret_token,
     get_postgres_roles,
@@ -867,6 +868,11 @@ class LandscapeServerCharm(CharmBase):
                 pkg_list.append(LANDSCAPE_HOSTED)
             self._install_debian_packages_with_recommends(pkg_list)
             self._hold_debian_packages(pkg_list)
+
+        # Enable landscape-hosted cron jobs in SaaS mode
+        if self.charm_config.deployment_mode != "standalone":
+            self.unit.status = MaintenanceStatus("Enabling landscape-hosted cron jobs")
+            enable_landscape_hosted_cron_jobs()
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:

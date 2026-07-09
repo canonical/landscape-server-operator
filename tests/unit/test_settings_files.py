@@ -412,3 +412,53 @@ def test_read_service_conf_multiple_sections(capture_service_conf):
     assert "stores" in data
     assert "schema" in data
     assert data["schema"]["store_user"] == "ls"
+
+
+class EnableLandscapeHostedCronJobsTestCase(TestCase):
+    def test_uncomments_cron_jobs(self):
+        """Tests that cron jobs are uncommented while preserving file headers."""
+        cron_content = (
+            "# This is a header comment\n"
+            "# SHELL=/bin/sh\n"
+            "# PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n"
+            "#\n"
+            "# m h dom mon dow user command\n"
+            "#0 * * * * landscape /opt/canonical/landscape/scripts/update_alerts.sh\n"
+            "#15 2 * * * landscape /opt/canonical/landscape/scripts/cleanup.sh\n"
+            "#* * * * * landscape /opt/canonical/landscape/scripts/rotate_logs.sh\n"
+        )
+        expected_output = (
+            "# This is a header comment\n"
+            "# SHELL=/bin/sh\n"
+            "# PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n"
+            "#\n"
+            "# m h dom mon dow user command\n"
+            "0 * * * * landscape /opt/canonical/landscape/scripts/update_alerts.sh\n"
+            "15 2 * * * landscape /opt/canonical/landscape/scripts/cleanup.sh\n"
+            "* * * * * landscape /opt/canonical/landscape/scripts/rotate_logs.sh\n"
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            cron_path = os.path.join(tmpdir, "landscape-hosted")
+            with open(cron_path, "w") as f:
+                f.write(cron_content)
+
+            with patch("settings_files.LANDSCAPE_HOSTED_CRON", cron_path):
+                from settings_files import enable_landscape_hosted_cron_jobs
+
+                enable_landscape_hosted_cron_jobs()
+
+            with open(cron_path, "r") as f:
+                result = f.read()
+
+        self.assertEqual(result, expected_output)
+
+    def test_file_not_exists(self):
+        """Tests that function returns early if file doesn't exist."""
+        with patch("os.path.exists") as mock_exists:
+            mock_exists.return_value = False
+
+            from settings_files import enable_landscape_hosted_cron_jobs
+
+            # Should not raise an error
+            enable_landscape_hosted_cron_jobs()

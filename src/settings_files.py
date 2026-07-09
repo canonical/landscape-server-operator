@@ -12,6 +12,7 @@ from configparser import ConfigParser
 import os
 import secrets
 from string import ascii_letters, digits
+import tempfile
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -23,6 +24,8 @@ from helpers import migrate_service_conf
 CONFIGS_DIR = "/opt/canonical/landscape/configs"
 
 DEFAULT_SETTINGS = "/etc/default/landscape-server"
+
+LANDSCAPE_HOSTED_CRON = "/etc/cron.d/landscape-hosted"
 
 LICENSE_FILE = "/etc/landscape/license.txt"
 LICENSE_FILE_PROTOCOLS = (
@@ -102,6 +105,43 @@ def configure_for_deployment_mode(mode: str) -> None:
         return
 
     os.symlink(os.path.join(CONFIGS_DIR, "standalone"), sym_path)
+
+
+def enable_landscape_hosted_cron_jobs() -> None:
+    """
+    Uncomments all cron jobs in the landscape-hosted cron file.
+
+    The landscape-hosted package ships with all cron jobs commented out by default.
+    In SaaS deployments (production/staging), these jobs need to be enabled.
+    """
+    if not os.path.exists(LANDSCAPE_HOSTED_CRON):
+        return
+
+    with open(LANDSCAPE_HOSTED_CRON, "r") as f:
+        lines = f.readlines()
+
+    cron_dir = os.path.dirname(LANDSCAPE_HOSTED_CRON)
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=cron_dir, prefix=".tmp", delete=False
+    ) as temp_f:
+        temp_path = temp_f.name
+        for line in lines:
+            # Uncomment lines that start with #<whitespace><cron-schedule>
+            # This preserves other comments like file headers
+            stripped = line.lstrip()
+            if stripped.startswith("#") and len(stripped) > 1:
+                # Check if this looks like a cron job
+                # (starts with # followed by schedule)
+                after_hash = stripped[1:].lstrip()
+                if after_hash and (after_hash[0].isdigit() or after_hash[0] in "*@"):
+                    # Remove the leading # and write the uncommented line
+                    temp_f.write(line.replace("#", "", 1))
+                else:
+                    temp_f.write(line)
+            else:
+                temp_f.write(line)
+
+    os.rename(temp_path, LANDSCAPE_HOSTED_CRON)
 
 
 def merge_service_conf(other: str) -> None:
