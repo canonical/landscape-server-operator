@@ -60,6 +60,7 @@ class LandscapeCharmConfiguration(BaseModel):
     db_schema_user: str | None = None
     db_schema_password: str | None = None
     deployment_mode: str
+    analytics_id: str | None = None
     additional_service_config: str | None = None
     secret_token: str | None = None
     cookie_encryption_key: str | None = None

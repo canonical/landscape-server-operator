@@ -92,6 +92,7 @@ from settings_files import (
     update_default_settings,
     update_service_conf,
     VHOSTS,
+    write_analytics_id_systemd_override,
     write_deployment_mode_systemd_override,
     write_license_file,
 )
@@ -500,6 +501,7 @@ class LandscapeServerCharm(CharmBase):
         )
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
+        write_analytics_id_systemd_override(self.charm_config.analytics_id)
 
         service_conf_updates = {
             service: {"workers": str(self.charm_config.worker_counts)}
