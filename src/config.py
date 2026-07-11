@@ -104,6 +104,21 @@ class LandscapeCharmConfiguration(BaseModel):
 
         return v
 
+    @field_validator("analytics_id")
+    @classmethod
+    def analytics_id_safe_chars(cls, v: str | None):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", v):
+            raise ValueError(
+                f"analytics_id {v!r} contains invalid characters. "
+                "Only letters, numbers, dots, hyphens, and underscores are allowed."
+            )
+        return v
+
     @model_validator(mode="after")
     def openid_oidc_exclusive(self):
         OPENID_CONFIGS = (

@@ -12,6 +12,7 @@ import pytest
 
 from settings_files import (
     _ANALYTICS_ID_OVERRIDE_CONF,
+    _ANALYTICS_SERVICE,
     _DEPLOYMENT_MODE_OVERRIDE_CONF,
     _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE,
     CONFIGS_DIR,
@@ -128,26 +129,24 @@ class TestWriteDeploymentModeSystemdOverride:
 
 @pytest.mark.usefixtures("redirect_systemd_paths")
 class TestWriteAnalyticsIdSystemdOverride:
-    def test_writes_drop_in_for_each_service(self, monkeypatch, tmp_path):
+    def test_writes_drop_in_for_appserver(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
 
         write_analytics_id_systemd_override("UA-1018242-13")
 
-        for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
-            drop_in = tmp_path / f"{service}.d" / _ANALYTICS_ID_OVERRIDE_CONF
-            assert drop_in.exists()
+        drop_in = tmp_path / f"{_ANALYTICS_SERVICE}.d" / _ANALYTICS_ID_OVERRIDE_CONF
+        assert drop_in.exists()
 
     def test_drop_in_content(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
 
         write_analytics_id_systemd_override("UA-1018242-13")
 
-        for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
-            content = (
-                tmp_path / f"{service}.d" / _ANALYTICS_ID_OVERRIDE_CONF
-            ).read_text()
-            assert "[Service]" in content
-            assert "Environment=LANDSCAPE_ANALYTICS_ID=UA-1018242-13" in content
+        content = (
+            tmp_path / f"{_ANALYTICS_SERVICE}.d" / _ANALYTICS_ID_OVERRIDE_CONF
+        ).read_text()
+        assert "[Service]" in content
+        assert "Environment=LANDSCAPE_ANALYTICS_ID=UA-1018242-13" in content
 
     def test_empty_id_removes_existing_drop_in(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
@@ -155,9 +154,8 @@ class TestWriteAnalyticsIdSystemdOverride:
         write_analytics_id_systemd_override("UA-1018242-13")
         write_analytics_id_systemd_override("")
 
-        for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
-            drop_in = tmp_path / f"{service}.d" / _ANALYTICS_ID_OVERRIDE_CONF
-            assert not drop_in.exists()
+        drop_in = tmp_path / f"{_ANALYTICS_SERVICE}.d" / _ANALYTICS_ID_OVERRIDE_CONF
+        assert not drop_in.exists()
 
     def test_calls_daemon_reload(self, monkeypatch, tmp_path):
         called = []

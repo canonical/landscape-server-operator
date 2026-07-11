@@ -76,6 +76,9 @@ _DEPLOYMENT_MODE_OVERRIDE_CONF = "deployment-mode.conf"
 
 _ANALYTICS_ID_OVERRIDE_CONF = "analytics-id.conf"
 
+# Only the web frontend renders the Google Analytics tracker into HTML pages.
+_ANALYTICS_SERVICE = "landscape-appserver.service"
+
 
 def write_deployment_mode_systemd_override(mode: str) -> None:
     """
@@ -95,24 +98,24 @@ def write_deployment_mode_systemd_override(mode: str) -> None:
 
 def write_analytics_id_systemd_override(analytics_id: str | None) -> None:
     """
-    Writes (or removes) a systemd drop-in per service to set LANDSCAPE_ANALYTICS_ID.
+    Writes (or removes) a systemd drop-in for the appserver to set
+    LANDSCAPE_ANALYTICS_ID.
 
     Landscape reads this environment variable to select the Google Analytics
     tracker ID, overriding the built-in default for the deployment mode. When
     analytics_id is empty, any existing drop-in is removed so Landscape falls
     back to its default.
     """
-    for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
-        override_dir = f"/etc/systemd/system/{service}.d"
-        override_path = os.path.join(override_dir, _ANALYTICS_ID_OVERRIDE_CONF)
+    override_dir = f"/etc/systemd/system/{_ANALYTICS_SERVICE}.d"
+    override_path = os.path.join(override_dir, _ANALYTICS_ID_OVERRIDE_CONF)
 
-        if analytics_id:
-            os.makedirs(override_dir, exist_ok=True)
-            with open(override_path, "w") as f:
-                f.write("[Service]\n")
-                f.write(f"Environment=LANDSCAPE_ANALYTICS_ID={analytics_id}\n")
-        elif os.path.exists(override_path):
-            os.remove(override_path)
+    if analytics_id:
+        os.makedirs(override_dir, exist_ok=True)
+        with open(override_path, "w") as f:
+            f.write("[Service]\n")
+            f.write(f"Environment=LANDSCAPE_ANALYTICS_ID={analytics_id}\n")
+    elif os.path.exists(override_path):
+        os.remove(override_path)
 
     daemon_reload()
 
