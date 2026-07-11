@@ -129,14 +129,6 @@ class TestWriteDeploymentModeSystemdOverride:
 
 @pytest.mark.usefixtures("redirect_systemd_paths")
 class TestWriteAnalyticsIdSystemdOverride:
-    def test_writes_drop_in_for_appserver(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
-
-        write_analytics_id_systemd_override("UA-1018242-13")
-
-        drop_in = tmp_path / f"{_ANALYTICS_SERVICE}.d" / _ANALYTICS_ID_OVERRIDE_CONF
-        assert drop_in.exists()
-
     def test_drop_in_content(self, monkeypatch, tmp_path):
         monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
 
