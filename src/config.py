@@ -60,6 +60,7 @@ class LandscapeCharmConfiguration(BaseModel):
     db_schema_user: str | None = None
     db_schema_password: str | None = None
     deployment_mode: str
+    analytics_id: str | None = None
     additional_service_config: str | None = None
     secret_token: str | None = None
     cookie_encryption_key: str | None = None
@@ -101,6 +102,21 @@ class LandscapeCharmConfiguration(BaseModel):
                 "Only letters, numbers, hyphens, and underscores are allowed."
             )
 
+        return v
+
+    @field_validator("analytics_id")
+    @classmethod
+    def analytics_id_safe_chars(cls, v: str | None):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", v):
+            raise ValueError(
+                f"analytics_id {v!r} contains invalid characters. "
+                "Only letters, numbers, dots, hyphens, and underscores are allowed."
+            )
         return v
 
     @model_validator(mode="after")

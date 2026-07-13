@@ -11,6 +11,8 @@ from urllib.error import URLError
 import pytest
 
 from settings_files import (
+    _ANALYTICS_ID_OVERRIDE_CONF,
+    _ANALYTICS_SERVICE,
     _DEPLOYMENT_MODE_OVERRIDE_CONF,
     _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE,
     CONFIGS_DIR,
@@ -22,6 +24,7 @@ from settings_files import (
     read_service_conf,
     update_default_settings,
     update_service_conf,
+    write_analytics_id_systemd_override,
     write_deployment_mode_systemd_override,
     write_license_file,
 )
@@ -78,6 +81,19 @@ def redirect_systemd_paths(monkeypatch, tmp_path):
 
     monkeypatch.setattr("builtins.open", fake_open)
 
+    real_exists = os.path.exists
+
+    def fake_exists(path):
+        return real_exists(path.replace("/etc/systemd/system", str(tmp_path)))
+
+    monkeypatch.setattr("settings_files.os.path.exists", fake_exists)
+    real_remove = os.remove
+
+    def fake_remove(path):
+        return real_remove(path.replace("/etc/systemd/system", str(tmp_path)))
+
+    monkeypatch.setattr("settings_files.os.remove", fake_remove)
+
 
 @pytest.mark.usefixtures("redirect_systemd_paths")
 class TestWriteDeploymentModeSystemdOverride:
@@ -107,6 +123,37 @@ class TestWriteDeploymentModeSystemdOverride:
         monkeypatch.setattr("settings_files.daemon_reload", lambda: called.append(True))
 
         write_deployment_mode_systemd_override("prod")
+
+        assert called == [True]
+
+
+@pytest.mark.usefixtures("redirect_systemd_paths")
+class TestWriteAnalyticsIdSystemdOverride:
+    def test_drop_in_content(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
+
+        write_analytics_id_systemd_override("UA-1018242-13")
+
+        content = (
+            tmp_path / f"{_ANALYTICS_SERVICE}.d" / _ANALYTICS_ID_OVERRIDE_CONF
+        ).read_text()
+        assert "[Service]" in content
+        assert "Environment=LANDSCAPE_ANALYTICS_ID=UA-1018242-13" in content
+
+    def test_empty_id_removes_existing_drop_in(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("settings_files.daemon_reload", lambda: None)
+
+        write_analytics_id_systemd_override("UA-1018242-13")
+        write_analytics_id_systemd_override("")
+
+        drop_in = tmp_path / f"{_ANALYTICS_SERVICE}.d" / _ANALYTICS_ID_OVERRIDE_CONF
+        assert not drop_in.exists()
+
+    def test_calls_daemon_reload(self, monkeypatch, tmp_path):
+        called = []
+        monkeypatch.setattr("settings_files.daemon_reload", lambda: called.append(True))
+
+        write_analytics_id_systemd_override("UA-1018242-13")
 
         assert called == [True]
 

@@ -238,6 +238,30 @@ def test_deployment_mode_invalid(mode):
         LandscapeCharmConfiguration(**defaults)
 
 
+@pytest.mark.parametrize("analytics_id", ["UA-1018242-13", "G_TAG.1", "abc_123"])
+def test_analytics_id_valid(analytics_id):
+    defaults = get_config_defaults()
+    defaults["analytics_id"] = analytics_id
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.analytics_id == analytics_id
+
+
+@pytest.mark.parametrize("analytics_id,expected", [("", None), ("  ", None)])
+def test_analytics_id_blank_becomes_none(analytics_id, expected):
+    defaults = get_config_defaults()
+    defaults["analytics_id"] = analytics_id
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.analytics_id is expected
+
+
+@pytest.mark.parametrize("analytics_id", ["bad id", "bad;id", "id\ninjection"])
+def test_analytics_id_invalid(analytics_id):
+    defaults = get_config_defaults()
+    defaults["analytics_id"] = analytics_id
+    with pytest.raises(ValidationError, match="contains invalid characters"):
+        LandscapeCharmConfiguration(**defaults)
+
+
 def test_landscape_ppas_single():
     config = LandscapeCharmConfiguration(
         **{

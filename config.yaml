@@ -165,6 +165,14 @@ options:
       Landscape Server tenancy mode - do not modify unless you are able
       to provide the additional configuration required to run
       Landscape in SaaS mode.
+  analytics_id:
+    type: string
+    default:
+    description: |
+      Google Analytics tracker ID exposed to Landscape Server as the
+      LANDSCAPE_ANALYTICS_ID environment variable. When unset, Landscape
+      falls back to its built-in tracker ID for the configured
+      deployment mode.
   additional_service_config:
     type: string
     default:

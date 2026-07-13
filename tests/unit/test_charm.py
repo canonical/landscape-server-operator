@@ -682,6 +682,20 @@ root-url = https://overridden.example.com
         ctx.run(ctx.on.config_changed(), state)
         assert calls == ["prod"]
 
+    def test_analytics_id_override_called(
+        self,
+        monkeypatch,
+    ):
+        calls = []
+        monkeypatch.setattr(
+            "charm.write_analytics_id_systemd_override",
+            lambda analytics_id: calls.append(analytics_id),
+        )
+        ctx = Context(LandscapeServerCharm)
+        state = State(config={"analytics_id": "UA-1018242-13"})
+        ctx.run(ctx.on.config_changed(), state)
+        assert calls == ["UA-1018242-13"]
+
     def test_hostagent_services_disable_closes_port(
         self,
         replicas_network_state,
