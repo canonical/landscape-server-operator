@@ -85,13 +85,6 @@ def check_call_fixture(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def get_haproxy_error_files():
-    """
-    Return empty HAProxy error files.
-
-    This is set to `autouse=True` to avoid any attempts to read the HAProxy error files
-    from their installed location in `/opt/canonical/...`, which is not present in a test
-    environment.
-    """
     with patch("charm.get_haproxy_error_files") as m:
         m.return_value = ()
         yield m
