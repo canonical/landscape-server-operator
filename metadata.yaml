@@ -59,6 +59,8 @@ provides:
     interface: block-storage
     scope: container
     optional: true
+  website:
+    interface: http
   hosted:
     interface: landscape-hosted
     scope: container

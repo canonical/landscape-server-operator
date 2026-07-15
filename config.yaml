@@ -92,6 +92,19 @@ options:
     description: |
       The initial account registration key. Note this value cannot be set more
       than once.
+  ssl_cert:
+    type: string
+    default: "DEFAULT"
+    description: |
+      The base64-encoded SSL certificate to use for Landscape Server.
+      It will be passed verbatim to the legacy HAProxy charm. If not set, a
+      self-signed certificate will be used instead.
+  ssl_key:
+    type: string
+    default: ""
+    description: |
+      The base64-encoded private key for the SSL certificate. If
+      ssl-cert is not set, this will be ignored. Only applicable to the legacy HAProxy charm.
   http_proxy:
     type: string
     default:

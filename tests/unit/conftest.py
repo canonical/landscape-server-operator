@@ -1,6 +1,6 @@
 from configparser import ConfigParser
 import subprocess
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import scenario
@@ -81,6 +81,20 @@ def subprocess_fixture(monkeypatch):
 @pytest.fixture(autouse=True, name="check_call_fixture")
 def check_call_fixture(monkeypatch):
     monkeypatch.setattr("charm.check_call", lambda *args, **kwargs: None)
+
+
+@pytest.fixture(autouse=True)
+def get_haproxy_error_files():
+    """
+    Return empty HAProxy error files.
+
+    This is set to `autouse=True` to avoid any attempts to read the HAProxy error files
+    from their installed location in `/opt/canonical/...`, which is not present in a test
+    environment.
+    """
+    with patch("charm.get_haproxy_error_files") as m:
+        m.return_value = ()
+        yield m
 
 
 @pytest.fixture(name="replicas_networks")

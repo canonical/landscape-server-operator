@@ -48,6 +48,8 @@ class LandscapeCharmConfiguration(BaseModel):
     admin_name: str | None = None
     admin_password: str | None = None
     registration_key: str | None = None
+    ssl_cert: str = "DEFAULT"
+    ssl_key: str = ""
     http_proxy: str | None = None
     https_proxy: str | None = None
     no_proxy: str | None = None
