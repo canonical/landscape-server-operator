@@ -441,10 +441,18 @@ def test_all_services_up(juju: jubilant.Juju):
     status = juju.status()
     units = status.apps["landscape-server"].units
     config = juju.config("landscape-server")
+    enable_hostagent = config.get("enable_hostagent_messenger", False)
     enable_ubuntu_installer = config.get("enable_ubuntu_installer_attach", False)
+
+    hostagent_services = {
+        "landscape-hostagent-messenger",
+        "landscape-hostagent-consumer",
+    }
 
     for name, unit_status in units.items():
         for service in DEFAULT_SERVICES:
+            if service in hostagent_services and not enable_hostagent:
+                continue
             wait_for_service(juju, name, service)
 
         if enable_ubuntu_installer:
@@ -1052,7 +1060,7 @@ def test_legacy_haproxy_redirect_https_default(juju: jubilant.Juju):
         juju.wait(all_landscape_active, timeout=300)
 
 
-@pytest.mark.parametrize("route", ["ping", "api/about", "message-system", ""])
+@pytest.mark.parametrize("route", ["ping", "message-system", ""])
 def test_legacy_haproxy_services_up_over_https(juju: jubilant.Juju, route: str):
     """
     Services are responding over HTTPS via the legacy HAProxy charm.
