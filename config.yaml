@@ -104,7 +104,7 @@ options:
     default: ""
     description: |
       The base64-encoded private key for the SSL certificate. If
-      ssl-cert is not set, this will be ignored. Only applicable to the legacy HAProxy charm.
+      ssl_cert is not set, this will be ignored. Only applicable to the legacy HAProxy charm.
   http_proxy:
     type: string
     default:

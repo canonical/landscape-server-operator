@@ -474,7 +474,7 @@ def get_haproxy_error_files(error_files_config: dict) -> list[HAProxyErrorFile]:
         with open(error_file_path, "rb") as error_file:
             error_files.append(
                 HAProxyErrorFile(
-                    http_status=code,
+                    http_status=int(code),
                     content=b64encode(error_file.read()),
                 )
             )

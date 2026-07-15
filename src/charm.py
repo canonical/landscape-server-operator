@@ -104,6 +104,7 @@ from settings_files import (
     merge_service_conf,
     prepend_default_settings,
     read_service_conf,
+    SSLCertReadException,
     update_db_conf,
     update_default_settings,
     update_service_conf,
@@ -251,7 +252,7 @@ def _get_ssl_cert(ssl_cert, ssl_key):
         try:
             ssl_cert = b64decode(ssl_cert)
             ssl_key = b64decode(ssl_key)
-            ssl_cert = b64encode(ssl_cert + b"\n" + ssl_key)
+            ssl_cert = b64encode(ssl_cert + b"\n" + ssl_key).decode()
         except binascii.Error:
             raise SSLConfigurationError(
                 "Unable to decode `ssl_cert` or `ssl_key` - must be b64-encoded"
@@ -1504,12 +1505,16 @@ class LandscapeServerCharm(CharmBase):
 
         # Sometimes the data has not been encoded properly in the HA charm
         if haproxy_ssl_cert.startswith("b'"):
-            haproxy_ssl_cert = haproxy_ssl_cert.strip("b").strip("'")
+            haproxy_ssl_cert = haproxy_ssl_cert[2:-1]
 
         if haproxy_ssl_cert != "DEFAULT":
             # If DEFAULT, cert is being managed by a third party,
             # possibly a subordinate charm.
-            write_ssl_cert(haproxy_ssl_cert)
+            try:
+                write_ssl_cert(haproxy_ssl_cert)
+            except SSLCertReadException as e:
+                self.unit.status = BlockedStatus(str(e))
+                return
 
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_haproxy_connection(event.relation)
