@@ -12,6 +12,7 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
+from base64 import b64decode, b64encode, binascii
 from dataclasses import asdict
 from functools import cached_property
 import json
@@ -52,6 +53,7 @@ from ops.charm import (
     LeaderElectedEvent,
     LeaderSettingsChangedEvent,
     RelationChangedEvent,
+    RelationDepartedEvent,
     RelationJoinedEvent,
     UpdateStatusEvent,
     UpgradeCharmEvent,
@@ -76,6 +78,20 @@ from database import (
     grant_role,
     PgHbaNotReadyError,
 )
+from haproxy import (
+    create_grpc_service,
+    create_http_service,
+    create_https_service,
+    create_ubuntu_installer_attach_service,
+    ERROR_FILES,
+    get_haproxy_error_files,
+    GRPC_SERVICE,
+    HTTP_SERVICE,
+    HTTPS_SERVICE,
+    PORTS,
+    SERVER_OPTIONS,
+    UBUNTU_INSTALLER_ATTACH_SERVICE,
+)
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
     AMQP_USERNAME,
@@ -88,6 +104,7 @@ from settings_files import (
     merge_service_conf,
     prepend_default_settings,
     read_service_conf,
+    SSLCertReadException,
     update_db_conf,
     update_default_settings,
     update_service_conf,
@@ -95,6 +112,7 @@ from settings_files import (
     write_analytics_id_systemd_override,
     write_deployment_mode_systemd_override,
     write_license_file,
+    write_ssl_cert,
 )
 
 DEBCONF_SET_SELECTIONS = "/usr/bin/debconf-set-selections"
@@ -221,6 +239,39 @@ def get_args_with_secrets_removed(args, arg_names):
     return args
 
 
+def _get_ssl_cert(ssl_cert, ssl_key):
+    """
+    Create an SSL certificate from the `ssl_cert` and `ssl_key` configuration
+    options.
+    """
+    if ssl_cert != "DEFAULT" and ssl_key == "":
+        # We have a cert but no key, this is an error.
+        raise SSLConfigurationError("`ssl_cert` is specified but `ssl_key` is missing")
+
+    if ssl_cert != "DEFAULT":
+        try:
+            ssl_cert = b64decode(ssl_cert)
+            ssl_key = b64decode(ssl_key)
+            ssl_cert = b64encode(ssl_cert + b"\n" + ssl_key).decode()
+        except binascii.Error:
+            raise SSLConfigurationError(
+                "Unable to decode `ssl_cert` or `ssl_key` - must be b64-encoded"
+            )
+    return ssl_cert
+
+
+class InvalidRedirectHTTPS(Exception):
+    """
+    Raised when an invalid `redirect_https` configuration is provided.
+    """
+
+
+class SSLConfigurationError(Exception):
+    """
+    Invalid SSL configuration.
+    """
+
+
 class LandscapeServerCharm(CharmBase):
     """Charm the service."""
 
@@ -279,6 +330,16 @@ class LandscapeServerCharm(CharmBase):
         )
         self.framework.observe(
             self.on.outbound_amqp_relation_changed, self._amqp_relation_changed
+        )
+
+        self.framework.observe(
+            self.on.website_relation_joined, self._website_relation_joined
+        )
+        self.framework.observe(
+            self.on.website_relation_changed, self._website_relation_changed
+        )
+        self.framework.observe(
+            self.on.website_relation_departed, self._website_relation_departed
         )
 
         self.framework.observe(
@@ -1264,6 +1325,13 @@ class LandscapeServerCharm(CharmBase):
                 env=get_modified_env_vars(),
             )
             return True
+        except FileNotFoundError:
+            logger.warning(
+                "WSL distributions script not found at '%s'; "
+                "Landscape may not be installed yet.",
+                UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
+            )
+            return True
         except CalledProcessError as e:
             logger.error(
                 "Failed to update WSL distributions with return code %d", e.returncode
@@ -1321,6 +1389,140 @@ class LandscapeServerCharm(CharmBase):
 
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status()
+
+    def _website_relation_joined(self, event: RelationJoinedEvent) -> None:
+        self._update_haproxy_connection(event.relation)
+
+        # Update root_url, if not provided.
+        if not self.charm_config.root_url:
+            url = f"https://{event.relation.data[event.unit]['public-address']}/"
+            self._stored.default_root_url = url
+            update_service_conf(
+                {
+                    "global": {"root-url": url},
+                    "api": {"root-url": url},
+                    "package-upload": {"root-url": url},
+                }
+            )
+
+        self._update_ready_status()
+
+    def _update_haproxy_connection(self, relation: Relation) -> None:
+        logger.warning(
+            "The legacy HAProxy charm integration (`website` relation) is deprecated "
+            "and support will be dropped in Landscape 26.10. "
+            "Please migrate to the `haproxy-route` endpoints."
+        )
+        self.unit.status = MaintenanceStatus("Setting up haproxy connection")
+
+        # Check the SSL cert stuff first. No sense doing all the other
+        # work just to fail here.
+        try:
+            ssl_cert = _get_ssl_cert(
+                ssl_cert=self.charm_config.ssl_cert,
+                ssl_key=self.charm_config.ssl_key,
+            )
+        except SSLConfigurationError as e:
+            self.unit.status = BlockedStatus(str(e))
+            return
+
+        error_files = get_haproxy_error_files(ERROR_FILES)
+        server_ip = relation.data[self.unit]["private-address"]
+        unit_name = self.unit.name.replace("/", "-")
+
+        http_service = create_http_service(
+            http_service=asdict(HTTP_SERVICE),
+            server_ip=server_ip,
+            unit_name=unit_name,
+            worker_counts=self.charm_config.worker_counts,
+            is_leader=self.unit.is_leader(),
+            error_files=error_files,
+            service_ports=PORTS,
+            server_options=SERVER_OPTIONS,
+            redirect_https=self.charm_config.redirect_https,
+        )
+
+        https_service = create_https_service(
+            https_service=asdict(HTTPS_SERVICE),
+            ssl_cert=ssl_cert,
+            server_ip=server_ip,
+            unit_name=unit_name,
+            worker_counts=self.charm_config.worker_counts,
+            is_leader=self.unit.is_leader(),
+            error_files=error_files,
+            service_ports=PORTS,
+            server_options=SERVER_OPTIONS,
+        )
+
+        services = [http_service, https_service]
+
+        if self.charm_config.enable_hostagent_messenger:
+            grpc_service = create_grpc_service(
+                grpc_service=asdict(GRPC_SERVICE),
+                ssl_cert=ssl_cert,
+                server_ip=server_ip,
+                unit_name=unit_name,
+                error_files=error_files,
+                service_ports=PORTS,
+                server_options=SERVER_OPTIONS,
+            )
+            services.append(grpc_service)
+
+        if self._stored.enable_ubuntu_installer_attach:
+            services.append(
+                create_ubuntu_installer_attach_service(
+                    ubuntu_installer_attach_service=asdict(
+                        UBUNTU_INSTALLER_ATTACH_SERVICE
+                    ),
+                    ssl_cert=ssl_cert,
+                    server_ip=server_ip,
+                    unit_name=unit_name,
+                    error_files=error_files,
+                    service_ports=PORTS,
+                    server_options=SERVER_OPTIONS,
+                )
+            )
+
+        relation.data[self.unit].update({"services": yaml.safe_dump(services)})
+        self.unit.status = WaitingStatus("")
+
+    def _website_relation_changed(self, event: RelationChangedEvent) -> None:
+        """
+        Writes the HAProxy-provided SSL certificate for
+        Landscape Server, if config has not provided one.
+        """
+        config_ssl_cert = self.charm_config.ssl_cert
+
+        if config_ssl_cert != "DEFAULT":
+            # No-op: cert has been provided by config.
+            return
+
+        if "ssl_cert" not in event.relation.data[event.unit]:
+            return
+
+        self.unit.status = MaintenanceStatus("Configuring HAProxy")
+        haproxy_ssl_cert = event.relation.data[event.unit]["ssl_cert"]
+
+        # Sometimes the data has not been encoded properly in the HA charm
+        if haproxy_ssl_cert.startswith("b'"):
+            haproxy_ssl_cert = haproxy_ssl_cert[2:-1]
+
+        if haproxy_ssl_cert != "DEFAULT":
+            # If DEFAULT, cert is being managed by a third party,
+            # possibly a subordinate charm.
+            try:
+                write_ssl_cert(haproxy_ssl_cert)
+            except SSLCertReadException as e:
+                self.unit.status = BlockedStatus(str(e))
+                return
+
+        self.unit.status = ActiveStatus("Unit is ready")
+        self._update_haproxy_connection(event.relation)
+
+        self._update_ready_status()
+
+    def _website_relation_departed(self, event: RelationDepartedEvent) -> None:
+        event.relation.data[self.unit].update({"services": ""})
 
     def _on_haproxy_route_relation_joined(
         self, event: RelationJoinedEvent | RelationChangedEvent
