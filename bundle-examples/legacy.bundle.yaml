@@ -22,7 +22,7 @@ applications:
     num_units: 1
     options:
       landscape_ppa: ppa:landscape/self-hosted-24.04
-      min_install: True
+      min_install: true
   haproxy:
     channel: edge
     charm: ch:haproxy
