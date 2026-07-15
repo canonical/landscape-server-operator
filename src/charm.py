@@ -1412,7 +1412,6 @@ class LandscapeServerCharm(CharmBase):
             "and support will be dropped in Landscape 26.10. "
             "Please migrate to the `haproxy-route` endpoints."
         )
-        self._stored.ready["haproxy"] = False
         self.unit.status = MaintenanceStatus("Setting up haproxy connection")
 
         # Check the SSL cert stuff first. No sense doing all the other
@@ -1484,7 +1483,6 @@ class LandscapeServerCharm(CharmBase):
             )
 
         relation.data[self.unit].update({"services": yaml.safe_dump(services)})
-        self._stored.ready["haproxy"] = True
         self.unit.status = WaitingStatus("")
 
     def _website_relation_changed(self, event: RelationChangedEvent) -> None:
