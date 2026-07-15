@@ -101,6 +101,38 @@ def test_debarchive_relation(juju: jubilant.Juju):
     assert token and token != "-"
 
 
+def test_task_handler_relation(juju: jubilant.Juju):
+    """Landscape Server and the task-handler exchange relation data both ways."""
+    juju.wait(all_landscape_active, timeout=300)
+    status = juju.status()
+
+    if "landscape-task-handler" not in status.apps:
+        pytest.skip("landscape-task-handler not deployed")
+
+    landscape_relations = status.apps["landscape-server"].relations
+    task_handler_relations = status.apps["landscape-task-handler"].relations
+    assert "task-handler" in landscape_relations
+    assert "landscape-server" in task_handler_relations
+
+    # landscape-server -> task-handler: shared store DB credentials + hostname.
+    server_leader = leader_unit_name(juju, "landscape-server")
+    to_task_handler = relation_app_data(juju, server_leader, "task-handler")
+    expected_hostname = urlparse(
+        juju.config("landscape-server").get("root_url", "https://landscape.local/")
+    ).hostname
+    for field in ("host", "port", "user", "main", "account_1", "resource_1", "sslmode"):
+        assert to_task_handler.get(field), f"missing {field} on task-handler databag"
+    assert to_task_handler["hostname"] == expected_hostname
+    assert to_task_handler["secret-id"].startswith("secret://")
+
+    # task-handler -> landscape-server: gRPC address + outbox certificate secret.
+    task_handler_leader = leader_unit_name(juju, "landscape-task-handler")
+    to_landscape = relation_app_data(juju, task_handler_leader, "landscape-server")
+    assert to_landscape.get("grpc-address"), "task-handler did not publish grpc-address"
+    assert to_landscape["certs-secret-id"].startswith("secret://")
+    assert to_landscape.get("certs-revision")
+
+
 @pytest.mark.skipif(
     USE_HOST_JUJU_MODEL,
     reason=LIVE_MODEL_SKIP_REASON,

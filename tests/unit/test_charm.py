@@ -384,6 +384,174 @@ class TestDebarchiveRelation:
         assert self._debarchive_app_data(result) == {}
 
 
+class TestTaskHandlerRelation:
+    """
+    Tests for the bidirectional `task-handler` (landscape-task-handler) relation.
+
+    landscape-server publishes the shared stores DB credentials to the
+    task-handler charm and consumes the outbox client certificate bundle the
+    task-handler sends back so that the local outbox snap can use it.
+    """
+
+    def _task_handler_app_data(self, state: State) -> dict:
+        for relation in state.relations:
+            if relation.endpoint == "task-handler":
+                return dict(relation.local_app_data)
+        raise ValueError("No task-handler relation found.")
+
+    @patch("charm.read_service_conf")
+    def test_publishes_stores_credentials(self, mock_read_conf):
+        """The leader publishes the [stores] fields and a granted password secret."""
+        mock_read_conf.return_value = {
+            "stores": {
+                "host": "10.0.0.7:5432",
+                "user": "landscape",
+                "password": "st0res-pw",
+                "main": "landscape-standalone-main",
+                "account_1": "landscape-standalone-account-1",
+                "resource_1": "landscape-standalone-resource-1",
+                "sslmode": "require",
+            }
+        }
+        context = Context(LandscapeServerCharm)
+        relation = Relation("task-handler")
+        state = State(leader=True, relations=[relation])
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        app_data = self._task_handler_app_data(result)
+        assert app_data["host"] == "10.0.0.7"
+        assert app_data["port"] == "5432"
+        assert app_data["user"] == "landscape"
+        assert app_data["main"] == "landscape-standalone-main"
+        assert app_data["account_1"] == "landscape-standalone-account-1"
+        assert app_data["resource_1"] == "landscape-standalone-resource-1"
+        assert app_data["sslmode"] == "require"
+        secret = result.get_secret(id=app_data["secret-id"])
+        assert secret.latest_content == {"password": "st0res-pw"}
+
+    @patch("charm.read_service_conf")
+    def test_non_leader_does_not_publish_stores(self, mock_read_conf):
+        """Non-leader units never publish stores credentials."""
+        mock_read_conf.return_value = {"stores": {"host": "10.0.0.7:5432"}}
+        context = Context(LandscapeServerCharm)
+        relation = Relation("task-handler")
+        state = State(leader=False, relations=[relation])
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert self._task_handler_app_data(result) == {}
+
+    @patch("charm.read_service_conf")
+    def test_publishes_landscape_hostname_from_root_url(self, mock_read_conf):
+        """The external Landscape hostname is shared, as on the debarchive relation."""
+        mock_read_conf.return_value = {
+            "stores": {"host": "10.0.0.7:5432", "password": "st0res-pw"}
+        }
+        context = Context(LandscapeServerCharm)
+        relation = Relation("task-handler")
+        state = State(
+            leader=True,
+            relations=[relation],
+            config={"root_url": "https://landscape.example.com"},
+        )
+
+        result = context.run(context.on.relation_joined(relation), state)
+
+        assert (
+            self._task_handler_app_data(result)["hostname"] == "landscape.example.com"
+        )
+
+    @patch("charm.check_call")
+    @patch("charm.snap.SnapCache")
+    def test_consumes_certs_and_configures_outbox(
+        self, mock_cache, mock_check_call, tmp_path
+    ):
+        """The unit writes the outbox client certs and points the snap at them."""
+        outbox = Mock()
+        outbox.get.return_value = {}
+        mock_cache.return_value.__getitem__.return_value = outbox
+
+        secret = Secret(
+            tracked_content={
+                "ca-cert": "CA-PEM",
+                "client-cert": "CLIENT-PEM",
+                "client-key": "CLIENT-KEY-PEM",
+            },
+        )
+        relation = Relation(
+            "task-handler",
+            remote_app_name="landscape-task-handler",
+            remote_app_data={
+                "grpc-address": "10.0.0.7:50051",
+                "certs-secret-id": secret.id,
+            },
+        )
+        certs_dir = tmp_path / "grpc-certs"
+        context = Context(LandscapeServerCharm)
+        state = State(leader=False, relations=[relation], secrets=[secret])
+
+        with patch("charm.OUTBOX_GRPC_CERTS_DIR", certs_dir):
+            context.run(context.on.relation_changed(relation), state)
+
+        assert (certs_dir / "ca.crt").read_text() == "CA-PEM"
+        assert (certs_dir / "client.crt").read_text() == "CLIENT-PEM"
+        assert (certs_dir / "client.key").read_text() == "CLIENT-KEY-PEM"
+
+        set_arg = outbox.set.call_args[0][0]
+        assert set_arg["landscape.task-handler.grpc-address"] == "10.0.0.7:50051"
+        assert set_arg["landscape.task-handler.grpc-certs-dir"] == str(certs_dir)
+        mock_check_call.assert_called_once_with(
+            ["snap", "restart", LANDSCAPE_OUTBOX_SNAP]
+        )
+
+    @patch("charm.check_call")
+    @patch("charm.snap.SnapCache")
+    def test_cert_rotation_does_not_restart_outbox(
+        self, mock_cache, mock_check_call, tmp_path
+    ):
+        """Re-writing certs with an unchanged address/dir must not restart outbox."""
+        certs_dir = tmp_path / "grpc-certs"
+        outbox = Mock()
+        # Snap already configured with the same address and certs dir.
+        outbox.get.return_value = {
+            "landscape": {
+                "task-handler": {
+                    "grpc-address": "10.0.0.7:50051",
+                    "grpc-certs-dir": str(certs_dir),
+                }
+            }
+        }
+        mock_cache.return_value.__getitem__.return_value = outbox
+
+        secret = Secret(
+            tracked_content={
+                "ca-cert": "CA-PEM",
+                "client-cert": "CLIENT-PEM-ROTATED",
+                "client-key": "CLIENT-KEY-PEM-ROTATED",
+            },
+        )
+        relation = Relation(
+            "task-handler",
+            remote_app_name="landscape-task-handler",
+            remote_app_data={
+                "grpc-address": "10.0.0.7:50051",
+                "certs-secret-id": secret.id,
+            },
+        )
+        context = Context(LandscapeServerCharm)
+        state = State(leader=False, relations=[relation], secrets=[secret])
+
+        with patch("charm.OUTBOX_GRPC_CERTS_DIR", certs_dir):
+            context.run(context.on.relation_changed(relation), state)
+
+        # Files are still (re)written for the rotation...
+        assert (certs_dir / "client.crt").read_text() == "CLIENT-PEM-ROTATED"
+        # ...but the snap is neither reconfigured nor restarted.
+        outbox.set.assert_not_called()
+        mock_check_call.assert_not_called()
+
+
 class TestOnConfigChanged:
     """
     Tests for `on.config_changed` hooks.
