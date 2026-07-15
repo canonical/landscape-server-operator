@@ -1407,6 +1407,11 @@ class LandscapeServerCharm(CharmBase):
         self._update_ready_status()
 
     def _update_haproxy_connection(self, relation: Relation) -> None:
+        logger.warning(
+            "The legacy HAProxy charm integration (`website` relation) is deprecated "
+            "and support will be dropped in Landscape 26.10. "
+            "Please migrate to the `haproxy-route` endpoints."
+        )
         self._stored.ready["haproxy"] = False
         self.unit.status = MaintenanceStatus("Setting up haproxy connection")
 
