@@ -203,7 +203,7 @@ def test_redirect_https_all_routes_redirect_to_https(juju: jubilant.Juju):
             "message-system",
             "repository",
             "api/about",
-            "hashid-databases",
+            "hash-id-databases",
             "upload",
             "zzz-some-default-route",
         ):
@@ -254,7 +254,7 @@ def test_redirect_https_default_routes_redirect_to_https(juju: jubilant.Juju):
         for route in (
             "message-system",
             "api/about",
-            "hashid-databases",
+            "hash-id-databases",
             "upload",
             "zzz-some-default-route",
         ):
@@ -481,10 +481,18 @@ def test_all_services_up(juju: jubilant.Juju):
     status = juju.status()
     units = status.apps["landscape-server"].units
     config = juju.config("landscape-server")
+    enable_hostagent = config.get("enable_hostagent_messenger", False)
     enable_ubuntu_installer = config.get("enable_ubuntu_installer_attach", False)
+
+    hostagent_services = {
+        "landscape-hostagent-messenger",
+        "landscape-hostagent-consumer",
+    }
 
     for name, unit_status in units.items():
         for service in DEFAULT_SERVICES:
+            if service in hostagent_services and not enable_hostagent:
+                continue
             wait_for_service(juju, name, service)
 
         if enable_ubuntu_installer:
@@ -964,3 +972,143 @@ def test_cos_agent_dashboards_valid(
                     f" '{panel.get('title')}'"
                     " should use ${{prometheusds}}"
                 )
+
+
+def _legacy_haproxy_host(juju: jubilant.Juju) -> str:
+    """Return the legacy haproxy unit's public IP, or skip the test."""
+    haproxy = juju.status().apps.get("haproxy")
+    if not haproxy:
+        pytest.skip("Legacy haproxy app not deployed")
+    return list(haproxy.units.values())[0].public_address
+
+
+def test_legacy_haproxy_metrics_forbidden(juju: jubilant.Juju):
+    """
+    Requests to `/metrics` are denied with a 403 via the legacy HAProxy charm.
+
+    This includes the older `<host>/metrics` endpoint, and any newer per-service
+    endpoints that end with `/metrics`, like `<host>/api/metrics`.
+    """
+    host = _legacy_haproxy_host(juju)
+    juju.wait(all_landscape_active, timeout=300)
+
+    assert get_session().get(f"http://{host}/metrics").status_code == 403
+    assert get_session().get(f"https://{host}/metrics", verify=False).status_code == 403
+
+    for service in ("message-system", "api", "ping"):
+        for scheme in ("http", "https"):
+            url = f"{scheme}://{host}/{service}/metrics"
+            assert get_session().get(url, verify=False).status_code == 403
+
+
+@pytest.mark.skipif(USE_HOST_JUJU_MODEL, reason=LIVE_MODEL_SKIP_REASON)
+def test_legacy_haproxy_redirect_https_all(juju: jubilant.Juju):
+    """
+    If `redirect_https=all`, redirect all HTTP requests on all routes to HTTPS
+    via the legacy HAProxy charm.
+    """
+    host = _legacy_haproxy_host(juju)
+    original = juju.config("landscape-server").get("redirect_https")
+    try:
+        juju.config("landscape-server", values={"redirect_https": "all"})
+        juju.wait(all_landscape_active, timeout=300)
+
+        for route in (
+            "about",
+            "api/about",
+            "attachment",
+            "hash-id-databases",
+            "ping",
+            "message-system",
+            "repository",
+            "upload",
+            "zzz-some-default-route",
+        ):
+            url = f"http://{host}/{route}"
+            response = get_session().get(url, allow_redirects=False)
+            assert response.is_redirect, f"Got {response} from {url}"
+    finally:
+        restore = original or "default"
+        juju.config("landscape-server", values={"redirect_https": restore})
+        juju.wait(all_landscape_active, timeout=300)
+
+
+@pytest.mark.skipif(USE_HOST_JUJU_MODEL, reason=LIVE_MODEL_SKIP_REASON)
+def test_legacy_haproxy_redirect_https_none(juju: jubilant.Juju):
+    """
+    If `redirect_https=none`, do not redirect any HTTP requests to HTTPS
+    via the legacy HAProxy charm.
+    """
+    host = _legacy_haproxy_host(juju)
+    original = juju.config("landscape-server").get("redirect_https")
+    try:
+        juju.config("landscape-server", values={"redirect_https": "none"})
+        juju.wait(all_landscape_active, timeout=300)
+
+        for route in (
+            "about",
+            "api/about",
+            "attachment",
+            "hash-id-databases",
+            "ping",
+            "message-system",
+            "repository",
+            "upload",
+            "zzz-some-default-route",
+        ):
+            url = f"http://{host}/{route}"
+            response = get_session().get(url, allow_redirects=False)
+            assert not response.is_redirect, f"Got {response} from {url}"
+    finally:
+        restore = original or "default"
+        juju.config("landscape-server", values={"redirect_https": restore})
+        juju.wait(all_landscape_active, timeout=300)
+
+
+@pytest.mark.skipif(USE_HOST_JUJU_MODEL, reason=LIVE_MODEL_SKIP_REASON)
+def test_legacy_haproxy_redirect_https_default(juju: jubilant.Juju):
+    """
+    If `redirect_https=default`, redirect all HTTP requests except /ping and
+    /repository to HTTPS via the legacy HAProxy charm.
+    """
+    host = _legacy_haproxy_host(juju)
+    original = juju.config("landscape-server").get("redirect_https")
+    try:
+        juju.config("landscape-server", values={"redirect_https": "default"})
+        juju.wait(all_landscape_active, timeout=300)
+
+        for route in ("ping", "repository"):
+            url = f"http://{host}/{route}"
+            response = get_session().get(url, allow_redirects=False)
+            assert not response.is_redirect, f"Got {response} from {url}"
+
+        for route in (
+            "about",
+            "api/about",
+            "attachment",
+            "hash-id-databases",
+            "message-system",
+            "upload",
+            "zzz-some-default-route",
+        ):
+            url = f"http://{host}/{route}"
+            response = get_session().get(url, allow_redirects=False)
+            assert response.is_redirect, f"Got {response} from {url}"
+    finally:
+        restore = original or "default"
+        juju.config("landscape-server", values={"redirect_https": restore})
+        juju.wait(all_landscape_active, timeout=300)
+
+
+@pytest.mark.parametrize("route", ["ping", "message-system", ""])
+def test_legacy_haproxy_services_up_over_https(juju: jubilant.Juju, route: str):
+    """
+    Services are responding over HTTPS via the legacy HAProxy charm.
+    """
+    host = _legacy_haproxy_host(juju)
+    juju.wait(all_landscape_active, timeout=300)
+
+    response = get_session().get(f"https://{host}/{route}", verify=False)
+    assert response.status_code == 200, (
+        f"Expected 200 for /{route}, got {response.status_code}"
+    )

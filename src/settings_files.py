@@ -35,6 +35,7 @@ LICENSE_FILE_PROTOCOLS = (
 )
 
 SERVICE_CONF = "/etc/landscape/service.conf"
+SSL_CERT_PATH = "/etc/ssl/certs/landscape_server_ca.crt"
 
 DEFAULT_POSTGRES_PORT = "5432"
 
@@ -293,6 +294,15 @@ def write_license_file(license_file: str, uid: int, gid: int) -> None:
     os.chown(LICENSE_FILE, uid, gid)
 
 
+def write_ssl_cert(ssl_cert: str) -> None:
+    """Decodes and writes `ssl_cert` to `SSL_CERT_PATH`."""
+    try:
+        with open(SSL_CERT_PATH, "wb") as ssl_cert_fp:
+            ssl_cert_fp.write(b64decode(ssl_cert.encode()))
+    except binascii.Error:
+        raise SSLCertReadException("Unable to decode b64-encoded SSL certificate")
+
+
 def update_db_conf(
     host=None,
     password=None,
@@ -345,6 +355,6 @@ def read_service_conf() -> dict:
     Returns the parsed contents of SERVICE_CONF as a plain dict of
     {section: {key: value}}, suitable for serialisation to JSON.
     """
-    config = ConfigParser()
+    config = ConfigParser(interpolation=None)
     config.read(SERVICE_CONF)
     return {section: dict(config[section]) for section in config.sections()}
