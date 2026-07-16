@@ -120,7 +120,15 @@ def test_task_handler_relation(juju: jubilant.Juju):
     expected_hostname = urlparse(
         juju.config("landscape-server").get("root_url", "https://landscape.local/")
     ).hostname
-    for field in ("host", "port", "user", "main", "account_1", "resource_1", "sslmode"):
+    for field in (
+        "host",
+        "port",
+        "user",
+        "main",
+        "account_1",
+        "resource_1",
+        "sslmode",
+    ):
         assert to_task_handler.get(field), f"missing {field} on task-handler databag"
     assert to_task_handler["hostname"] == expected_hostname
     assert to_task_handler["secret-id"].startswith("secret://")
