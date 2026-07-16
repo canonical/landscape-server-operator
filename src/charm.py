@@ -1736,13 +1736,19 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if hostname:
             databag["hostname"] = hostname
 
-        password = stores.get("password", "")
+        password = stores.get("password")
+        if not password:
+            logger.warning(
+                "Skipping task-handler relation update: store password is not yet available"
+            )
+            return
         for relation in relations:
             existing_id = relation.data[self.app].get("secret-id")
             if existing_id:
                 try:
                     secret = self.model.get_secret(id=existing_id)
-                    secret.set_content({"password": password})
+                    if secret.get_content().get("password") != password:
+                        secret.set_content({"password": password})
                 except (SecretNotFoundError, ModelError):
                     logger.warning(
                         "task-handler relation has stale secret-id %s; "
@@ -1763,7 +1769,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         rewrites the files in place; the gRPC address and certs dir are only set
         on the snap when they change, so a rotation does not restart the snap.
         """
-        app_data = relation.data.get(relation.app) if relation.app else None
+        app_data = relation.data[relation.app] if relation.app else None
         if not app_data:
             return
 
