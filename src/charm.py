@@ -1941,7 +1941,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         password = stores.get("password")
         if not password:
             logger.warning(
-                "Skipping task-handler relation update: store password is not yet available"
+                "Skipping task-handler relation update: "
+                "store password is not yet available"
             )
             return
         for relation in relations:
