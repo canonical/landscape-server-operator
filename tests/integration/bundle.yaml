@@ -33,6 +33,12 @@ applications:
     charm: ../../landscape-debarchive_ubuntu@24.04-amd64.charm
     num_units: 1
     base: ubuntu@24.04
+  landscape-task-handler:
+    charm: ../../landscape-task-handler_amd64.charm
+    num_units: 1
+    options:
+      task-handler-snap-channel: latest/edge
+    base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy
     channel: 2.8/edge
@@ -56,3 +62,7 @@ relations:
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [landscape-task-handler:task-db, postgresql:database]
+  - [landscape-task-handler:landscape-server, landscape-server:task-handler]
+  - [landscape-task-handler:certificates, self-signed-certificates:certificates]
+  - [landscape-task-handler:grpc-haproxy-route, haproxy:haproxy-route-tcp]
