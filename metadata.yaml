@@ -55,6 +55,8 @@ requires:
 provides:
   debarchive:
     interface: landscape-debarchive
+  task-handler:
+    interface: landscape-task-handler
   data:
     interface: block-storage
     scope: container

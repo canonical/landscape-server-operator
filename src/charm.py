@@ -146,6 +146,14 @@ LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
 DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
+TASK_HANDLER_RELATION = "task-handler"
+OUTBOX_GRPC_CERTS_DIR = Path("/var/snap/landscape-outbox/common/grpc-certs")
+DEFAULT_STORE_NAMES = {
+    "main": "landscape-standalone-main",
+    "account_1": "landscape-standalone-account-1",
+    "resource_1": "landscape-standalone-resource-1",
+}
+
 DEFAULT_SERVICES = (
     "landscape-api",
     "landscape-appserver",
@@ -357,6 +365,16 @@ class LandscapeServerCharm(CharmBase):
         self.framework.observe(
             self.on.debarchive_relation_changed,
             self._update_debarchive_relations,
+        )
+
+        # Task handler (interface: landscape-task-handler)
+        self.framework.observe(
+            self.on.task_handler_relation_joined,
+            self._on_task_handler_relation_changed,
+        )
+        self.framework.observe(
+            self.on.task_handler_relation_changed,
+            self._on_task_handler_relation_changed,
         )
 
         # Leadership/peering
@@ -681,6 +699,7 @@ class LandscapeServerCharm(CharmBase):
         self._update_debarchive_relations(
             notify_secret_token_changed=bool(secret_token_changed)
         )
+        self._update_task_handler_relations()
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
@@ -1097,6 +1116,8 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
+        self._update_task_handler_relations()
+
         if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
             return
 
@@ -1181,6 +1202,8 @@ class LandscapeServerCharm(CharmBase):
             password=password,
             schema_password=schema_password,
         )
+
+        self._update_task_handler_relations()
 
         if not self.unit.is_leader():
             self._stored.ready["db"] = True
@@ -1836,6 +1859,210 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 )
                 relation.data[self.app]["secret-token-revision"] = str(revision + 1)
 
+    def _on_task_handler_relation_changed(
+        self, event: RelationJoinedEvent | RelationChangedEvent
+    ) -> None:
+        """Handle both directions of the task-handler relation."""
+        # Leader publishes the shared stores DB credentials to the task-handler.
+        self._update_task_handler_relations()
+        # Every unit consumes the outbox client certificates the task-handler
+        # sends back, so the local outbox snap can reach the task-handler.
+        self._consume_task_handler_certs(event.relation)
+
+    def _landscape_hostname(self) -> str | None:
+        """Return the external Landscape hostname (root_url host, else leader IP).
+
+        Mirrors the hostname ``_update_debarchive_relations`` publishes: the
+        configured ``root_url`` hostname when set, otherwise the leader IP (with
+        a fallback to this unit's peer-binding address).
+        """
+        leader_ip = self._stored.leader_ip
+        if not leader_ip:
+            peer_relation = self.model.get_relation("replicas")
+            if peer_relation is not None:
+                binding = self.model.get_binding(peer_relation)
+                if binding and binding.network.bind_address:
+                    leader_ip = str(binding.network.bind_address)
+                    self._stored.leader_ip = leader_ip
+
+        hostname = leader_ip
+        if self.charm_config.root_url:
+            parsed = urlparse(self.charm_config.root_url)
+            if parsed.hostname:
+                hostname = parsed.hostname
+        return hostname or None
+
+    def _update_task_handler_relations(self) -> None:
+        """Publish the task-handler relation data to related task-handler charms.
+
+        Sends the shared store DB credentials (non-secret fields on the app
+        databag, the store password through a granted Juju secret, mirroring
+        ``_update_debarchive_relations``) plus the external Landscape hostname the
+        task-handler uses to register its gRPC service with haproxy and as a
+        server-certificate SAN.
+        """
+        if not self.unit.is_leader():
+            return
+
+        relations = self.model.relations.get(TASK_HANDLER_RELATION, [])
+        if not relations:
+            return
+
+        stores = read_service_conf().get("stores", {})
+        if not stores:
+            logger.warning(
+                "Skipping task-handler relation update: "
+                "no [stores] section in service.conf"
+            )
+            return
+
+        host, _, port = stores.get("host", "").partition(":")
+        databag = {
+            "host": host,
+            "port": port or str(DEFAULT_POSTGRES_PORT),
+            "user": stores.get("user", "landscape"),
+            "main": stores.get("main", DEFAULT_STORE_NAMES["main"]),
+            "account_1": stores.get("account_1", DEFAULT_STORE_NAMES["account_1"]),
+            "resource_1": stores.get("resource_1", DEFAULT_STORE_NAMES["resource_1"]),
+            "sslmode": stores.get("sslmode", "disable"),
+        }
+        for optional in ("sslrootcert", "sslcert", "sslkey"):
+            value = stores.get(optional)
+            if value:
+                databag[optional] = value
+
+        # Share the external Landscape hostname (as the landscape-debarchive
+        # relation does) so the task-handler can register its gRPC service with
+        # haproxy under that name and use it as a server-certificate SAN.
+        hostname = self._landscape_hostname()
+        if hostname:
+            databag["hostname"] = hostname
+
+        password = stores.get("password")
+        if not password:
+            logger.warning(
+                "Skipping task-handler relation update: "
+                "store password is not yet available"
+            )
+            return
+        for relation in relations:
+            existing_id = relation.data[self.app].get("secret-id")
+            if existing_id:
+                try:
+                    secret = self.model.get_secret(id=existing_id)
+                    if secret.get_content().get("password") != password:
+                        secret.set_content({"password": password})
+                except (SecretNotFoundError, ModelError):
+                    logger.warning(
+                        "task-handler relation has stale secret-id %s; "
+                        "creating a new secret",
+                        existing_id,
+                    )
+                    secret = self.app.add_secret({"password": password})
+            else:
+                secret = self.app.add_secret({"password": password})
+            secret.grant(relation)
+            relation.data[self.app].update(databag)
+            relation.data[self.app]["secret-id"] = secret.id
+
+    def _consume_task_handler_certs(self, relation: Relation) -> None:
+        """Write the outbox client certs and configure the outbox snap.
+
+        Runs on every unit (the outbox snap runs on every unit). Cert rotation
+        rewrites the files in place; the gRPC address and certs dir are only set
+        on the snap when they change, so a rotation does not restart the snap.
+        """
+        app_data = relation.data[relation.app] if relation.app else None
+        if not app_data:
+            return
+
+        grpc_address = app_data.get("grpc-address")
+        secret_id = app_data.get("certs-secret-id")
+        if not grpc_address or not secret_id:
+            logger.info("task-handler has not published its certs/grpc-address yet")
+            return
+
+        try:
+            secret = self.model.get_secret(id=secret_id)
+            content = secret.get_content(refresh=True)
+        except (SecretNotFoundError, ModelError):
+            logger.warning(
+                "task-handler certs secret %s not found or inaccessible", secret_id
+            )
+            return
+
+        ca = content.get("ca-cert")
+        client_cert = content.get("client-cert")
+        client_key = content.get("client-key")
+        if not (ca and client_cert and client_key):
+            logger.warning("task-handler certs secret is missing required fields")
+            return
+
+        try:
+            self._write_outbox_certificates(ca, client_cert, client_key)
+            self._configure_outbox_grpc(grpc_address, str(OUTBOX_GRPC_CERTS_DIR))
+        except (snap.SnapError, OSError) as e:
+            logger.error("Failed to configure outbox mTLS: %s", e)
+            self.unit.status = BlockedStatus("Failed to configure outbox mTLS")
+
+    @staticmethod
+    def _write_outbox_certificates(ca: str, client_cert: str, client_key: str) -> None:
+        """Atomically write the outbox client certificate material to disk."""
+        OUTBOX_GRPC_CERTS_DIR.mkdir(parents=True, exist_ok=True)
+        LandscapeServerCharm._atomic_write(OUTBOX_GRPC_CERTS_DIR / "ca.crt", ca, 0o644)
+        LandscapeServerCharm._atomic_write(
+            OUTBOX_GRPC_CERTS_DIR / "client.crt", client_cert, 0o644
+        )
+        LandscapeServerCharm._atomic_write(
+            OUTBOX_GRPC_CERTS_DIR / "client.key", client_key, 0o600
+        )
+
+    @staticmethod
+    def _atomic_write(path: Path, content: str, mode: int) -> None:
+        """Atomically write ``content`` to ``path`` with the given permissions."""
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        tmp_path.write_text(content)
+        os.chmod(tmp_path, mode)
+        os.replace(tmp_path, path)
+
+    def _configure_outbox_grpc(self, grpc_address: str, certs_dir: str) -> None:
+        """Point the outbox snap at the task-handler gRPC endpoint and cert dir.
+
+        Only writes snap config (and restarts) when a value actually changes so
+        that certificate rotation, which keeps the same address and directory,
+        does not restart the outbox snap.
+        """
+        outbox = snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP]
+        desired = {
+            "landscape.task-handler.grpc-address": grpc_address,
+            "landscape.task-handler.grpc-certs-dir": certs_dir,
+        }
+        try:
+            current = outbox.get(None, typed=True) or {}
+        except snap.SnapError:
+            current = {}
+
+        changed = {
+            key: value
+            for key, value in desired.items()
+            if self._nested_get(current, key) != value
+        }
+        if not changed:
+            return
+
+        outbox.set(changed)
+        check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
+
+    @staticmethod
+    def _nested_get(config: dict, dotted_key: str):
+        """Return a value from a nested snap config dict addressed by a dotted key."""
+        node = config
+        for part in dotted_key.split("."):
+            if not isinstance(node, dict):
+                return None
+            node = node.get(part)
+        return node
+
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
         # guaranteed to be the leader by the time we process it. See
@@ -1858,6 +2085,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             # Now that we (may) have a leader IP, refresh any debarchive
             # relations that depend on it for their root URL fallback.
             self._update_debarchive_relations()
+            self._update_task_handler_relations()
 
         self._leader_changed()
 
