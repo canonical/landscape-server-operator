@@ -253,12 +253,12 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = "haproxy-route-tcp"
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_in_model" {
@@ -271,12 +271,12 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = "haproxy-route-tcp"
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
@@ -399,12 +399,12 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
   }
 
   application {
-    offer_url = var.haproxy_route_offer_url
+    offer_url = var.haproxy_route_tcp_offer_url
   }
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_lbaas" {
@@ -416,12 +416,12 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
   }
 
   application {
-    offer_url = var.haproxy_route_offer_url
+    offer_url = var.haproxy_route_tcp_offer_url
   }
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 locals {

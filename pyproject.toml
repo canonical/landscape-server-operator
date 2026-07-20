@@ -12,6 +12,7 @@ dependencies = [
     "email-validator>=2",
     "ops==2.23.1",
     "pydantic==2.13.0",
+    "validators>=0.22",
 ]
 
 [dependency-groups]

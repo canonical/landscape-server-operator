@@ -40,6 +40,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
 from charms.smtp_integrator.v0.smtp import (
     SmtpDataAvailableEvent,
     SmtpRequires,
@@ -471,10 +472,12 @@ class LandscapeServerCharm(CharmBase):
         self.repository_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="repository-haproxy-route"
         )
-        self.hostagent_messenger_haproxy_route = HaproxyRouteRequirer(
+        # grpc backends only support plaintext (no add_secure_port), so TLS must
+        # terminate at haproxy itself rather than being re-encrypted to the backend.
+        self.hostagent_messenger_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="hostagent-messenger-haproxy-route"
         )
-        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteRequirer(
+        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="ubuntu-installer-attach-haproxy-route"
         )
 
@@ -1683,22 +1686,20 @@ class LandscapeServerCharm(CharmBase):
             hostname=hostname,
         )
         if cfg.enable_hostagent_messenger:
-            self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-hostagent-messenger-{model_uuid}",
-                ports=[cfg.hostagent_server_base_port],
-                protocol="https",
+            self.hostagent_messenger_haproxy_route.provide_haproxy_route_tcp_requirements(
+                port=6554,
+                backend_port=cfg.hostagent_server_base_port,
+                hosts=[unit_ip],
+                tls_terminate=True,
                 unit_address=unit_ip,
-                hostname=hostname,
-                external_grpc_port=6554,
             )
         if cfg.enable_ubuntu_installer_attach:
-            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-ubuntu-installer-attach-{model_uuid}",
-                ports=[cfg.ubuntu_installer_attach_base_port],
-                protocol="https",
+            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_tcp_requirements(
+                port=50051,
+                backend_port=cfg.ubuntu_installer_attach_base_port,
+                hosts=[unit_ip],
+                tls_terminate=True,
                 unit_address=unit_ip,
-                hostname=hostname,
-                external_grpc_port=50051,
             )
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:
