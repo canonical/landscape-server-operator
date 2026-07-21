@@ -40,7 +40,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
-from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer, PortMapping
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
 from charms.smtp_integrator.v0.smtp import (
     SmtpDataAvailableEvent,
     SmtpRequires,
