@@ -40,7 +40,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
-from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer, PortMapping
 from charms.smtp_integrator.v0.smtp import (
     SmtpDataAvailableEvent,
     SmtpRequires,
@@ -1692,6 +1692,7 @@ class LandscapeServerCharm(CharmBase):
                 hosts=[unit_ip],
                 tls_terminate=True,
                 unit_address=unit_ip,
+                sni=hostname,
             )
         if cfg.enable_ubuntu_installer_attach:
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_tcp_requirements(
@@ -1700,6 +1701,7 @@ class LandscapeServerCharm(CharmBase):
                 hosts=[unit_ip],
                 tls_terminate=True,
                 unit_address=unit_ip,
+                sni=hostname,
             )
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:
