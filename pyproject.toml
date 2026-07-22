@@ -19,14 +19,13 @@ dependencies = [
 dev = [
   "charmcraftcache==0.8.0",
   "coverage==7.13.1",
-  "grpcio==1.78.0",
   "ops[testing]==2.23.1",
   "pytest==9.0.3",
   "ruff==0.15.7",
   "urllib3==2.6.3",
 ]
 integration = [
-  "grpcio==1.78.0",
+  "h2==4.3.0",
   "jubilant==1.6.2",
   "requests==2.33.0",
   "urllib3==2.6.3",

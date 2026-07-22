@@ -27,6 +27,7 @@ from charm import (
 from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
     all_landscape_active,
+    assert_grpc_reachable,
     get_cos_agent_config,
     get_session,
     has_cos_agent,
@@ -35,6 +36,7 @@ from tests.integration.helpers import (
     has_pgbouncer,
     leader_unit_name,
     relation_app_data,
+    remote_relation_app_data,
     supports_legacy_pg,
     wait_for_http_status,
     wait_for_service,
@@ -1112,3 +1114,66 @@ def test_legacy_haproxy_services_up_over_https(juju: jubilant.Juju, route: str):
     assert response.status_code == 200, (
         f"Expected 200 for /{route}, got {response.status_code}"
     )
+
+
+def test_grpc_hostagent_messenger(juju: jubilant.Juju):
+    # NOTE: grpc-python's own channel machinery can't validate this
+    # frontend: HAProxy's haproxy-route-tcp terminates TLS without
+    # negotiating ALPN, which grpc.secure_channel hard-requires and
+    # grpc.insecure_channel can't speak to at all. assert_grpc_reachable
+    # does a raw TLS + HTTP/2 handshake instead. See helpers.py.
+    #
+    # The published endpoint is read from the relation databag (rather
+    # than looking up a local "haproxy" app in juju status) so this also
+    # works when haproxy is offered cross-model via SAAS.
+    config = juju.config("landscape-server")
+    root_url = config.get("root_url", "https://landscape.local/")
+    hostname = urlparse(root_url).hostname
+    if not hostname:
+        pytest.skip("Hostname is not set")
+
+    app_status = juju.status().apps["landscape-server"]
+    if "hostagent-messenger-haproxy-route" not in app_status.relations:
+        pytest.skip("hostagent-messenger-haproxy-route not configured")
+
+    hostagent = config.get("enable_hostagent_messenger", False)
+    if not hostagent:
+        pytest.skip("Hostagent Messenger not configured....")
+
+    unit = leader_unit_name(juju, "landscape-server")
+    remote_data = remote_relation_app_data(
+        juju, unit, "hostagent-messenger-haproxy-route"
+    )
+    endpoints = json.loads(remote_data.get("endpoints", "[]"))
+    if not endpoints:
+        pytest.skip("No endpoints published by the haproxy-route-tcp provider")
+    haproxy_host, _, port_str = endpoints[0].rpartition(":")
+
+    assert_grpc_reachable(haproxy_host, int(port_str), hostname)
+
+
+def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
+    config = juju.config("landscape-server")
+    root_url = config.get("root_url", "https://landscape.local/")
+    hostname = urlparse(root_url).hostname
+    if not hostname:
+        pytest.skip("Hostname is not set")
+
+    app_status = juju.status().apps["landscape-server"]
+    if "ubuntu-installer-attach-haproxy-route" not in app_status.relations:
+        pytest.skip("ubuntu-installer-attach-haproxy-route not configured")
+
+    ubuntu_installer_attach = config.get("enable_ubuntu_installer_attach", False)
+    if not ubuntu_installer_attach:
+        pytest.skip("Ubuntu Installer Attach not configured....")
+
+    unit = leader_unit_name(juju, "landscape-server")
+    remote_data = remote_relation_app_data(
+        juju, unit, "ubuntu-installer-attach-haproxy-route"
+    )
+    endpoints = json.loads(remote_data.get("endpoints", "[]"))
+    if not endpoints:
+        pytest.skip("No endpoints published by the haproxy-route-tcp provider")
+    haproxy_host, _, port_str = endpoints[0].rpartition(":")
+
+    assert_grpc_reachable(haproxy_host, int(port_str), hostname)

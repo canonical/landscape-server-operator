@@ -305,3 +305,67 @@ def relation_app_data(juju: jubilant.Juju, unit: str, endpoint: str) -> dict:
     )
     data = json.loads(data_stdout)
     return {k: v.strip('"') if isinstance(v, str) else v for k, v in data.items()}
+
+
+def remote_relation_app_data(juju: jubilant.Juju, unit: str, endpoint: str) -> dict:
+    """
+    Return the remote (provider) app databag for a unit's relation endpoint.
+
+    Unlike `relation_app_data`, this reads the *other* side of the relation
+    (e.g. haproxy's published endpoint), via `juju show-unit`. This works
+    the same whether the provider is local or cross-model/SAAS, since Juju
+    replicates the remote app databag locally either way.
+    """
+    output = juju.cli("show-unit", unit, "--format=json")
+    unit_data = json.loads(output)[unit]
+    for relation in unit_data.get("relation-info", []):
+        if relation.get("endpoint") == endpoint:
+            return relation.get("application-data", {})
+    pytest.fail(f"No relation data found for endpoint {endpoint} on unit {unit}")
+
+
+def assert_grpc_reachable(
+    ip: str, port: int, hostname: str, timeout: float = 10
+) -> None:
+    """
+    Confirm a gRPC backend is reachable through the HAProxy TCP frontend.
+
+    grpc-python's own channel machinery can't be used here: HAProxy's
+    haproxy-route-tcp frontend terminates TLS without negotiating ALPN,
+    which grpc-python's secure_channel hard-requires ("h2") and which
+    insecure_channel can't use at all since the frontend expects TLS.
+    Instead we manually perform the TLS handshake with stdlib `ssl`
+    (which tolerates a missing ALPN result) and speak raw HTTP/2 framing
+    via the pure-Python `h2` library, which is enough to prove the
+    frontend is actually forwarding to a live HTTP/2 backend.
+
+    Certificate verification is disabled (like `curl -k`/grpc's
+    insecure channel credentials): the CA used to sign HAProxy's
+    frontend cert may not be discoverable from the requirer's model at
+    all (e.g. cross-model/SAAS ingress), so this only proves TLS+HTTP/2
+    reachability, not certificate trust.
+    """
+    import socket
+    import ssl
+
+    import h2.config
+    import h2.connection
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.set_alpn_protocols(["h2"])
+
+    with socket.create_connection((ip, port), timeout=timeout) as sock:
+        with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+            conn = h2.connection.H2Connection(
+                config=h2.config.H2Configuration(client_side=True)
+            )
+            conn.initiate_connection()
+            ssock.sendall(conn.data_to_send())
+
+            ssock.settimeout(timeout)
+            data = ssock.recv(65535)
+            events = conn.receive_data(data)
+
+    assert events, f"No HTTP/2 response received from {ip}:{port}"
