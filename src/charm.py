@@ -70,6 +70,7 @@ from ops.model import (
     WaitingStatus,
 )
 from pydantic import ValidationError
+import validators
 import yaml
 
 from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration
@@ -1585,6 +1586,11 @@ class LandscapeServerCharm(CharmBase):
             if name := parsed.hostname:
                 hostname = name
 
+        # haproxy-route-tcp's `sni` field is validated as a domain name, so it
+        # can't be set to `hostname` when that's still the leader_ip fallback
+        # (i.e. root_url isn't configured with a real hostname).
+        sni = hostname if validators.domain(hostname) else None
+
         appserver_paths = ["/", "/hash-id-databases"]
 
         model_uuid = self.model.uuid
@@ -1692,7 +1698,7 @@ class LandscapeServerCharm(CharmBase):
                 hosts=[unit_ip],
                 tls_terminate=True,
                 unit_address=unit_ip,
-                sni=hostname,
+                sni=sni,
             )
         if cfg.enable_ubuntu_installer_attach:
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_tcp_requirements(
@@ -1701,7 +1707,7 @@ class LandscapeServerCharm(CharmBase):
                 hosts=[unit_ip],
                 tls_terminate=True,
                 unit_address=unit_ip,
-                sni=hostname,
+                sni=sni,
             )
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:

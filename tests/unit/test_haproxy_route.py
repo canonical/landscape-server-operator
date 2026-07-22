@@ -13,7 +13,8 @@ PATCH_PROVIDE = (
     ".provide_haproxy_route_requirements"
 )
 # grpc backends (hostagent-messenger, ubuntu-installer-attach) use the tcp
-# passthrough requirer since they can't terminate TLS themselves.
+# route requirer, with TLS terminated at haproxy since the backends can't
+# terminate TLS themselves.
 PATCH_PROVIDE_TCP = (
     "charms.haproxy.v1.haproxy_route_tcp.HaproxyRouteTcpRequirer"
     ".provide_haproxy_route_tcp_requirements"
@@ -60,7 +61,7 @@ def _run_provide(context, state, leader_ip=LEADER_IP):
 
 def _run_provide_tcp(context, state, leader_ip=LEADER_IP):
     """
-    Same as _run_provide, but captures calls to the tcp passthrough requirer
+    Same as _run_provide, but captures calls to the tcp route requirer
     used by the grpc backends (hostagent-messenger, ubuntu-installer-attach).
     """
     with patch(PATCH_PROVIDE_TCP) as mock_provide_tcp:
@@ -435,3 +436,50 @@ class TestConditionalRoutes:
         assert calls
         assert calls[0].kwargs.get("backend_port") is not None
         assert calls[0].kwargs.get("tls_terminate") is True
+
+    def test_hostagent_messenger_sni_omitted_when_no_root_url(
+        self, replicas_network_state
+    ):
+        """sni must not be an IP address, since haproxy-route-tcp validates it
+        as a domain name. When root_url isn't configured, hostname falls back
+        to leader_ip (an IP), so sni should be omitted entirely rather than
+        set to that IP.
+        """
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={"enable_hostagent_messenger": True, "root_url": ""},
+            **replicas_network_state,
+        )
+        mock = _run_provide_tcp(context, state, leader_ip=LEADER_IP)
+        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
+        assert calls
+        assert calls[0].kwargs.get("sni") is None
+
+    def test_ubuntu_installer_attach_sni_omitted_when_no_root_url(
+        self, replicas_network_state
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={"enable_ubuntu_installer_attach": True, "root_url": ""},
+            **replicas_network_state,
+        )
+        mock = _run_provide_tcp(context, state, leader_ip=LEADER_IP)
+        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 50051]
+        assert calls
+        assert calls[0].kwargs.get("sni") is None
+
+    def test_hostagent_messenger_sni_set_when_root_url_has_hostname(
+        self, replicas_network_state
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "enable_hostagent_messenger": True,
+                "root_url": "https://my.landscape.example.com/",
+            },
+            **replicas_network_state,
+        )
+        mock = _run_provide_tcp(context, state)
+        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
+        assert calls
+        assert calls[0].kwargs.get("sni") == "my.landscape.example.com"
