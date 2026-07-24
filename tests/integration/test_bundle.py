@@ -1147,9 +1147,11 @@ def test_grpc_hostagent_messenger(juju: jubilant.Juju):
     endpoints = json.loads(remote_data.get("endpoints", "[]"))
     if not endpoints:
         pytest.skip("No endpoints published by the haproxy-route-tcp provider")
-    haproxy_host, _, port_str = endpoints[0].rpartition(":")
+    _, _, port_str = endpoints[0].rpartition(":")
 
-    assert_grpc_reachable(haproxy_host, int(port_str), hostname)
+    # Connect to the real HAProxy unit IP, but keep the published hostname
+    # as SNI so we still exercise the routed TLS frontend correctly.
+    assert_grpc_reachable(_haproxy_ip(juju), int(port_str), hostname)
 
 
 def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
@@ -1174,6 +1176,8 @@ def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
     endpoints = json.loads(remote_data.get("endpoints", "[]"))
     if not endpoints:
         pytest.skip("No endpoints published by the haproxy-route-tcp provider")
-    haproxy_host, _, port_str = endpoints[0].rpartition(":")
+    _, _, port_str = endpoints[0].rpartition(":")
 
-    assert_grpc_reachable(haproxy_host, int(port_str), hostname)
+    # Connect to the real HAProxy unit IP, but keep the published hostname
+    # as SNI so we still exercise the routed TLS frontend correctly.
+    assert_grpc_reachable(_haproxy_ip(juju), int(port_str), hostname)
