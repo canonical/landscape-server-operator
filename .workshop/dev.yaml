@@ -1,0 +1,11 @@
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: uv
+    channel: latest/stable
+  - name: juju-cli
+    channel: latest/edge
+  - name: terraform-cli
+    channel: latest/edge
+  - name: github-runner
+    channel: latest/stable
