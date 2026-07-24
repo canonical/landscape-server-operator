@@ -12,6 +12,30 @@ See the full [Landscape documentation](https://documentation.ubuntu.com/landscap
 
 Typically, Landscape deployment is done using a Juju bundle. This charm is not useful without a deployed bundle of services. The [landscape-scalable](https://charmhub.io/landscape-scalable) bundle is the recommended setup.
 
+## Development
+
+This repository includes a Workshop definition for local development.
+
+Launch the environment with:
+
+```sh
+workshop launch
+```
+
+Then open a shell in the workshop:
+
+```sh
+workshop shell
+```
+
+From inside the workshop shell, use Juju and the repository checks as needed:
+
+```sh
+juju status
+make lint
+make test
+```
+
 ## Relations
 
 See `metadata.yaml` for required and provided relations.
