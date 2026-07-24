@@ -5,6 +5,11 @@ sdks:
     channel: latest/stable
   - name: juju-cli
     channel: latest/edge
+    plugs:
+      juju-config:
+        interface: mount
+        workshop-target: /home/workshop/.local/share/juju
+        
   - name: terraform-cli
     channel: latest/edge
   - name: github-runner
