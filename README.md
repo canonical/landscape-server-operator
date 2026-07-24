@@ -26,7 +26,7 @@ workshop launch
 workshop shell
 ```
 
-From inside the workshop shell, run:
+From inside the workshop shell or using `workshop exec`, run:
 
 ```sh
 juju status
