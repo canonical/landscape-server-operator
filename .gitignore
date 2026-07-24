@@ -6,3 +6,4 @@ __pycache__
 # Poetry
 # Not committing the lockfile for now; in the future we may change this.
 poetry.lock
+.workshop.lock
