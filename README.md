@@ -16,23 +16,27 @@ Typically, Landscape deployment is done using a Juju bundle. This charm is not u
 
 This repository includes a [Workshop](https://ubuntu.com/workshop/docs/) definition for local development.
 
-Launch the environment with:
+Run the commands one at a time:
 
 ```sh
 workshop launch
 ```
 
-Then open a shell in the workshop:
-
 ```sh
 workshop shell
 ```
 
-From inside the workshop shell, use Juju and uv as needed:
+From inside the workshop shell, run:
 
 ```sh
 juju status
+```
+
+```sh
 make lint
+```
+
+```sh
 make test
 ```
 
