@@ -14,7 +14,7 @@ Typically, Landscape deployment is done using a Juju bundle. This charm is not u
 
 ## Development
 
-This repository includes a Workshop definition for local development.
+This repository includes a [Workshop](https://ubuntu.com/workshop/docs/) definition for local development.
 
 Launch the environment with:
 
