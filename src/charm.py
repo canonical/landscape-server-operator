@@ -40,6 +40,7 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
 from charms.smtp_integrator.v0.smtp import (
     SmtpDataAvailableEvent,
     SmtpRequires,
@@ -69,6 +70,7 @@ from ops.model import (
     WaitingStatus,
 )
 from pydantic import ValidationError
+import validators
 import yaml
 
 from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration
@@ -471,10 +473,12 @@ class LandscapeServerCharm(CharmBase):
         self.repository_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="repository-haproxy-route"
         )
-        self.hostagent_messenger_haproxy_route = HaproxyRouteRequirer(
+        # grpc backends only support plaintext (no add_secure_port), so TLS must
+        # terminate at haproxy itself rather than being re-encrypted to the backend.
+        self.hostagent_messenger_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="hostagent-messenger-haproxy-route"
         )
-        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteRequirer(
+        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="ubuntu-installer-attach-haproxy-route"
         )
 
@@ -1582,6 +1586,11 @@ class LandscapeServerCharm(CharmBase):
             if name := parsed.hostname:
                 hostname = name
 
+        # haproxy-route-tcp's `sni` field is validated as a domain name, so it
+        # can't be set to `hostname` when that's still the leader_ip fallback
+        # (i.e. root_url isn't configured with a real hostname).
+        sni = hostname if validators.domain(hostname) else None
+
         appserver_paths = ["/", "/hash-id-databases"]
 
         model_uuid = self.model.uuid
@@ -1683,22 +1692,22 @@ class LandscapeServerCharm(CharmBase):
             hostname=hostname,
         )
         if cfg.enable_hostagent_messenger:
-            self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-hostagent-messenger-{model_uuid}",
-                ports=[cfg.hostagent_server_base_port],
-                protocol="https",
+            self.hostagent_messenger_haproxy_route.provide_haproxy_route_tcp_requirements(
+                port=6554,
+                backend_port=cfg.hostagent_server_base_port,
+                hosts=[unit_ip],
+                tls_terminate=True,
                 unit_address=unit_ip,
-                hostname=hostname,
-                external_grpc_port=6554,
+                sni=sni,
             )
         if cfg.enable_ubuntu_installer_attach:
-            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-ubuntu-installer-attach-{model_uuid}",
-                ports=[cfg.ubuntu_installer_attach_base_port],
-                protocol="https",
+            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_tcp_requirements(
+                port=50051,
+                backend_port=cfg.ubuntu_installer_attach_base_port,
+                hosts=[unit_ip],
+                tls_terminate=True,
                 unit_address=unit_ip,
-                hostname=hostname,
-                external_grpc_port=50051,
+                sni=sni,
             )
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:

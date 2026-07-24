@@ -296,7 +296,8 @@ run "test_haproxy_route_integrations_created" {
         enable_ubuntu_installer_attach = "true"
       }
     }
-    haproxy_route_offer_url = "admin/lbaas.haproxy-route"
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
   }
 
   override_module {

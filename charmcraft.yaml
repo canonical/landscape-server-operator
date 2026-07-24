@@ -17,6 +17,8 @@ charm-libs:
     version: "0.25"
   - lib: haproxy.haproxy_route
     version: "1.13"
+  - lib: haproxy.haproxy_route_tcp
+    version: "1.6"
   - lib: smtp_integrator.smtp
     version: "0.21"
 
