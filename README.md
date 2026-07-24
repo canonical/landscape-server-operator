@@ -28,7 +28,7 @@ Then open a shell in the workshop:
 workshop shell
 ```
 
-From inside the workshop shell, use Juju and the repository checks as needed:
+From inside the workshop shell, use Juju and uv as needed:
 
 ```sh
 juju status
