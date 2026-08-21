@@ -298,7 +298,9 @@ def test_services_up_over_https(juju: jubilant.Juju):
         )
 
 
-def test_modern_database_relation(juju: jubilant.Juju, saved_db_relations: set[str]):
+def test_modern_database_relation(
+    juju: jubilant.Juju, bundle: None, saved_db_relations: set[str]
+):
     """
     Test the modern `database` interface.
     """
@@ -386,7 +388,9 @@ def test_demo_data_registration_key_matches_config(juju: jubilant.Juju, bundle: 
     )
 
 
-def test_legacy_db_relation(juju: jubilant.Juju, saved_db_relations: set[str]):
+def test_legacy_db_relation(
+    juju: jubilant.Juju, bundle: None, saved_db_relations: set[str]
+):
     """
     Test the legacy `db` interface.
     """
@@ -583,10 +587,24 @@ def test_non_leader_unit_redirects_leader_only_services(juju: jubilant.Juju):
     if len(units) <= 1:
         pytest.skip("Need more than 1 unit to have a non-leader!")
 
-    host = urlparse(
+    haproxy = status.apps.get("haproxy")
+    if not haproxy:
+        pytest.skip("No haproxy app found in current model")
+
+    host = list(haproxy.units.values())[0].public_address
+    hostname = urlparse(
         juju.config("landscape-server").get("root_url", "https://landscape.local/")
     ).hostname
-    assert get_session().get(f"https://{host}/upload", verify=False).status_code == 200
+    assert (
+        get_session()
+        .get(
+            f"https://{host}/upload",
+            verify=False,
+            headers={"Host": hostname},
+        )
+        .status_code
+        == 200
+    )
 
 
 def test_appserver_haproxy_route_enabled(juju: jubilant.Juju):
@@ -648,10 +666,12 @@ def test_hostagent_messenger_grpc_haproxy_route(juju: jubilant.Juju):
     unit = leader_unit_name(juju, "landscape-server")
     data = relation_app_data(juju, unit, "hostagent-messenger-haproxy-route")
 
-    assert data.get("external_grpc_port") == "6554", (
-        f"Expected external_grpc_port 6554, got {data.get('external_grpc_port')}"
-    )
-    assert data.get("service", "").startswith("landscape-hostagent-messenger-")
+    assert data.get("port") == "6554", f"Expected port 6554, got {data.get('port')}"
+    # The TCP haproxy-route schema has no "service" field to identify the backend,
+    # so verify the unit's own address is published as a backend host instead.
+    hosts = json.loads(data.get("hosts", "[]"))
+    unit_address = app_status.units[unit].public_address
+    assert unit_address in hosts, f"Expected {unit_address} in hosts, got {hosts}"
 
 
 def test_ubuntu_installer_attach_grpc_haproxy_route(juju: jubilant.Juju):
@@ -669,10 +689,10 @@ def test_ubuntu_installer_attach_grpc_haproxy_route(juju: jubilant.Juju):
     unit = leader_unit_name(juju, "landscape-server")
     data = relation_app_data(juju, unit, "ubuntu-installer-attach-haproxy-route")
 
-    assert data.get("external_grpc_port") == "50051", (
-        f"Expected external_grpc_port 50051, got {data.get('external_grpc_port')}"
-    )
-    assert data.get("service", "").startswith("landscape-ubuntu-installer-attach-")
+    assert data.get("port") == "50051", f"Expected port 50051, got {data.get('port')}"
+    hosts = json.loads(data.get("hosts", "[]"))
+    unit_address = app_status.units[unit].public_address
+    assert unit_address in hosts, f"Expected {unit_address} in hosts, got {hosts}"
 
 
 @pytest.mark.skipif(
@@ -978,9 +998,11 @@ def test_cos_agent_dashboards_valid(
 
 def _legacy_haproxy_host(juju: jubilant.Juju) -> str:
     """Return the legacy haproxy unit's public IP, or skip the test."""
-    haproxy = juju.status().apps.get("haproxy")
-    if not haproxy:
-        pytest.skip("Legacy haproxy app not deployed")
+    status = juju.status()
+    haproxy = status.apps.get("haproxy")
+    server_status = status.apps.get("landscape-server")
+    if not haproxy or not server_status or "website" not in server_status.relations:
+        pytest.skip("Legacy haproxy `website` relation not present in bundle")
     return list(haproxy.units.values())[0].public_address
 
 
@@ -994,7 +1016,7 @@ def test_legacy_haproxy_metrics_forbidden(juju: jubilant.Juju):
     host = _legacy_haproxy_host(juju)
     juju.wait(all_landscape_active, timeout=300)
 
-    assert get_session().get(f"http://{host}/metrics").status_code == 403
+    assert get_session().get(f"http://{host}/metrics", verify=False).status_code == 403
     assert get_session().get(f"https://{host}/metrics", verify=False).status_code == 403
 
     for service in ("message-system", "api", "ping"):
