@@ -14,7 +14,6 @@ from urllib.parse import urlparse
 
 import jubilant
 import pytest
-from scenario import ActionFailed
 
 from charm import (
     DEFAULT_OUTBOX_SNAP_CHANNEL,
@@ -877,7 +876,7 @@ def test_action_migrate_schema_fails_while_running(juju: jubilant.Juju, bundle: 
 
     unit = leader_unit_name(juju, "landscape-server")
 
-    with pytest.raises(ActionFailed):
+    with pytest.raises(jubilant.TaskError):
         juju.run(unit, "migrate-schema")
 
 
