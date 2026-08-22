@@ -23,23 +23,11 @@ applications:
     num_units: 1
     options:
       landscape_ppa: "ppa:landscape/self-hosted-beta"
-      min_install: false
-      enable_hostagent_messenger: true
-      enable_ubuntu_installer_attach: true
+      min_install: True
+      enable_hostagent_messenger: True
+      enable_ubuntu_installer_attach: True
       root_url: https://landscape.local/
-      demo_data: true
-    base: ubuntu@24.04
-  landscape-debarchive:
-    charm: ch:landscape-debarchive
-    channel: edge
-    num_units: 1
-    base: ubuntu@24.04
-  landscape-task-handler:
-    charm: ch:landscape-task-handler
-    channel: edge
-    num_units: 1
-    options:
-      task-handler-snap-channel: latest/edge
+      demo_data: True
     base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy
@@ -63,18 +51,9 @@ relations:
   - [landscape-server:api-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
-  - [
-      landscape-server:hostagent-messenger-haproxy-route,
-      haproxy:haproxy-route-tcp,
-    ]
+  - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route-tcp]
   - [
       landscape-server:ubuntu-installer-attach-haproxy-route,
       haproxy:haproxy-route-tcp,
     ]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]
-  - [landscape-debarchive:database, postgresql:database]
-  - [landscape-server:debarchive, landscape-debarchive:landscape-server]
-  - [landscape-task-handler:task-db, postgresql:database]
-  - [landscape-task-handler:landscape-server, landscape-server:task-handler]
-  - [landscape-task-handler:certificates, self-signed-certificates:certificates]
-  - [landscape-task-handler:grpc-haproxy-route, haproxy:haproxy-route-tcp]

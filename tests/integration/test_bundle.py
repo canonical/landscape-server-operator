@@ -591,9 +591,10 @@ def test_non_leader_unit_redirects_leader_only_services(juju: jubilant.Juju):
         pytest.skip("No haproxy app found in current model")
 
     host = list(haproxy.units.values())[0].public_address
-    hostname = urlparse(
-        juju.config("landscape-server").get("root_url", "https://landscape.local/")
-    ).hostname
+    root_url = (
+        juju.config("landscape-server").get("root_url") or "https://landscape.local/"
+    )
+    hostname = urlparse(root_url).hostname or "landscape.local"
     assert (
         get_session()
         .get(
@@ -669,7 +670,7 @@ def test_hostagent_messenger_grpc_haproxy_route(juju: jubilant.Juju):
     # The TCP haproxy-route schema has no "service" field to identify the backend,
     # so verify the unit's own address is published as a backend host instead.
     hosts = json.loads(data.get("hosts", "[]"))
-    unit_address = app_status.units[unit].public_address
+    unit_address = juju.status().apps["landscape-server"].units[unit].public_address
     assert unit_address in hosts, f"Expected {unit_address} in hosts, got {hosts}"
 
 
@@ -690,7 +691,7 @@ def test_ubuntu_installer_attach_grpc_haproxy_route(juju: jubilant.Juju):
 
     assert data.get("port") == "50051", f"Expected port 50051, got {data.get('port')}"
     hosts = json.loads(data.get("hosts", "[]"))
-    unit_address = app_status.units[unit].public_address
+    unit_address = juju.status().apps["landscape-server"].units[unit].public_address
     assert unit_address in hosts, f"Expected {unit_address} in hosts, got {hosts}"
 
 
