@@ -429,6 +429,9 @@ locals {
   has_haproxy_route          = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
+
+  # deploythe certificates app if haproxy or task-handler is present
+  deploy_tls_certificates = var.tls_certificates != null && ((var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route) || var.landscape_task_handler != null)
 }
 
 
@@ -484,7 +487,7 @@ resource "juju_application" "tls_certificates" {
     base     = var.tls_certificates.base
   }
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+  count = local.deploy_tls_certificates ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -575,4 +578,199 @@ resource "juju_integration" "pgbouncer_postgresql" {
   depends_on = [juju_application.pgbouncer, module.postgresql]
 
   count = var.pgbouncer != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_application" "landscape_debarchive" {
+  name        = var.landscape_debarchive.app_name
+  model_uuid  = var.model_uuid
+  units       = var.landscape_debarchive.machines == null ? var.landscape_debarchive.units : null
+  machines    = var.landscape_debarchive.machines
+  constraints = var.landscape_debarchive.constraints
+  config      = var.landscape_debarchive.config
+
+  charm {
+    name     = var.landscape_debarchive.charm_name
+    revision = var.landscape_debarchive.revision
+    channel  = var.landscape_debarchive.channel
+    base     = var.landscape_debarchive.base
+  }
+
+  count = var.landscape_debarchive != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_landscape_server" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "landscape-server"
+  }
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.provides.debarchive
+  }
+
+  depends_on = [juju_application.landscape_debarchive, module.landscape_server]
+
+  count = var.landscape_debarchive != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "database"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.landscape_debarchive, module.postgresql]
+
+  count = var.landscape_debarchive != null && var.postgresql != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "debarchive-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = module.haproxy[0].provides.haproxy_route
+  }
+
+  depends_on = [juju_application.landscape_debarchive, module.haproxy]
+
+  count = var.landscape_debarchive != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "debarchive-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [juju_application.landscape_debarchive]
+
+  count = var.landscape_debarchive != null && var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_application" "landscape_task_handler" {
+  name        = var.landscape_task_handler.app_name
+  model_uuid  = var.model_uuid
+  units       = var.landscape_task_handler.machines == null ? var.landscape_task_handler.units : null
+  machines    = var.landscape_task_handler.machines
+  constraints = var.landscape_task_handler.constraints
+  config      = var.landscape_task_handler.config
+
+  charm {
+    name     = var.landscape_task_handler.charm_name
+    revision = var.landscape_task_handler.revision
+    channel  = var.landscape_task_handler.channel
+    base     = var.landscape_task_handler.base
+  }
+
+  count = var.landscape_task_handler != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_landscape_server" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "landscape-server"
+  }
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.provides.task_handler
+  }
+
+  depends_on = [juju_application.landscape_task_handler, module.landscape_server]
+
+  count = var.landscape_task_handler != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "task-db"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.landscape_task_handler, module.postgresql]
+
+  count = var.landscape_task_handler != null && var.postgresql != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_certificates" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "certificates"
+  }
+
+  application {
+    name = juju_application.tls_certificates[0].name
+  }
+
+  depends_on = [juju_application.landscape_task_handler, juju_application.tls_certificates]
+
+  count = var.landscape_task_handler != null && var.tls_certificates != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "grpc-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route-tcp"
+  }
+
+  depends_on = [juju_application.landscape_task_handler, module.haproxy]
+
+  count = var.landscape_task_handler != null && var.haproxy != null && var.haproxy_route_tcp_offer_url == null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "grpc-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_tcp_offer_url
+  }
+
+  depends_on = [juju_application.landscape_task_handler]
+
+  count = var.landscape_task_handler != null && var.haproxy_route_tcp_offer_url != null ? 1 : 0
 }

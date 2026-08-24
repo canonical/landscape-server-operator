@@ -79,6 +79,16 @@ run "validate_output_structure" {
     condition     = can(output.applications.pgbouncer)
     error_message = "Applications output should include pgbouncer key (may be null)"
   }
+
+  assert {
+    condition     = can(output.applications.landscape_debarchive)
+    error_message = "Applications output should include landscape_debarchive key (may be null)"
+  }
+
+  assert {
+    condition     = can(output.applications.landscape_task_handler)
+    error_message = "Applications output should include landscape_task_handler key (may be null)"
+  }
 }
 
 run "validate_has_modern_amqp_relations_output" {

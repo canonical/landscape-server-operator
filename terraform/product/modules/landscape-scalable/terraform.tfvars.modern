@@ -1,5 +1,5 @@
 landscape_server = {
-  channel = "26.04/edge"
+  channel = "26.04/candidate"
   config = {
     autoregistration               = "true"
     landscape_ppa                  = "ppa:landscape/self-hosted-beta"
@@ -7,6 +7,11 @@ landscape_server = {
     root_url                       = "https://landscape.local/"
     enable_hostagent_messenger     = "true"
     enable_ubuntu_installer_attach = "true"
+    outbox_snap_channel            = "latest/edge"
+    additional_service_config      = <<-EOT
+      [features]
+      computer_soft_deletion = true
+    EOT
   }
   base = "ubuntu@24.04"
 }
@@ -20,4 +25,17 @@ haproxy = {
   channel = "2.8/edge"
   base    = "ubuntu@24.04"
   config  = {}
+}
+
+landscape_debarchive = {
+  channel = "latest/edge"
+  base    = "ubuntu@24.04"
+}
+
+landscape_task_handler = {
+  channel = "latest/edge"
+  base    = "ubuntu@24.04"
+  config = {
+    task-handler-snap-channel = "latest/edge"
+  }
 }

@@ -134,3 +134,36 @@ run "validate_constraints_defaults" {
     error_message = "RabbitMQ constraints should default to 'arch=amd64'"
   }
 }
+
+run "validate_new_charms_null_by_default" {
+  command = plan
+
+  assert {
+    condition     = var.landscape_debarchive == null
+    error_message = "landscape-debarchive should default to null (opt-in)"
+  }
+
+  assert {
+    condition     = var.landscape_task_handler == null
+    error_message = "landscape-task-handler should default to null (opt-in)"
+  }
+}
+
+run "validate_new_charm_defaults" {
+  command = plan
+
+  variables {
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+  }
+
+  assert {
+    condition     = var.landscape_debarchive.channel == "latest/stable"
+    error_message = "landscape-debarchive channel should default to 'latest/stable'"
+  }
+
+  assert {
+    condition     = var.landscape_task_handler.channel == "latest/stable"
+    error_message = "landscape-task-handler channel should default to 'latest/stable'"
+  }
+}

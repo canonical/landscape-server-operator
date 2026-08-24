@@ -613,3 +613,137 @@ run "test_legacy_haproxy_skipped_when_null" {
     error_message = "No haproxy integration should be created when haproxy is null"
   }
 }
+
+run "test_new_charms_created" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      revision = 216
+    }
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+    haproxy                = {}
+  }
+
+  override_module {
+    target = module.landscape_server
+    outputs = {
+      app_name                     = "landscape-server"
+      has_modern_haproxy_interface = true
+      provides = {
+        debarchive   = "debarchive"
+        task_handler = "task-handler"
+        website      = "website"
+      }
+      requires = {
+        inbound_amqp                          = "inbound-amqp"
+        outbound_amqp                         = "outbound-amqp"
+        database                              = "database"
+        db                                    = "db"
+        application_dashboard                 = "application-dashboard"
+        appserver_haproxy_route               = "appserver-haproxy-route"
+        pingserver_haproxy_route              = "pingserver-haproxy-route"
+        message_server_haproxy_route          = "message-server-haproxy-route"
+        api_haproxy_route                     = "api-haproxy-route"
+        package_upload_haproxy_route          = "package-upload-haproxy-route"
+        repository_haproxy_route              = "repository-haproxy-route"
+        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
+        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
+      }
+    }
+  }
+
+  override_module {
+    target = module.haproxy
+    outputs = {
+      app_name = "haproxy"
+      provides = {
+        haproxy_route = "haproxy-route"
+      }
+      requires = {
+        certificates     = "certificates"
+        receive_ca_certs = "receive-ca-certs"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 1
+    error_message = "landscape-debarchive application should be deployed when set"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 1
+    error_message = "landscape-task-handler application should be deployed when set"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_landscape_server) == 1
+    error_message = "debarchive → landscape-server integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_postgresql) == 1
+    error_message = "debarchive → postgresql integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_haproxy_route_in_model) == 1
+    error_message = "debarchive → haproxy route (in-model) should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_landscape_server) == 1
+    error_message = "task-handler → landscape-server integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_postgresql) == 1
+    error_message = "task-handler → postgresql task-db integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_certificates) == 1
+    error_message = "task-handler → tls-certificates integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_grpc_haproxy_route_in_model) == 1
+    error_message = "task-handler → haproxy grpc route (in-model) should be created"
+  }
+
+  assert {
+    condition     = length(juju_application.tls_certificates) == 1
+    error_message = "tls-certificates should be deployed to satisfy task-handler certs"
+  }
+}
+
+run "test_new_charms_skipped" {
+  command = plan
+
+  variables {
+    landscape_debarchive   = null
+    landscape_task_handler = null
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 0
+    error_message = "landscape-debarchive should not be deployed when null"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 0
+    error_message = "landscape-task-handler should not be deployed when null"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_postgresql) == 0
+    error_message = "debarchive postgresql integration should not be created when null"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_certificates) == 0
+    error_message = "task-handler certificates integration should not be created when null"
+  }
+}
