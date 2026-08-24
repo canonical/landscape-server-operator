@@ -22,10 +22,10 @@ applications:
     num_units: 1
     options:
         landscape_ppa: ppa:landscape/self-hosted-beta
-        min_install: True
+        min_install: true
   haproxy:
     charm: ch:haproxy
-    channel: 2.8/edge
+    channel: 2.8/stable
     num_units: 1
     constraints: arch=amd64
   self-signed-certificates:
