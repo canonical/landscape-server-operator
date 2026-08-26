@@ -16,7 +16,7 @@ def test_defaults():
 
     config = DEFAULT_CONFIGURATION
 
-    assert config.landscape_ppa == "ppa:landscape/self-hosted-beta"
+    assert config.landscape_ppa == "ppa:landscape/self-hosted-26.04"
     assert config.landscape_ppa_key == ""
     assert config.worker_counts == 2
     assert config.license_file is None
