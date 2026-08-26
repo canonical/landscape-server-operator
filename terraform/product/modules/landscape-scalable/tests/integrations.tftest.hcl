@@ -614,7 +614,7 @@ run "test_legacy_haproxy_skipped_when_null" {
   }
 }
 
-run "test_new_charms_created" {
+run "test_other_landscape_charms_created" {
   command = plan
 
   variables {
@@ -719,7 +719,7 @@ run "test_new_charms_created" {
   }
 }
 
-run "test_new_charms_skipped" {
+run "test_other_landscape_charms_skipped" {
   command = plan
 
   variables {

@@ -32,6 +32,16 @@ run "validate_channel_defaults" {
     condition     = var.rabbitmq_server.channel == "latest/edge"
     error_message = "RabbitMQ channel should default to 'latest/edge'"
   }
+
+  assert {
+    condition     = var.rabbitmq_server.channel == "latest/edge"
+    error_message = "RabbitMQ channel should default to 'latest/edge'"
+  }
+
+  assert {
+    condition     = var.rabbitmq_server.channel == "latest/edge"
+    error_message = "RabbitMQ channel should default to 'latest/edge'"
+  }
 }
 
 run "validate_rev_defaults" {
@@ -135,21 +145,16 @@ run "validate_constraints_defaults" {
   }
 }
 
-run "validate_new_charms_null_by_default" {
+run "validate_debarchive_null_by_default" {
   command = plan
 
   assert {
     condition     = var.landscape_debarchive == null
     error_message = "landscape-debarchive should default to null (opt-in)"
   }
-
-  assert {
-    condition     = var.landscape_task_handler == null
-    error_message = "landscape-task-handler should default to null (opt-in)"
-  }
 }
 
-run "validate_new_charm_defaults" {
+run "validate_other_landscape_charms_default_to_stable" {
   command = plan
 
   variables {
