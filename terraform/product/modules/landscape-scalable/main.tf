@@ -430,7 +430,7 @@ locals {
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
 
-  # deploythe certificates app if haproxy or task-handler is present
+  # deploy the certificates app if haproxy or task-handler is present
   deploy_tls_certificates = var.tls_certificates != null && ((var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route) || var.landscape_task_handler != null)
 }
 
