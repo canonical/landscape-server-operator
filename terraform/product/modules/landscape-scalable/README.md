@@ -65,7 +65,7 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 
 | Name | Version |
 |------|---------|
-| <a name="provider_juju"></a> [juju](#provider\_juju) | 1.0.0 |
+| <a name="provider_juju"></a> [juju](#provider\_juju) | ~> 1.0 |
 
 ## Modules
 
@@ -115,6 +115,7 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 |------|-------------|------|---------|:--------:|
 | <a name="input_haproxy"></a> [haproxy](#input\_haproxy) | Configuration for the HAProxy charm. Set to null to skip deployment. | <pre>object({<br/>    app_name = optional(string, "haproxy")<br/>    channel  = optional(string, "latest/stable")<br/>    config = optional(map(string), {<br/>      default_timeouts            = "queue 60000, connect 5000, client 120000, server 120000"<br/>      global_default_bind_options = "no-tlsv10"<br/>      services                    = ""<br/>      ssl_cert                    = "SELFSIGNED"<br/>    })<br/>    constraints = optional(string, "arch=amd64")<br/>    resources   = optional(map(string), {})<br/>    revision    = optional(number)<br/>    base        = optional(string, "ubuntu@24.04")<br/>    units       = optional(number, 1)<br/>    machines    = optional(set(string))<br/>  })</pre> | `{}` | no |
 | <a name="input_haproxy_route_offer_url"></a> [haproxy\_route\_offer\_url](#input\_haproxy\_route\_offer\_url) | Offer URL for the haproxy-route endpoint from a cross-model haproxy deployment (LBaaS). Set to null to skip. | `string` | `null` | no |
+| <a name="input_haproxy_route_tcp_offer_url"></a> [haproxy\_route\_tcp\_offer\_url](#input\_haproxy\_route\_tcp\_offer\_url) | Offer URL for the haproxy-route-tcp endpoint from a cross-model haproxy deployment (LBaaS), used for the hostagent-messenger and ubuntu-installer-attach grpc backends. Set to null to skip. | `string` | `null` | no |
 | <a name="input_landscape_server"></a> [landscape\_server](#input\_landscape\_server) | Configuration for the Landscape Server charm. | <pre>object({<br/>    app_name   = optional(string, "landscape-server")<br/>    channel    = optional(string, "24.04/stable")<br/>    charm_name = optional(string, "landscape-server")<br/>    config = optional(map(string), {<br/>      landscape_ppa = "ppa:landscape/self-hosted-24.04"<br/>    })<br/>    constraints = optional(string, "arch=amd64")<br/>    resources   = optional(map(string), {})<br/>    revision    = optional(number)<br/>    base        = optional(string, "ubuntu@24.04")<br/>    units       = optional(number, 1)<br/>  })</pre> | `{}` | no |
 | <a name="input_model_uuid"></a> [model\_uuid](#input\_model\_uuid) | UUID of the Juju model to deploy Landscape Server to. | `string` | n/a | yes |
 | <a name="input_pgbouncer"></a> [pgbouncer](#input\_pgbouncer) | Configuration for the PgBouncer charm. Set to null to skip deployment. PgBouncer is a subordinate charm and does not have its own units. | <pre>object({<br/>    app_name = optional(string, "pgbouncer")<br/>    channel  = optional(string, "1/stable")<br/>    config   = optional(map(string), {})<br/>    revision = optional(number)<br/>    base     = optional(string, "ubuntu@24.04")<br/>  })</pre> | `null` | no |
