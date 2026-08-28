@@ -524,8 +524,28 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
   count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_application" "pgbouncer" {
-  name       = var.pgbouncer.app_name
+resource "juju_application" "pgbouncer_debarchive" {
+  name       = "${var.pgbouncer.app_name}-debarchive"
+  model_uuid = var.model_uuid
+  config     = var.pgbouncer.config
+
+  charm {
+    name     = "pgbouncer"
+    revision = var.pgbouncer.revision
+    channel  = var.pgbouncer.channel
+    base     = var.pgbouncer.base
+  }
+
+  lifecycle {
+    # It's a subordinate
+    ignore_changes = [units]
+  }
+
+  count = var.pgbouncer != null && var.landscape_debarchive != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_application" "pgbouncer_server" {
+  name       = "${var.pgbouncer.app_name}-server"
   model_uuid = var.model_uuid
   config     = var.pgbouncer.config
 
@@ -544,6 +564,44 @@ resource "juju_application" "pgbouncer" {
   count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
 }
 
+resource "juju_application" "pgbouncer_task_handler" {
+  name       = "${var.pgbouncer.app_name}-task-handler"
+  model_uuid = var.model_uuid
+  config     = var.pgbouncer.config
+
+  charm {
+    name     = "pgbouncer"
+    revision = var.pgbouncer.revision
+    channel  = var.pgbouncer.channel
+    base     = var.pgbouncer.base
+  }
+
+  lifecycle {
+    # It's a subordinate
+    ignore_changes = [units]
+  }
+
+  count = var.pgbouncer != null && var.landscape_task_handler != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_pgbouncer" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "database"
+  }
+
+  application {
+    name     = juju_application.pgbouncer_debarchive[0].name
+    endpoint = "database"
+  }
+
+  depends_on = [juju_application.landscape_debarchive, juju_application.pgbouncer_debarchive]
+
+  count = var.pgbouncer != null && var.landscape_debarchive != null && local.has_modern_pg_interface ? 1 : 0
+}
+
 resource "juju_integration" "landscape_server_pgbouncer" {
   model_uuid = var.model_uuid
 
@@ -553,20 +611,38 @@ resource "juju_integration" "landscape_server_pgbouncer" {
   }
 
   application {
-    name     = juju_application.pgbouncer[0].name
+    name     = juju_application.pgbouncer_server[0].name
     endpoint = "database"
   }
 
-  depends_on = [module.landscape_server, juju_application.pgbouncer]
+  depends_on = [module.landscape_server, juju_application.pgbouncer_server]
 
   count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
 }
 
-resource "juju_integration" "pgbouncer_postgresql" {
+resource "juju_integration" "landscape_task_handler_pgbouncer" {
   model_uuid = var.model_uuid
 
   application {
-    name     = juju_application.pgbouncer[0].name
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "task-db"
+  }
+
+  application {
+    name     = juju_application.pgbouncer_task_handler[0].name
+    endpoint = "database"
+  }
+
+  depends_on = [juju_application.landscape_task_handler, juju_application.pgbouncer_task_handler]
+
+  count = var.pgbouncer != null && var.landscape_task_handler != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "pgbouncer_debarchive_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.pgbouncer_debarchive[0].name
     endpoint = "backend-database"
   }
 
@@ -575,9 +651,45 @@ resource "juju_integration" "pgbouncer_postgresql" {
     endpoint = module.postgresql[0].provides.database
   }
 
-  depends_on = [juju_application.pgbouncer, module.postgresql]
+  depends_on = [juju_application.pgbouncer_debarchive, module.postgresql]
+
+  count = var.pgbouncer != null && var.landscape_debarchive != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "pgbouncer_server_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.pgbouncer_server[0].name
+    endpoint = "backend-database"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.pgbouncer_server, module.postgresql]
 
   count = var.pgbouncer != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "pgbouncer_task_handler_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.pgbouncer_task_handler[0].name
+    endpoint = "backend-database"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.pgbouncer_task_handler, module.postgresql]
+
+  count = var.pgbouncer != null && var.landscape_task_handler != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
 }
 
 resource "juju_application" "landscape_debarchive" {

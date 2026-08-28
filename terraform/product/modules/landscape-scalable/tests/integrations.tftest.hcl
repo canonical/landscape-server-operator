@@ -410,7 +410,7 @@ run "test_pgbouncer_integration" {
   }
 
   assert {
-    condition     = length(juju_application.pgbouncer) == 1
+    condition     = length(juju_application.pgbouncer_server) == 1
     error_message = "PgBouncer application should be deployed when pgbouncer is set"
   }
 
@@ -420,7 +420,7 @@ run "test_pgbouncer_integration" {
   }
 
   assert {
-    condition     = length(juju_integration.pgbouncer_postgresql) == 1
+    condition     = length(juju_integration.pgbouncer_server_postgresql) == 1
     error_message = "pgbouncer → postgresql backend-database integration should be created"
   }
 
@@ -460,7 +460,7 @@ run "test_pgbouncer_skipped" {
   }
 
   assert {
-    condition     = length(juju_application.pgbouncer) == 0
+    condition     = length(juju_application.pgbouncer_server) == 0
     error_message = "PgBouncer application should not be deployed when pgbouncer is null"
   }
 
@@ -470,7 +470,7 @@ run "test_pgbouncer_skipped" {
   }
 
   assert {
-    condition     = length(juju_integration.pgbouncer_postgresql) == 0
+    condition     = length(juju_integration.pgbouncer_server_postgresql) == 0
     error_message = "pgbouncer → postgresql integration should not be created when pgbouncer is null"
   }
 
