@@ -588,6 +588,8 @@ resource "juju_application" "landscape_debarchive" {
   constraints = var.landscape_debarchive.constraints
   config      = var.landscape_debarchive.config
 
+  expose {}
+
   charm {
     name     = var.landscape_debarchive.charm_name
     revision = var.landscape_debarchive.revision
@@ -676,6 +678,8 @@ resource "juju_application" "landscape_task_handler" {
   machines    = var.landscape_task_handler.machines
   constraints = var.landscape_task_handler.constraints
   config      = var.landscape_task_handler.config
+
+  expose {}
 
   charm {
     name     = var.landscape_task_handler.charm_name
