@@ -8,15 +8,11 @@ variable "model_uuid" {
 variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
-    app_name = optional(string, "landscape-server")
-    channel  = optional(string, "25.10/edge")
+    app_name   = optional(string, "landscape-server")
+    channel    = optional(string, "24.04/stable")
+    charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
-      autoregistration               = "true"
-      landscape_ppa                  = "ppa:landscape/self-hosted-beta"
-      min_install                    = "true"
-      root_url                       = "https://landscape.local/"
-      enable_hostagent_messenger     = "true"
-      enable_ubuntu_installer_attach = "true"
+      landscape_ppa = "ppa:landscape/self-hosted-24.04"
     })
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
@@ -32,7 +28,7 @@ variable "postgresql" {
   description = "Configuration for the PostgreSQL charm. Set to null to skip deployment."
   type = object({
     app_name = optional(string, "postgresql")
-    channel  = optional(string, "16/stable")
+    channel  = optional(string, "14/stable")
     config = optional(map(string), {
       plugin_plpython3u_enable     = "true"
       plugin_ltree_enable          = "true"
@@ -44,8 +40,9 @@ variable "postgresql" {
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
     revision    = optional(number)
-    base        = optional(string, "ubuntu@24.04")
+    base        = optional(string, "ubuntu@22.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -56,14 +53,20 @@ variable "postgresql" {
 variable "haproxy" {
   description = "Configuration for the HAProxy charm. Set to null to skip deployment."
   type = object({
-    app_name    = optional(string, "haproxy")
-    channel     = optional(string, "2.8/edge")
-    config      = optional(map(string), {})
+    app_name = optional(string, "haproxy")
+    channel  = optional(string, "latest/stable")
+    config = optional(map(string), {
+      default_timeouts            = "queue 60000, connect 5000, client 120000, server 120000"
+      global_default_bind_options = "no-tlsv10"
+      services                    = ""
+      ssl_cert                    = "SELFSIGNED"
+    })
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -72,6 +75,13 @@ variable "haproxy" {
 
 variable "haproxy_route_offer_url" {
   description = "Offer URL for the haproxy-route endpoint from a cross-model haproxy deployment (LBaaS). Set to null to skip."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "haproxy_route_tcp_offer_url" {
+  description = "Offer URL for the haproxy-route-tcp endpoint from a cross-model haproxy deployment (LBaaS), used for the hostagent-messenger and ubuntu-installer-attach grpc backends. Set to null to skip."
   type        = string
   default     = null
   nullable    = true
@@ -90,6 +100,7 @@ variable "rabbitmq_server" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default  = {}
@@ -110,14 +121,16 @@ variable "pgbouncer" {
   nullable = true
 }
 
-variable "haproxy_self_signed_certs" {
-  description = "Configuration for the self-signed-certificates charm used by HAProxy. Set to null to skip deployment."
+variable "tls_certificates" {
+  description = "Configuration for the certificates charm deployed. Currently only integrated with HAProxy automatically. Set to null to skip deployment."
   type = object({
-    app_name    = optional(string, "self-signed-certificates")
+    app_name    = optional(string, "tls-certificates")
     channel     = optional(string, "1/stable")
+    charm_name  = optional(string, "self-signed-certificates")
     constraints = optional(string, "arch=amd64")
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
+    machines    = optional(set(string))
   })
 
   default  = {}

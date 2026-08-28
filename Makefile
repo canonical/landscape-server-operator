@@ -2,12 +2,9 @@ include terraform/charm/Makefile
 include terraform/product/Makefile
 
 DIR_NAME := $(notdir $(shell pwd))
-LBAAS_DIR ?= ./bundle-examples/lbaas
-LBAAS_BUNDLE_PATH ?= $(LBAAS_DIR)/lbaas.bundle.yaml
 BUNDLE_PATH ?= ./bundle-examples/bundle.yaml
 PLATFORM ?= ubuntu@24.04:amd64
 MODEL_NAME ?= $(DIR_NAME)-build
-LBAAS_MODEL_NAME ?= lbaas
 CLEAN_PLATFORM := $(subst :,-,$(PLATFORM))
 SKIP_BUILD ?= false
 SKIP_CLEAN ?= false
@@ -20,7 +17,7 @@ test:
 
 .PHONY: integration-test
 integration-test:
-	uv run --group integration pytest -v --tb native tests/integration
+	uv run --group integration python -m pytest -v --tb native tests/integration
 
 .PHONY: coverage
 coverage:
@@ -54,12 +51,6 @@ deploy:
 	$(MAKE) add-model
 	juju deploy -m $(MODEL_NAME) $(BUNDLE_PATH)
 
-.PHONY: deploy-lbaas
-deploy-lbaas:
-	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
-	@if [ "$(SKIP_BUILD)" != "true" ]; then $(MAKE) build; else echo "skipping build..."; fi
-	$(MAKE) add-model
-	juju deploy -m $(MODEL_NAME) $(LBAAS_BUNDLE_PATH)
 
 .PHONY: check-jq
 check-jq:
@@ -78,20 +69,6 @@ install-terraform:
 		snap install terraform --classic; \
 	fi
 
-.PHONY: clean-lbaas
-clean-lbaas:
-	-juju destroy-model --no-prompt $(LBAAS_MODEL_NAME) \
-		--force --no-wait --destroy-storage
-	-cd $(LBAAS_DIR) && \
-		rm -rf *.tfstate
-
-.PHONY: lbaas
-lbaas: clean-lbaas install-terraform deploy-lbaas
-	cd $(LBAAS_DIR) && \
-	terraform init -backend=false && \
-	terraform apply -auto-approve \
-		-var model_name=$(MODEL_NAME) \
-		-var lbaas_model_name=$(LBAAS_MODEL_NAME)
 
 .PHONY: clean
 clean:
@@ -120,8 +97,19 @@ terraform-test-all: check-terraform
 .PHONY: deploy-landscape-scalable
 deploy-landscape-scalable: check-terraform check-jq
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
-	$(MAKE) add-model
+	@if [ "$(SKIP_ADD_MODEL)" != "true" ]; then $(MAKE) add-model; else echo "skipping add-model..."; fi
 	cd terraform/product/modules/landscape-scalable && \
-	terraform init -backend=false && \
+	terraform init && \
 	terraform apply -auto-approve \
 		-var model_uuid=$$(juju show-model $(MODEL_NAME) --format=json | jq -r '.["$(MODEL_NAME)"]["model-uuid"]')
+
+# Variables: MODEL_NAME (default: <dir>-build), SKIP_CLEAN (default: false), SKIP_ADD_MODEL (default: false)
+.PHONY: deploy-landscape-scalable-modern
+deploy-landscape-scalable-modern: check-terraform check-jq
+	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
+	@if [ "$(SKIP_ADD_MODEL)" != "true" ]; then $(MAKE) add-model; else echo "skipping add-model..."; fi
+	cd terraform/product/modules/landscape-scalable && \
+	terraform init && \
+	terraform apply -auto-approve \
+		-var model_uuid=$$(juju show-model $(MODEL_NAME) --format=json | jq -r '.["$(MODEL_NAME)"]["model-uuid"]') \
+	    -var-file=terraform.tfvars.modern

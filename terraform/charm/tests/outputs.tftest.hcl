@@ -138,6 +138,11 @@ run "provides_relations" {
     condition     = output.provides.website == "website"
     error_message = "Should provide website relation"
   }
+
+  assert {
+    condition     = output.provides.debarchive == "debarchive"
+    error_message = "Should provide debarchive relation"
+  }
 }
 
 run "application_dashboard_required" {
@@ -153,6 +158,11 @@ run "application_dashboard_required" {
   assert {
     condition     = output.requires.application_dashboard == "application-dashboard"
     error_message = "Should always require application-dashboard relation"
+  }
+
+  assert {
+    condition     = output.requires.smtp == "smtp"
+    error_message = "Should always require smtp relation"
   }
 }
 
@@ -300,7 +310,7 @@ run "external_haproxy_relations" {
   }
 
   assert {
-    condition     = output.requires.website == "website"
+    condition     = try(output.requires.website, null) == "website"
     error_message = "Pre-216 should have legacy website relation"
   }
 
@@ -326,12 +336,12 @@ run "in_model_haproxy_null_revision" {
 
   assert {
     condition     = can(output.requires.appserver_haproxy_route)
-    error_message = "Null revision on 26.04/beta should have haproxy-route relations"
+    error_message = "Null revision on 26.04/stable should have haproxy-route relations"
   }
 
   assert {
     condition     = !can(output.requires.website)
-    error_message = "Null revision on 26.04/beta should not have legacy website relation"
+    error_message = "Null revision on 26.04/stable should not have legacy website relation"
   }
 }
 
@@ -346,11 +356,60 @@ run "external_haproxy_null_revision" {
 
   assert {
     condition     = output.requires.website == "website"
-    error_message = "Null revision on 25.10/edge should have legacy website relation"
+    error_message = "Null revision on 24.04/edge should have legacy website relation"
   }
 
   assert {
     condition     = !can(output.requires.appserver_haproxy_route)
-    error_message = "Null revision on 25.10/edge should not have haproxy-route relations"
+    error_message = "Null revision on 24.04/edge should not have haproxy-route relations"
+  }
+}
+
+
+run "has_modern_haproxy_interface_true_for_modern" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "25.10/edge"
+    revision   = 278
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_modern_haproxy_interface == true
+    error_message = "has_modern_haproxy_interface should be true for modern revisions"
+  }
+}
+
+run "has_modern_haproxy_interface_false_for_legacy" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "24.04/edge"
+    revision   = null
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_modern_haproxy_interface == false
+    error_message = "has_modern_haproxy_interface should be false for legacy channels"
+  }
+}
+
+run "has_modern_haproxy_interface_false_for_legacy_stable" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "24.04/stable"
+    revision   = null
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_modern_haproxy_interface == false
+    error_message = "has_modern_haproxy_interface should be false for legacy stable channels"
   }
 }

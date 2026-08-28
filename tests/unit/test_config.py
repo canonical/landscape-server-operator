@@ -16,7 +16,7 @@ def test_defaults():
 
     config = DEFAULT_CONFIGURATION
 
-    assert config.landscape_ppa == "ppa:landscape/self-hosted-beta"
+    assert config.landscape_ppa == "ppa:landscape/self-hosted-26.04"
     assert config.landscape_ppa_key == ""
     assert config.worker_counts == 2
     assert config.license_file is None
@@ -70,6 +70,7 @@ def test_defaults():
     assert config.hostagent_server_base_port == 50052
     assert config.ubuntu_installer_attach_base_port == 53354
     assert config.gpg_secret_id is None
+    assert config.bootstrap_schema_override_args is None
 
 
 @pytest.mark.parametrize(
@@ -237,6 +238,30 @@ def test_deployment_mode_invalid(mode):
         LandscapeCharmConfiguration(**defaults)
 
 
+@pytest.mark.parametrize("analytics_id", ["UA-1018242-13", "G_TAG.1", "abc_123"])
+def test_analytics_id_valid(analytics_id):
+    defaults = get_config_defaults()
+    defaults["analytics_id"] = analytics_id
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.analytics_id == analytics_id
+
+
+@pytest.mark.parametrize("analytics_id,expected", [("", None), ("  ", None)])
+def test_analytics_id_blank_becomes_none(analytics_id, expected):
+    defaults = get_config_defaults()
+    defaults["analytics_id"] = analytics_id
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.analytics_id is expected
+
+
+@pytest.mark.parametrize("analytics_id", ["bad id", "bad;id", "id\ninjection"])
+def test_analytics_id_invalid(analytics_id):
+    defaults = get_config_defaults()
+    defaults["analytics_id"] = analytics_id
+    with pytest.raises(ValidationError, match="contains invalid characters"):
+        LandscapeCharmConfiguration(**defaults)
+
+
 def test_landscape_ppas_single():
     config = LandscapeCharmConfiguration(
         **{
@@ -265,3 +290,53 @@ def test_landscape_ppas_strips_whitespace():
         }
     )
     assert config.landscape_ppas == ["ppa:foo/bar", "ppa:baz/qux"]
+
+
+@pytest.mark.parametrize(
+    "min_install,deployment_mode",
+    [
+        (True, "standalone"),
+        (False, "standalone"),
+        (False, "saas"),
+        (False, "my-custom-mode"),
+    ],
+)
+def test_min_install_valid_combinations(min_install, deployment_mode):
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "min_install": min_install,
+            "deployment_mode": deployment_mode,
+        }
+    )
+    assert config.min_install == min_install
+    assert config.deployment_mode == deployment_mode
+
+
+@pytest.mark.parametrize("deployment_mode", ["saas", "my-custom-mode"])
+def test_min_install_invalid_with_non_standalone(deployment_mode):
+    """min_install=True is blocked for non-standalone deployments."""
+    with pytest.raises(ValidationError, match="min_install=True is not compatible"):
+        LandscapeCharmConfiguration(
+            **{
+                **get_config_defaults(),
+                "min_install": True,
+                "deployment_mode": deployment_mode,
+            }
+        )
+
+
+def test_bootstrap_schema_override_args_list():
+    config = LandscapeCharmConfiguration(
+        **{
+            **get_config_defaults(),
+            "bootstrap_schema_override_args": (
+                "--with-openstack, --with-extra-computers, 10 "
+            ),
+        }
+    )
+    assert config.bootstrap_schema_override_args_list == [
+        "--with-openstack",
+        "--with-extra-computers",
+        "10",
+    ]

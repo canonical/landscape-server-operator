@@ -12,10 +12,11 @@ from configparser import ConfigParser
 import os
 import secrets
 from string import ascii_letters, digits
+import tempfile
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from charms.operator_libs_linux.v1.systemd import daemon_reload
+from charmlibs.systemd import daemon_reload
 
 from database import get_postgres_owner_role_from_version, PostgresRoles
 from helpers import migrate_service_conf
@@ -23,6 +24,8 @@ from helpers import migrate_service_conf
 CONFIGS_DIR = "/opt/canonical/landscape/configs"
 
 DEFAULT_SETTINGS = "/etc/default/landscape-server"
+
+LANDSCAPE_HOSTED_CRON = "/etc/cron.d/landscape-hosted"
 
 LICENSE_FILE = "/etc/landscape/license.txt"
 LICENSE_FILE_PROTOCOLS = (
@@ -32,6 +35,7 @@ LICENSE_FILE_PROTOCOLS = (
 )
 
 SERVICE_CONF = "/etc/landscape/service.conf"
+SSL_CERT_PATH = "/etc/ssl/certs/landscape_server_ca.crt"
 
 DEFAULT_POSTGRES_PORT = "5432"
 
@@ -71,6 +75,11 @@ _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE = [
 
 _DEPLOYMENT_MODE_OVERRIDE_CONF = "deployment-mode.conf"
 
+_ANALYTICS_ID_OVERRIDE_CONF = "analytics-id.conf"
+
+# Only the web frontend renders the Google Analytics tracker into HTML pages.
+_ANALYTICS_SERVICE = "landscape-appserver.service"
+
 
 def write_deployment_mode_systemd_override(mode: str) -> None:
     """
@@ -88,6 +97,30 @@ def write_deployment_mode_systemd_override(mode: str) -> None:
     daemon_reload()
 
 
+def write_analytics_id_systemd_override(analytics_id: str | None) -> None:
+    """
+    Writes (or removes) a systemd drop-in for the appserver to set
+    LANDSCAPE_ANALYTICS_ID.
+
+    Landscape reads this environment variable to select the Google Analytics
+    tracker ID, overriding the built-in default for the deployment mode. When
+    analytics_id is empty, any existing drop-in is removed so Landscape falls
+    back to its default.
+    """
+    override_dir = f"/etc/systemd/system/{_ANALYTICS_SERVICE}.d"
+    override_path = os.path.join(override_dir, _ANALYTICS_ID_OVERRIDE_CONF)
+
+    if analytics_id:
+        os.makedirs(override_dir, exist_ok=True)
+        with open(override_path, "w") as f:
+            f.write("[Service]\n")
+            f.write(f"Environment=LANDSCAPE_ANALYTICS_ID={analytics_id}\n")
+    elif os.path.exists(override_path):
+        os.remove(override_path)
+
+    daemon_reload()
+
+
 def configure_for_deployment_mode(mode: str) -> None:
     """
     Creates filesystem symlinks so Landscape can locate config files for the given
@@ -102,6 +135,43 @@ def configure_for_deployment_mode(mode: str) -> None:
         return
 
     os.symlink(os.path.join(CONFIGS_DIR, "standalone"), sym_path)
+
+
+def enable_landscape_hosted_cron_jobs() -> None:
+    """
+    Uncomments all cron jobs in the landscape-hosted cron file.
+
+    The landscape-hosted package ships with all cron jobs commented out by default.
+    In SaaS deployments (production/staging), these jobs need to be enabled.
+    """
+    if not os.path.exists(LANDSCAPE_HOSTED_CRON):
+        return
+
+    with open(LANDSCAPE_HOSTED_CRON, "r") as f:
+        lines = f.readlines()
+
+    cron_dir = os.path.dirname(LANDSCAPE_HOSTED_CRON)
+    with tempfile.NamedTemporaryFile(
+        mode="w", dir=cron_dir, prefix=".tmp", delete=False
+    ) as temp_f:
+        temp_path = temp_f.name
+        for line in lines:
+            # Uncomment lines that start with #<whitespace><cron-schedule>
+            # This preserves other comments like file headers
+            stripped = line.lstrip()
+            if stripped.startswith("#") and len(stripped) > 1:
+                # Check if this looks like a cron job
+                # (starts with # followed by schedule)
+                after_hash = stripped[1:].lstrip()
+                if after_hash and (after_hash[0].isdigit() or after_hash[0] in "*@"):
+                    # Remove the leading # and write the uncommented line
+                    temp_f.write(line.replace("#", "", 1))
+                else:
+                    temp_f.write(line)
+            else:
+                temp_f.write(line)
+
+    os.rename(temp_path, LANDSCAPE_HOSTED_CRON)
 
 
 def merge_service_conf(other: str) -> None:
@@ -224,6 +294,15 @@ def write_license_file(license_file: str, uid: int, gid: int) -> None:
     os.chown(LICENSE_FILE, uid, gid)
 
 
+def write_ssl_cert(ssl_cert: str) -> None:
+    """Decodes and writes `ssl_cert` to `SSL_CERT_PATH`."""
+    try:
+        with open(SSL_CERT_PATH, "wb") as ssl_cert_fp:
+            ssl_cert_fp.write(b64decode(ssl_cert.encode()))
+    except binascii.Error:
+        raise SSLCertReadException("Unable to decode b64-encoded SSL certificate")
+
+
 def update_db_conf(
     host=None,
     password=None,
@@ -276,6 +355,6 @@ def read_service_conf() -> dict:
     Returns the parsed contents of SERVICE_CONF as a plain dict of
     {section: {key: value}}, suitable for serialisation to JSON.
     """
-    config = ConfigParser()
+    config = ConfigParser(interpolation=None)
     config.read(SERVICE_CONF)
     return {section: dict(config[section]) for section in config.sections()}

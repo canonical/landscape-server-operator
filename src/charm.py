@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2025 Canonical Ltd
+# Copyright 2025-2026 Canonical Ltd
 # See LICENSE file for licensing details.
 #
 # Learn more at: https://juju.is/docs/sdk
@@ -12,6 +12,7 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
+from base64 import b64decode, b64encode, binascii
 from dataclasses import asdict
 from functools import cached_property
 import json
@@ -22,7 +23,16 @@ from subprocess import CalledProcessError, check_call
 from typing import List
 from urllib.parse import urlparse
 
-from charmlibs import snap
+from charmlibs import apt, snap
+from charmlibs.apt import PackageError, PackageNotFoundError
+from charmlibs.passwd import group_exists, user_exists
+from charmlibs.systemd import (
+    service_pause,
+    service_reload,
+    service_resume,
+    service_running,
+    SystemdError,
+)
 from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseCreatedEvent,
     DatabaseEndpointsChangedEvent,
@@ -30,17 +40,12 @@ from charms.data_platform_libs.v0.data_interfaces import (
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
 from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
-from charms.operator_libs_linux.v0 import apt
-from charms.operator_libs_linux.v0.apt import PackageError, PackageNotFoundError
-from charms.operator_libs_linux.v0.passwd import group_exists, user_exists
-from charms.operator_libs_linux.v1.systemd import (
-    service_pause,
-    service_reload,
-    service_resume,
-    service_running,
-    SystemdError,
+from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
+from charms.smtp_integrator.v0.smtp import (
+    SmtpDataAvailableEvent,
+    SmtpRequires,
+    TransportSecurity,
 )
-from charms.smtp_integrator.v0.smtp import SmtpDataAvailableEvent, SmtpRequires
 from ops import main, Port
 from ops.charm import (
     ActionEvent,
@@ -49,6 +54,7 @@ from ops.charm import (
     LeaderElectedEvent,
     LeaderSettingsChangedEvent,
     RelationChangedEvent,
+    RelationDepartedEvent,
     RelationJoinedEvent,
     UpdateStatusEvent,
     UpgradeCharmEvent,
@@ -64,6 +70,7 @@ from ops.model import (
     WaitingStatus,
 )
 from pydantic import ValidationError
+import validators
 import yaml
 
 from config import DEFAULT_CONFIGURATION, LandscapeCharmConfiguration
@@ -73,23 +80,41 @@ from database import (
     grant_role,
     PgHbaNotReadyError,
 )
+from haproxy import (
+    create_grpc_service,
+    create_http_service,
+    create_https_service,
+    create_ubuntu_installer_attach_service,
+    ERROR_FILES,
+    get_haproxy_error_files,
+    GRPC_SERVICE,
+    HTTP_SERVICE,
+    HTTPS_SERVICE,
+    PORTS,
+    SERVER_OPTIONS,
+    UBUNTU_INSTALLER_ATTACH_SERVICE,
+)
 from helpers import get_modified_env_vars, logger, migrate_service_conf
 from settings_files import (
     AMQP_USERNAME,
     configure_for_deployment_mode,
     DEFAULT_POSTGRES_PORT,
+    enable_landscape_hosted_cron_jobs,
     generate_cookie_encryption_key,
     generate_secret_token,
     get_postgres_roles,
     merge_service_conf,
     prepend_default_settings,
     read_service_conf,
+    SSLCertReadException,
     update_db_conf,
     update_default_settings,
     update_service_conf,
     VHOSTS,
+    write_analytics_id_systemd_override,
     write_deployment_mode_systemd_override,
     write_license_file,
+    write_ssl_cert,
 )
 
 DEBCONF_SET_SELECTIONS = "/usr/bin/debconf-set-selections"
@@ -112,6 +137,8 @@ GPG_SERVICE_CONF_SECTIONS = (
 )
 
 LANDSCAPE_SERVER = "landscape-server"
+LANDSCAPE_HASH_IDS = "landscape-hashids"
+LANDSCAPE_HOSTED = "landscape-hosted"
 LANDSCAPE_PACKAGES = (
     LANDSCAPE_SERVER,
     "landscape-client",
@@ -120,6 +147,14 @@ LANDSCAPE_PACKAGES = (
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
 DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
+
+TASK_HANDLER_RELATION = "task-handler"
+OUTBOX_GRPC_CERTS_DIR = Path("/var/snap/landscape-outbox/common/grpc-certs")
+DEFAULT_STORE_NAMES = {
+    "main": "landscape-standalone-main",
+    "account_1": "landscape-standalone-account-1",
+    "resource_1": "landscape-standalone-resource-1",
+}
 
 DEFAULT_SERVICES = (
     "landscape-api",
@@ -152,6 +187,28 @@ PROXY_ENV_MAPPING = {
     "JUJU_CHARM_HTTPS_PROXY": "--with-https-proxy",
     "JUJU_CHARM_NO_PROXY": "--with-no-proxy",
 }
+
+DEMO_SCHEMA_ARGS = [
+    "--with-computers",
+    "--with-free-disk-space",
+    "--with-free-memory-and-swap",
+    "--with-load-averages",
+    "--with-temperatures",
+    "--with-network-traffic",
+    "--with-active-processes",
+    "--with-hardware",
+    "--with-packages",
+    "--with-package-activities",
+    "--with-script-activities",
+    "--with-users-and-groups",
+    "--with-cpu-usage",
+    "--with-ceph-usage",
+    "--with-compute-usage",
+    "--with-swift-usage",
+    "--with-user-and-group-activities",
+    "--with-custom-graph",
+    "--with-scripts",
+]
 
 METRIC_INSTRUMENTED_SERVICE_PORTS = [
     ("appserver", 8080),
@@ -190,6 +247,39 @@ def get_args_with_secrets_removed(args, arg_names):
             if idx < len(args):
                 args[idx] = "REDACTED"
     return args
+
+
+def _get_ssl_cert(ssl_cert, ssl_key):
+    """
+    Create an SSL certificate from the `ssl_cert` and `ssl_key` configuration
+    options.
+    """
+    if ssl_cert != "DEFAULT" and ssl_key == "":
+        # We have a cert but no key, this is an error.
+        raise SSLConfigurationError("`ssl_cert` is specified but `ssl_key` is missing")
+
+    if ssl_cert != "DEFAULT":
+        try:
+            ssl_cert = b64decode(ssl_cert)
+            ssl_key = b64decode(ssl_key)
+            ssl_cert = b64encode(ssl_cert + b"\n" + ssl_key).decode()
+        except binascii.Error:
+            raise SSLConfigurationError(
+                "Unable to decode `ssl_cert` or `ssl_key` - must be b64-encoded"
+            )
+    return ssl_cert
+
+
+class InvalidRedirectHTTPS(Exception):
+    """
+    Raised when an invalid `redirect_https` configuration is provided.
+    """
+
+
+class SSLConfigurationError(Exception):
+    """
+    Invalid SSL configuration.
+    """
 
 
 class LandscapeServerCharm(CharmBase):
@@ -253,12 +343,40 @@ class LandscapeServerCharm(CharmBase):
         )
 
         self.framework.observe(
+            self.on.website_relation_joined, self._website_relation_joined
+        )
+        self.framework.observe(
+            self.on.website_relation_changed, self._website_relation_changed
+        )
+        self.framework.observe(
+            self.on.website_relation_departed, self._website_relation_departed
+        )
+
+        self.framework.observe(
             self.on.nrpe_external_master_relation_joined,
             self._nrpe_external_master_relation_joined,
         )
         self.framework.observe(
             self.on.application_dashboard_relation_joined,
             self._application_dashboard_relation_joined,
+        )
+        self.framework.observe(
+            self.on.debarchive_relation_joined,
+            self._update_debarchive_relations,
+        )
+        self.framework.observe(
+            self.on.debarchive_relation_changed,
+            self._update_debarchive_relations,
+        )
+
+        # Task handler (interface: landscape-task-handler)
+        self.framework.observe(
+            self.on.task_handler_relation_joined,
+            self._on_task_handler_relation_changed,
+        )
+        self.framework.observe(
+            self.on.task_handler_relation_changed,
+            self._on_task_handler_relation_changed,
         )
 
         # Leadership/peering
@@ -355,10 +473,12 @@ class LandscapeServerCharm(CharmBase):
         self.repository_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="repository-haproxy-route"
         )
-        self.hostagent_messenger_haproxy_route = HaproxyRouteRequirer(
+        # grpc backends only support plaintext (no add_secure_port), so TLS must
+        # terminate at haproxy itself rather than being re-encrypted to the backend.
+        self.hostagent_messenger_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="hostagent-messenger-haproxy-route"
         )
-        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteRequirer(
+        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="ubuntu-installer-attach-haproxy-route"
         )
 
@@ -464,21 +584,7 @@ class LandscapeServerCharm(CharmBase):
         )
         configure_for_deployment_mode(self.charm_config.deployment_mode)
         write_deployment_mode_systemd_override(self.charm_config.deployment_mode)
-
-        if self.charm_config.additional_service_config:
-            merge_service_conf(self.charm_config.additional_service_config)
-
-        if self.charm_config.license_file:
-            self.unit.status = MaintenanceStatus("Writing Landscape license file")
-            write_license_file(
-                self.charm_config.license_file,
-                user_exists("landscape").pw_uid,
-                self.root_gid,
-            )
-            self.unit.status = WaitingStatus("Waiting on relations")
-
-        self._configure_openid()
-        self._configure_oidc()
+        write_analytics_id_systemd_override(self.charm_config.analytics_id)
 
         service_conf_updates = {
             service: {"workers": str(self.charm_config.worker_counts)}
@@ -512,20 +618,43 @@ class LandscapeServerCharm(CharmBase):
 
         update_service_conf(service_conf_updates)
 
-        db_kargs = {}
+        if self.charm_config.additional_service_config:
+            merge_service_conf(self.charm_config.additional_service_config)
+
+        if self.charm_config.license_file:
+            self.unit.status = MaintenanceStatus("Writing Landscape license file")
+            write_license_file(
+                self.charm_config.license_file,
+                user_exists("landscape").pw_uid,
+                self.root_gid,
+            )
+            self.unit.status = WaitingStatus("Waiting on relations")
+
+        self._configure_openid()
+        self._configure_oidc()
+
+        db_kwargs = {}
+        demo_data = False
         if config_host := self.charm_config.db_host:
-            db_kargs["host"] = config_host
+            db_kwargs["host"] = config_host
         if schema_password := self.charm_config.db_schema_password:
-            db_kargs["schema_password"] = schema_password
+            db_kwargs["schema_password"] = schema_password
         if config_port := self.charm_config.db_port:
-            db_kargs["port"] = config_port
+            db_kwargs["port"] = config_port
         if config_user := self.charm_config.db_schema_user:
-            db_kargs["user"] = config_user
+            db_kwargs["user"] = config_user
         if landscape_password := self.charm_config.db_landscape_password:
-            db_kargs["password"] = landscape_password
-        if db_kargs:
-            update_db_conf(**db_kargs)
-            if self._migrate_schema_bootstrap():
+            db_kwargs["password"] = landscape_password
+
+        if self.charm_config.demo_data:
+            demo_data = True
+
+        if db_kwargs:
+            update_db_conf(**db_kwargs)
+            if self._migrate_schema_bootstrap(demo_data=demo_data):
+                if demo_data and self.charm_config.deployment_mode == "standalone":
+                    if not self._update_wsl_distributions():
+                        return
                 self.unit.status = WaitingStatus("Waiting on relations")
                 self._stored.ready["db"] = True
             else:
@@ -554,7 +683,10 @@ class LandscapeServerCharm(CharmBase):
                     {"cookie-encryption-key": cookie_encryption_key}
                 )
 
-        if (secret_token) and (secret_token != self._stored.secret_token):
+        secret_token_changed = (
+            secret_token and secret_token != self._stored.secret_token
+        )
+        if secret_token_changed:
             self._write_secret_token(secret_token)
             self._stored.secret_token = secret_token
 
@@ -568,6 +700,10 @@ class LandscapeServerCharm(CharmBase):
 
         self._update_ready_status(restart_services=True)
         self._provide_all_haproxy_route_requirements()
+        self._update_debarchive_relations(
+            notify_secret_token_changed=bool(secret_token_changed)
+        )
+        self._update_task_handler_relations()
 
     def _set_ports(self):
         worker_counts = self.charm_config.worker_counts
@@ -733,6 +869,28 @@ class LandscapeServerCharm(CharmBase):
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
         self._provide_all_haproxy_route_requirements()
 
+    def _install_debian_packages_with_recommends(
+        self, package_names: list[str]
+    ) -> None:
+        """
+        Installs a Debian package via apt with `--install-recommends`.
+        """
+
+        # Explicitly ensure cache is up-to-date after adding the PPA.
+        try:
+            apt.add_package(package_names, update_cache=True)
+        except PackageError as e:
+            logger.error("Failed to install packages: %s", str(e))
+            raise e
+
+    def _hold_debian_packages(self, package_names: list[str]) -> None:
+        for p in package_names:
+            try:
+                check_call(["apt-mark", "hold", p])
+            except CalledProcessError as e:
+                logger.error("Error trying to hold %s: %s", p, str(e))
+                raise e
+
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
         self.unit.status = MaintenanceStatus("Installing apt packages")
@@ -756,40 +914,51 @@ class LandscapeServerCharm(CharmBase):
         try:
             # This package is responsible for the hanging installs and ignores env vars
             apt.remove_package(["needrestart"])
+        except (PackageNotFoundError, PackageError) as e:
+            logger.error("Failed to remove needrestart package: %s", str(e))
+            raise e  # This will trigger juju's exponential retry
 
-            # Add the Landscape Server PPA and install via apt.
-            # add-apt-repository doesn't use the proxy configuration from apt or juju
-            # let's make sure to use the http(s) proxy settings from the charm or at
-            # least any juju_proxy setting, add the classic http(s)_proxy to the env
-            # that will be used only for add-apt-repository call
-            add_apt_repository_env = self._build_add_apt_repository_env()
-
-            for ppa in self.charm_config.landscape_ppas:
+        # Add the Landscape Server PPA and install via apt.
+        # add-apt-repository doesn't use the proxy configuration from apt or juju
+        # let's make sure to use the http(s) proxy settings from the charm or at
+        # least any juju_proxy setting, add the classic http(s)_proxy to the env
+        # that will be used only for add-apt-repository call
+        add_apt_repository_env = self._build_add_apt_repository_env()
+        for ppa in self.charm_config.landscape_ppas:
+            try:
                 check_call(
                     ["add-apt-repository", "-y", ppa], env=add_apt_repository_env
                 )
+            except CalledProcessError as e:
+                logger.error("Failed to add PPA '%s': %s", ppa, str(e))
+                raise e
 
-            if self.charm_config.min_install:
-                logger.info("Not installing hashids..")
+        if self.charm_config.min_install:
+            try:
                 check_call(
                     [
-                        "apt",
+                        "apt-get",
                         "install",
-                        LANDSCAPE_SERVER,
                         "--no-install-recommends",
                         "-y",
+                        LANDSCAPE_SERVER,
                     ]
                 )
-            else:
-                # Explicitly ensure cache is up-to-date after adding the PPA.
-                apt.add_package(
-                    [LANDSCAPE_SERVER, "landscape-hashids"], update_cache=True
-                )
-                check_call(["apt-mark", "hold", "landscape-hashids"])
-            check_call(["apt-mark", "hold", LANDSCAPE_SERVER])
-        except (PackageNotFoundError, PackageError, CalledProcessError) as exc:
-            logger.error("Failed to install packages")
-            raise exc  # This will trigger juju's exponential retry
+            except CalledProcessError as e:
+                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
+                raise e
+            self._hold_debian_packages([LANDSCAPE_SERVER])
+        else:
+            pkg_list = [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+            if self.charm_config.deployment_mode != "standalone":
+                pkg_list.append(LANDSCAPE_HOSTED)
+            self._install_debian_packages_with_recommends(pkg_list)
+            self._hold_debian_packages(pkg_list)
+
+        # Enable landscape-hosted cron jobs in SaaS mode
+        if self.charm_config.deployment_mode != "standalone":
+            self.unit.status = MaintenanceStatus("Enabling landscape-hosted cron jobs")
+            enable_landscape_hosted_cron_jobs()
 
         self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
         try:
@@ -951,7 +1120,9 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
-        if not self._migrate_schema_bootstrap():
+        self._update_task_handler_relations()
+
+        if not self._migrate_schema_bootstrap(demo_data=self.charm_config.demo_data):
             return
 
         if not self._update_wsl_distributions():
@@ -1036,6 +1207,8 @@ class LandscapeServerCharm(CharmBase):
             schema_password=schema_password,
         )
 
+        self._update_task_handler_relations()
+
         if not self.unit.is_leader():
             self._stored.ready["db"] = True
             self.unit.status = ActiveStatus("Unit is ready")
@@ -1044,7 +1217,9 @@ class LandscapeServerCharm(CharmBase):
 
         roles = get_postgres_roles(db_ctx.version)
 
-        if not self._migrate_schema_bootstrap(roles.owner):
+        if not self._migrate_schema_bootstrap(
+            roles.owner, demo_data=self.charm_config.demo_data
+        ):
             logger.error(
                 "Migrating schema failed trying to update the `database` relation!"
             )
@@ -1104,21 +1279,45 @@ class LandscapeServerCharm(CharmBase):
 
         return settings
 
-    def _migrate_schema_bootstrap(self, owner_role: str | None = None):
+    def _schema_supports_flag(self, flag: str) -> bool:
+        """Returns True if the installed schema script accepts the given flag."""
+        try:
+            result = subprocess.run(
+                [SCHEMA_SCRIPT, "--help"],
+                capture_output=True,
+                text=True,
+            )
+            return flag in result.stdout or flag in result.stderr
+        except OSError:
+            return False
+
+    def _migrate_schema_bootstrap(
+        self,
+        owner_role: str | None = None,
+        demo_data: bool = False,
+    ):
         """
         Migrates schema along with the bootstrap command which ensures that the
         databases and the landscape user exists, and that proxy settings are set.
-        In addition, creates admin if configured.
+        In addition, creates admin and demo data if configured.
+
+        :param owner_role: The Postgres role to own the database.
+        :param demo_data: Create demo data.
 
         :returns: True on success.
         """
         call = [SCHEMA_SCRIPT, "--bootstrap"]
 
-        if owner_role:
+        if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
 
         if self._proxy_settings:
             call.extend(self._proxy_settings)
+
+        if demo_data:
+            call.extend(self._demo_schema_args())
+
+        call.extend(self.charm_config.bootstrap_schema_override_args_list)
 
         try:
             check_call(call, env=get_modified_env_vars())
@@ -1134,6 +1333,16 @@ class LandscapeServerCharm(CharmBase):
         self._set_autoregistration()
         return True
 
+    def _demo_schema_args(self) -> list[str]:
+        args = DEMO_SCHEMA_ARGS.copy()
+        account_password = self.charm_config.registration_key or "foo"
+        args.extend(["--with-account-password", account_password])
+        if self.charm_config.root_url:
+            args.extend(["--with-root-url", self.charm_config.root_url])
+        if self.charm_config.system_email:
+            args.extend(["--with-system-email", self.charm_config.system_email])
+        return args
+
     def _update_wsl_distributions(self) -> bool | None:
         logger.info("Updating WSL distributions...")
 
@@ -1141,6 +1350,13 @@ class LandscapeServerCharm(CharmBase):
             check_call(
                 [UPDATE_WSL_DISTRIBUTIONS_SCRIPT],
                 env=get_modified_env_vars(),
+            )
+            return True
+        except FileNotFoundError:
+            logger.warning(
+                "WSL distributions script not found at '%s'; "
+                "Landscape may not be installed yet.",
+                UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
             )
             return True
         except CalledProcessError as e:
@@ -1201,6 +1417,140 @@ class LandscapeServerCharm(CharmBase):
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status()
 
+    def _website_relation_joined(self, event: RelationJoinedEvent) -> None:
+        self._update_haproxy_connection(event.relation)
+
+        # Update root_url, if not provided.
+        if not self.charm_config.root_url:
+            url = f"https://{event.relation.data[event.unit]['public-address']}/"
+            self._stored.default_root_url = url
+            update_service_conf(
+                {
+                    "global": {"root-url": url},
+                    "api": {"root-url": url},
+                    "package-upload": {"root-url": url},
+                }
+            )
+
+        self._update_ready_status()
+
+    def _update_haproxy_connection(self, relation: Relation) -> None:
+        logger.warning(
+            "The legacy HAProxy charm integration (`website` relation) is deprecated "
+            "and support will be dropped in Landscape 26.10. "
+            "Please migrate to the `haproxy-route` endpoints."
+        )
+        self.unit.status = MaintenanceStatus("Setting up haproxy connection")
+
+        # Check the SSL cert stuff first. No sense doing all the other
+        # work just to fail here.
+        try:
+            ssl_cert = _get_ssl_cert(
+                ssl_cert=self.charm_config.ssl_cert,
+                ssl_key=self.charm_config.ssl_key,
+            )
+        except SSLConfigurationError as e:
+            self.unit.status = BlockedStatus(str(e))
+            return
+
+        error_files = get_haproxy_error_files(ERROR_FILES)
+        server_ip = relation.data[self.unit]["private-address"]
+        unit_name = self.unit.name.replace("/", "-")
+
+        http_service = create_http_service(
+            http_service=asdict(HTTP_SERVICE),
+            server_ip=server_ip,
+            unit_name=unit_name,
+            worker_counts=self.charm_config.worker_counts,
+            is_leader=self.unit.is_leader(),
+            error_files=error_files,
+            service_ports=PORTS,
+            server_options=SERVER_OPTIONS,
+            redirect_https=self.charm_config.redirect_https,
+        )
+
+        https_service = create_https_service(
+            https_service=asdict(HTTPS_SERVICE),
+            ssl_cert=ssl_cert,
+            server_ip=server_ip,
+            unit_name=unit_name,
+            worker_counts=self.charm_config.worker_counts,
+            is_leader=self.unit.is_leader(),
+            error_files=error_files,
+            service_ports=PORTS,
+            server_options=SERVER_OPTIONS,
+        )
+
+        services = [http_service, https_service]
+
+        if self.charm_config.enable_hostagent_messenger:
+            grpc_service = create_grpc_service(
+                grpc_service=asdict(GRPC_SERVICE),
+                ssl_cert=ssl_cert,
+                server_ip=server_ip,
+                unit_name=unit_name,
+                error_files=error_files,
+                service_ports=PORTS,
+                server_options=SERVER_OPTIONS,
+            )
+            services.append(grpc_service)
+
+        if self._stored.enable_ubuntu_installer_attach:
+            services.append(
+                create_ubuntu_installer_attach_service(
+                    ubuntu_installer_attach_service=asdict(
+                        UBUNTU_INSTALLER_ATTACH_SERVICE
+                    ),
+                    ssl_cert=ssl_cert,
+                    server_ip=server_ip,
+                    unit_name=unit_name,
+                    error_files=error_files,
+                    service_ports=PORTS,
+                    server_options=SERVER_OPTIONS,
+                )
+            )
+
+        relation.data[self.unit].update({"services": yaml.safe_dump(services)})
+        self.unit.status = WaitingStatus("")
+
+    def _website_relation_changed(self, event: RelationChangedEvent) -> None:
+        """
+        Writes the HAProxy-provided SSL certificate for
+        Landscape Server, if config has not provided one.
+        """
+        config_ssl_cert = self.charm_config.ssl_cert
+
+        if config_ssl_cert != "DEFAULT":
+            # No-op: cert has been provided by config.
+            return
+
+        if "ssl_cert" not in event.relation.data[event.unit]:
+            return
+
+        self.unit.status = MaintenanceStatus("Configuring HAProxy")
+        haproxy_ssl_cert = event.relation.data[event.unit]["ssl_cert"]
+
+        # Sometimes the data has not been encoded properly in the HA charm
+        if haproxy_ssl_cert.startswith("b'"):
+            haproxy_ssl_cert = haproxy_ssl_cert[2:-1]
+
+        if haproxy_ssl_cert != "DEFAULT":
+            # If DEFAULT, cert is being managed by a third party,
+            # possibly a subordinate charm.
+            try:
+                write_ssl_cert(haproxy_ssl_cert)
+            except SSLCertReadException as e:
+                self.unit.status = BlockedStatus(str(e))
+                return
+
+        self.unit.status = ActiveStatus("Unit is ready")
+        self._update_haproxy_connection(event.relation)
+
+        self._update_ready_status()
+
+    def _website_relation_departed(self, event: RelationDepartedEvent) -> None:
+        event.relation.data[self.unit].update({"services": ""})
+
     def _on_haproxy_route_relation_joined(
         self, event: RelationJoinedEvent | RelationChangedEvent
     ) -> None:
@@ -1236,6 +1586,11 @@ class LandscapeServerCharm(CharmBase):
             if name := parsed.hostname:
                 hostname = name
 
+        # haproxy-route-tcp's `sni` field is validated as a domain name, so it
+        # can't be set to `hostname` when that's still the leader_ip fallback
+        # (i.e. root_url isn't configured with a real hostname).
+        sni = hostname if validators.domain(hostname) else None
+
         appserver_paths = ["/", "/hash-id-databases"]
 
         model_uuid = self.model.uuid
@@ -1246,6 +1601,9 @@ class LandscapeServerCharm(CharmBase):
             paths=appserver_paths,
             protocol="http",
             check_path="/",
+            check_interval=2,
+            check_rise=2,
+            check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1260,6 +1618,7 @@ class LandscapeServerCharm(CharmBase):
                 "/api",
                 "/upload",
                 "/repository",
+                "/debarchive",
             ],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
@@ -1268,6 +1627,9 @@ class LandscapeServerCharm(CharmBase):
             paths=["/ping"],
             protocol="http",
             check_path="/ping",
+            check_interval=2,
+            check_rise=2,
+            check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
@@ -1279,6 +1641,9 @@ class LandscapeServerCharm(CharmBase):
             paths=["/message-system", "/attachment"],
             protocol="http",
             check_path="/message-system",
+            check_interval=2,
+            check_rise=2,
+            check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1289,7 +1654,10 @@ class LandscapeServerCharm(CharmBase):
             ports=api_ports,
             paths=["/api"],
             protocol="http",
-            check_path="/api",
+            check_path="/api/about",
+            check_interval=2,
+            check_rise=2,
+            check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1301,7 +1669,7 @@ class LandscapeServerCharm(CharmBase):
             paths=["/upload"],
             protocol="http",
             check_path="/upload",
-            check_interval=2000,
+            check_interval=2,
             check_rise=2,
             check_fall=3,
             header_rewrite_expressions=forwarded_proto_https,
@@ -1318,29 +1686,28 @@ class LandscapeServerCharm(CharmBase):
             ports=appserver_ports,
             paths=["/repository"],
             protocol="http",
-            check_path="/",
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=hostname,
         )
         if cfg.enable_hostagent_messenger:
-            self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-hostagent-messenger-{model_uuid}",
-                ports=[cfg.hostagent_server_base_port],
-                protocol="https",
+            self.hostagent_messenger_haproxy_route.provide_haproxy_route_tcp_requirements(
+                port=6554,
+                backend_port=cfg.hostagent_server_base_port,
+                hosts=[unit_ip],
+                tls_terminate=True,
                 unit_address=unit_ip,
-                hostname=hostname,
-                external_grpc_port=6554,
+                sni=sni,
             )
         if cfg.enable_ubuntu_installer_attach:
-            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
-                service=f"landscape-ubuntu-installer-attach-{model_uuid}",
-                ports=[cfg.ubuntu_installer_attach_base_port],
-                protocol="https",
+            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_tcp_requirements(
+                port=50051,
+                backend_port=cfg.ubuntu_installer_attach_base_port,
+                hosts=[unit_ip],
+                tls_terminate=True,
                 unit_address=unit_ip,
-                hostname=hostname,
-                external_grpc_port=50051,
+                sni=sni,
             )
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:
@@ -1438,6 +1805,273 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             }
         )
 
+    def _update_debarchive_relations(
+        self, notify_secret_token_changed: bool = False
+    ) -> None:
+        """Publish the Landscape root URL to all related debarchive charms."""
+        if not self.unit.is_leader():
+            return
+
+        relations = self.model.relations.get("debarchive", [])
+        if not relations:
+            return
+
+        leader_ip = self._stored.leader_ip
+        if not leader_ip:
+            # `_stored.leader_ip` is only populated from replicas-relation-changed,
+            # which may not have fired yet (e.g. a single-unit deployment). Fall
+            # back to resolving our own bind address so we can still publish.
+            peer_relation = self.model.get_relation("replicas")
+            if peer_relation is not None:
+                binding = self.model.get_binding(peer_relation)
+                if binding and binding.network.bind_address:
+                    leader_ip = str(binding.network.bind_address)
+                    self._stored.leader_ip = leader_ip
+
+        secret_token = self._get_secret_token()
+        if not secret_token:
+            logger.warning(
+                "Skipping debarchive relation update: secret token is not yet available"
+            )
+            return
+
+        hostname = leader_ip
+        if self.charm_config.root_url:
+            parsed = urlparse(self.charm_config.root_url)
+            if parsed.hostname:
+                hostname = parsed.hostname
+
+        for relation in relations:
+            # Reuse the per-relation secret rather than creating (and leaking) a
+            # new one on every hook invocation.
+            existing_id = relation.data[self.app].get("secret-token-id")
+            if existing_id:
+                try:
+                    secret = self.model.get_secret(id=existing_id)
+                    if notify_secret_token_changed:
+                        secret.set_content({"secret-token": secret_token})
+                except (SecretNotFoundError, ModelError):
+                    logger.warning(
+                        "Debarchive relation has stale secret-token-id %s; "
+                        "creating a new secret",
+                        existing_id,
+                    )
+                    secret = self.app.add_secret({"secret-token": secret_token})
+            else:
+                secret = self.app.add_secret({"secret-token": secret_token})
+            secret.grant(relation)
+            relation.data[self.app]["hostname"] = hostname
+            relation.data[self.app]["secret-token-id"] = secret.id
+            if notify_secret_token_changed:
+                revision = int(
+                    relation.data[self.app].get("secret-token-revision", "0")
+                )
+                relation.data[self.app]["secret-token-revision"] = str(revision + 1)
+
+    def _on_task_handler_relation_changed(
+        self, event: RelationJoinedEvent | RelationChangedEvent
+    ) -> None:
+        """Handle both directions of the task-handler relation."""
+        # Leader publishes the shared stores DB credentials to the task-handler.
+        self._update_task_handler_relations()
+        # Every unit consumes the outbox client certificates the task-handler
+        # sends back, so the local outbox snap can reach the task-handler.
+        self._consume_task_handler_certs(event.relation)
+
+    def _landscape_hostname(self) -> str | None:
+        """Return the external Landscape hostname (root_url host, else leader IP).
+
+        Mirrors the hostname ``_update_debarchive_relations`` publishes: the
+        configured ``root_url`` hostname when set, otherwise the leader IP (with
+        a fallback to this unit's peer-binding address).
+        """
+        leader_ip = self._stored.leader_ip
+        if not leader_ip:
+            peer_relation = self.model.get_relation("replicas")
+            if peer_relation is not None:
+                binding = self.model.get_binding(peer_relation)
+                if binding and binding.network.bind_address:
+                    leader_ip = str(binding.network.bind_address)
+                    self._stored.leader_ip = leader_ip
+
+        hostname = leader_ip
+        if self.charm_config.root_url:
+            parsed = urlparse(self.charm_config.root_url)
+            if parsed.hostname:
+                hostname = parsed.hostname
+        return hostname or None
+
+    def _update_task_handler_relations(self) -> None:
+        """Publish the task-handler relation data to related task-handler charms.
+
+        Sends the shared store DB credentials (non-secret fields on the app
+        databag, the store password through a granted Juju secret, mirroring
+        ``_update_debarchive_relations``) plus the external Landscape hostname the
+        task-handler uses to register its gRPC service with haproxy and as a
+        server-certificate SAN.
+        """
+        if not self.unit.is_leader():
+            return
+
+        relations = self.model.relations.get(TASK_HANDLER_RELATION, [])
+        if not relations:
+            return
+
+        stores = read_service_conf().get("stores", {})
+        if not stores:
+            logger.warning(
+                "Skipping task-handler relation update: "
+                "no [stores] section in service.conf"
+            )
+            return
+
+        host, _, port = stores.get("host", "").partition(":")
+        databag = {
+            "host": host,
+            "port": port or str(DEFAULT_POSTGRES_PORT),
+            "user": stores.get("user", "landscape"),
+            "main": stores.get("main", DEFAULT_STORE_NAMES["main"]),
+            "account_1": stores.get("account_1", DEFAULT_STORE_NAMES["account_1"]),
+            "resource_1": stores.get("resource_1", DEFAULT_STORE_NAMES["resource_1"]),
+            "sslmode": stores.get("sslmode", "disable"),
+        }
+        for optional in ("sslrootcert", "sslcert", "sslkey"):
+            value = stores.get(optional)
+            if value:
+                databag[optional] = value
+
+        # Share the external Landscape hostname (as the landscape-debarchive
+        # relation does) so the task-handler can register its gRPC service with
+        # haproxy under that name and use it as a server-certificate SAN.
+        hostname = self._landscape_hostname()
+        if hostname:
+            databag["hostname"] = hostname
+
+        password = stores.get("password")
+        if not password:
+            logger.warning(
+                "Skipping task-handler relation update: "
+                "store password is not yet available"
+            )
+            return
+        for relation in relations:
+            existing_id = relation.data[self.app].get("secret-id")
+            if existing_id:
+                try:
+                    secret = self.model.get_secret(id=existing_id)
+                    if secret.get_content().get("password") != password:
+                        secret.set_content({"password": password})
+                except (SecretNotFoundError, ModelError):
+                    logger.warning(
+                        "task-handler relation has stale secret-id %s; "
+                        "creating a new secret",
+                        existing_id,
+                    )
+                    secret = self.app.add_secret({"password": password})
+            else:
+                secret = self.app.add_secret({"password": password})
+            secret.grant(relation)
+            relation.data[self.app].update(databag)
+            relation.data[self.app]["secret-id"] = secret.id
+
+    def _consume_task_handler_certs(self, relation: Relation) -> None:
+        """Write the outbox client certs and configure the outbox snap.
+
+        Runs on every unit (the outbox snap runs on every unit). Cert rotation
+        rewrites the files in place; the gRPC address and certs dir are only set
+        on the snap when they change, so a rotation does not restart the snap.
+        """
+        app_data = relation.data[relation.app] if relation.app else None
+        if not app_data:
+            return
+
+        grpc_address = app_data.get("grpc-address")
+        secret_id = app_data.get("certs-secret-id")
+        if not grpc_address or not secret_id:
+            logger.info("task-handler has not published its certs/grpc-address yet")
+            return
+
+        try:
+            secret = self.model.get_secret(id=secret_id)
+            content = secret.get_content(refresh=True)
+        except (SecretNotFoundError, ModelError):
+            logger.warning(
+                "task-handler certs secret %s not found or inaccessible", secret_id
+            )
+            return
+
+        ca = content.get("ca-cert")
+        client_cert = content.get("client-cert")
+        client_key = content.get("client-key")
+        if not (ca and client_cert and client_key):
+            logger.warning("task-handler certs secret is missing required fields")
+            return
+
+        try:
+            self._write_outbox_certificates(ca, client_cert, client_key)
+            self._configure_outbox_grpc(grpc_address, str(OUTBOX_GRPC_CERTS_DIR))
+        except (snap.SnapError, OSError) as e:
+            logger.error("Failed to configure outbox mTLS: %s", e)
+            self.unit.status = BlockedStatus("Failed to configure outbox mTLS")
+
+    @staticmethod
+    def _write_outbox_certificates(ca: str, client_cert: str, client_key: str) -> None:
+        """Atomically write the outbox client certificate material to disk."""
+        OUTBOX_GRPC_CERTS_DIR.mkdir(parents=True, exist_ok=True)
+        LandscapeServerCharm._atomic_write(OUTBOX_GRPC_CERTS_DIR / "ca.crt", ca, 0o644)
+        LandscapeServerCharm._atomic_write(
+            OUTBOX_GRPC_CERTS_DIR / "client.crt", client_cert, 0o644
+        )
+        LandscapeServerCharm._atomic_write(
+            OUTBOX_GRPC_CERTS_DIR / "client.key", client_key, 0o600
+        )
+
+    @staticmethod
+    def _atomic_write(path: Path, content: str, mode: int) -> None:
+        """Atomically write ``content`` to ``path`` with the given permissions."""
+        tmp_path = path.with_name(f".{path.name}.tmp")
+        tmp_path.write_text(content)
+        os.chmod(tmp_path, mode)
+        os.replace(tmp_path, path)
+
+    def _configure_outbox_grpc(self, grpc_address: str, certs_dir: str) -> None:
+        """Point the outbox snap at the task-handler gRPC endpoint and cert dir.
+
+        Only writes snap config (and restarts) when a value actually changes so
+        that certificate rotation, which keeps the same address and directory,
+        does not restart the outbox snap.
+        """
+        outbox = snap.SnapCache()[LANDSCAPE_OUTBOX_SNAP]
+        desired = {
+            "landscape.task-handler.grpc-address": grpc_address,
+            "landscape.task-handler.grpc-certs-dir": certs_dir,
+        }
+        try:
+            current = outbox.get(None, typed=True) or {}
+        except snap.SnapError:
+            current = {}
+
+        changed = {
+            key: value
+            for key, value in desired.items()
+            if self._nested_get(current, key) != value
+        }
+        if not changed:
+            return
+
+        outbox.set(changed)
+        check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
+
+    @staticmethod
+    def _nested_get(config: dict, dotted_key: str):
+        """Return a value from a nested snap config dict addressed by a dotted key."""
+        node = config
+        for part in dotted_key.split("."):
+            if not isinstance(node, dict):
+                return None
+            node = node.get(part)
+        return node
+
     def _leader_elected(self, event: LeaderElectedEvent) -> None:
         # Just because we received this event does not mean we are
         # guaranteed to be the leader by the time we process it. See
@@ -1456,6 +2090,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     },
                 }
             )
+
+            # Now that we (may) have a leader IP, refresh any debarchive
+            # relations that depend on it for their root URL fallback.
+            self._update_debarchive_relations()
+            self._update_task_handler_relations()
 
         self._leader_changed()
 
@@ -1559,18 +2198,45 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if should_update:
             self._update_ready_status(restart_services=True)
 
-    def _configure_smtp(self, relay_host: str) -> None:
+    def _configure_smtp(
+        self,
+        relay_host: str,
+        transport_security: TransportSecurity,
+        has_credentials: bool,
+    ) -> None:
+        smtp_settings = {
+            "relayhost": relay_host,
+        }
+
+        if has_credentials:
+            smtp_settings.update(
+                {
+                    "smtp_sasl_auth_enable": "yes",
+                    "smtp_sasl_password_maps": f"hash:{POSTFIX_SASL_PASSWD}",
+                    "smtp_sasl_security_options": "noanonymous",
+                }
+            )
+
+        if transport_security == TransportSecurity.STARTTLS:
+            smtp_settings["smtp_tls_security_level"] = "encrypt"
+        elif transport_security == TransportSecurity.TLS:
+            smtp_settings["smtp_tls_security_level"] = "encrypt"
+            smtp_settings["smtp_tls_wrappermode"] = "yes"
 
         # Rewrite postfix config.
         with open(POSTFIX_CF, "r") as postfix_config_file:
             new_lines = []
             for line in postfix_config_file:
-                if line.startswith("relayhost ="):
-                    new_line = "relayhost = " + relay_host
+                key = line.split("=")[0].strip() if "=" in line else None
+                if key in smtp_settings:
+                    new_line = f"{key} = {smtp_settings.pop(key)}"
                 else:
                     new_line = line
 
                 new_lines.append(new_line)
+
+        for key, value in smtp_settings.items():
+            new_lines.append(f"{key} = {value}")
 
         with open(POSTFIX_CF, "w") as postfix_config_file:
             postfix_config_file.write("\n".join(new_lines))
@@ -1593,8 +2259,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             host = f"[{host}]"
         relay_host = f"{host}:{relation_data.port}" if relation_data.port else host
 
+        has_credentials = (
+            relation_data.user is not None and relation_data.password is not None
+        )
+
         logger.info("Configuring SMTP relay: %s", relay_host)
-        self._configure_smtp(relay_host)
+        self._configure_smtp(
+            relay_host, relation_data.transport_security, has_credentials
+        )
         self._write_sasl_passwd(relay_host, relation_data.user, relation_data.password)
 
     def _on_smtp_relation_broken(self, _) -> None:
@@ -1890,7 +2562,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = prev_status
 
     def _migrate_schema(self, event: ActionEvent) -> None:
-        if self._stored.running:
+        allow_conn = event.params.get("allow-connections")
+
+        if self._stored.running and not allow_conn:
             event.fail(
                 "Cannot migrate schema while running. Please run action"
                 " 'pause' prior to migration"
@@ -1901,9 +2575,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Migrating schemas...")
         event.log("Running schema migration...")
 
+        schema_args = [SCHEMA_SCRIPT]
+
+        if allow_conn and self._schema_supports_flag("--allow-connections"):
+            schema_args.append("--allow-connections")
+
         try:
             subprocess.run(
-                [SCHEMA_SCRIPT], check=True, text=True, env=get_modified_env_vars()
+                schema_args, check=True, text=True, env=get_modified_env_vars()
             )
         except CalledProcessError as e:
             logger.error("Schema migration failed with error code %s", e.returncode)

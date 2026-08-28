@@ -1,7 +1,7 @@
-description: Landscape Scalable Dev with legacy `pgsql` interface
+description: Landscape Scalable Dev in SaaS (non-self-hosted) mode
 applications:
   postgresql:
-    channel: 14/stable
+    channel: 16/stable
     charm: ch:postgresql
     num_units: 1
     options:
@@ -11,6 +11,7 @@ applications:
       plugin_debversion_enable: true
       plugin_pg_trgm_enable: true
       experimental_max_connections: 500
+    base: ubuntu@24.04
   rabbitmq-server:
     channel: latest/edge
     charm: ch:rabbitmq-server
@@ -18,15 +19,30 @@ applications:
     options:
       consumer-timeout: 259200000
   landscape-server:
-    charm: ../landscape-server_ubuntu@22.04-amd64.charm
+    charm: ../landscape-server_ubuntu@24.04-amd64.charm
     num_units: 1
     options:
-      landscape_ppa: ppa:landscape/self-hosted-24.04
-      min_install: True
+      deployment_mode: staging
+      demo_data: true
       root_url: https://landscape.local/
+      additional_service_config: |
+        [stores]
+        main = landscape-staging-main
+        account-1 = landscape-staging-account-1
+        resource-1 = landscape-staging-resource-1
+        package = landscape-staging-package
+        session = landscape-staging-session
+        session-autocommit = landscape-staging-session?isolation=autocommit
+        [api]
+        stores = main account-1 resource-1 package session session-autocommit
+        [system]
+        enable_subdomain_accounts = true
+        [features]
+        self_service_account_creation = true
+    base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy
-    channel: 2.8/edge
+    channel: 2.8/stable
     num_units: 1
     constraints: arch=amd64
   self-signed-certificates:
@@ -34,10 +50,11 @@ applications:
     channel: 1/stable
     num_units: 1
     constraints: arch=amd64
+
 relations:
   - [landscape-server:inbound-amqp, rabbitmq-server]
   - [landscape-server:outbound-amqp, rabbitmq-server]
-  - [landscape-server:db, postgresql:db-admin]
+  - [landscape-server:database, postgresql:database]
   - [haproxy:certificates, self-signed-certificates:certificates]
   - [haproxy:receive-ca-certs, self-signed-certificates:send-ca-cert]
   - [landscape-server:pingserver-haproxy-route, haproxy:haproxy-route]
@@ -45,6 +62,9 @@ relations:
   - [landscape-server:api-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route-tcp]
+  - [
+      landscape-server:ubuntu-installer-attach-haproxy-route,
+      haproxy:haproxy-route-tcp,
+    ]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]

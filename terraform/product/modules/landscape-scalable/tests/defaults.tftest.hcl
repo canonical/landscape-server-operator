@@ -14,18 +14,18 @@ run "validate_channel_defaults" {
   command = plan
 
   assert {
-    condition     = var.landscape_server.channel == "25.10/edge"
-    error_message = "Landscape Server channel should default to '25.10/edge'"
+    condition     = var.landscape_server.channel == "24.04/stable"
+    error_message = "Landscape Server channel should default to '24.04/stable'"
   }
 
   assert {
-    condition     = var.postgresql.channel == "16/stable"
-    error_message = "PostgreSQL channel should default to '16/stable'"
+    condition     = var.postgresql.channel == "14/stable"
+    error_message = "PostgreSQL channel should default to '14/stable'"
   }
 
   assert {
-    condition     = var.haproxy.channel == "2.8/edge"
-    error_message = "HAProxy channel should default to '2.8/edge'"
+    condition     = var.haproxy.channel == "latest/stable"
+    error_message = "HAProxy channel should default to 'latest/stable'"
   }
 
   assert {
@@ -67,8 +67,8 @@ run "validate_base_defaults" {
   }
 
   assert {
-    condition     = var.postgresql.base == "ubuntu@24.04"
-    error_message = "PostgreSQL base should default to 'ubuntu@24.04'"
+    condition     = var.postgresql.base == "ubuntu@22.04"
+    error_message = "PostgreSQL base should default to 'ubuntu@22.04'"
   }
 
   assert {
@@ -86,13 +86,8 @@ run "validate_config_defaults" {
   command = plan
 
   assert {
-    condition     = lookup(var.landscape_server.config, "autoregistration", null) == "true"
-    error_message = "Landscape Server should have autoregistration enabled by default"
-  }
-
-  assert {
-    condition     = lookup(var.landscape_server.config, "landscape_ppa", null) == "ppa:landscape/self-hosted-beta"
-    error_message = "Landscape Server should default to ppa:landscape/self-hosted-beta"
+    condition     = lookup(var.landscape_server.config, "landscape_ppa", null) == "ppa:landscape/self-hosted-24.04"
+    error_message = "Landscape Server should default to ppa:landscape/self-hosted-24.04"
   }
 
   assert {
@@ -106,8 +101,13 @@ run "validate_config_defaults" {
   }
 
   assert {
-    condition     = length(var.haproxy.config) == 0
-    error_message = "HAProxy should default to empty config"
+    condition     = lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
+    error_message = "HAProxy should default to ssl_cert = SELFSIGNED"
+  }
+
+  assert {
+    condition     = lookup(var.haproxy.config, "services", null) == ""
+    error_message = "HAProxy should default to empty services"
   }
 }
 
