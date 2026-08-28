@@ -7,7 +7,7 @@ landscape_server = {
     root_url                       = "https://landscape.local/"
     enable_hostagent_messenger     = "true"
     enable_ubuntu_installer_attach = "true"
-    outbox_snap_channel            = "latest/edge"
+    outbox_snap_channel            = "latest/stable"
     additional_service_config      = <<-EOT
       [features]
       computer_soft_deletion = true
@@ -33,14 +33,11 @@ haproxy = {
 }
 
 landscape_debarchive = {
-  channel = "latest/edge"
+  channel = "latest/stable"
   base    = "ubuntu@24.04"
 }
 
 landscape_task_handler = {
-  channel = "latest/edge"
+  channel = "latest/stable"
   base    = "ubuntu@24.04"
-  config = {
-    task-handler-snap-channel = "latest/edge"
-  }
 }
