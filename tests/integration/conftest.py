@@ -16,7 +16,7 @@ The name of the bundle used for integration testing.
 """
 
 
-WAIT_TIMEOUT_SECONDS = 60 * 20  # Landscape takes a long time to deploy.
+WAIT_TIMEOUT_SECONDS = 60 * 30  # Landscape takes a long time to deploy.
 
 
 USE_HOST_JUJU_MODEL = os.getenv("LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL", False)

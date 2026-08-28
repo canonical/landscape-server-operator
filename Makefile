@@ -17,7 +17,7 @@ test:
 
 .PHONY: integration-test
 integration-test:
-	uv run --group integration pytest -v --tb native tests/integration
+	uv run --group integration python -m pytest -v --tb native tests/integration
 
 .PHONY: coverage
 coverage:

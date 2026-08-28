@@ -31,7 +31,7 @@ applications:
     base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy
-    channel: 2.8/edge
+    channel: 2.8/stable
     num_units: 1
     constraints: arch=amd64
   self-signed-certificates:
