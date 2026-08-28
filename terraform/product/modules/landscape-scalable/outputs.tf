@@ -25,9 +25,8 @@ output "applications" {
     postgresql       = var.postgresql != null && length(module.postgresql) > 0 ? module.postgresql[0] : null
     rabbitmq_server  = var.rabbitmq_server != null && length(juju_application.rabbitmq_server) > 0 ? juju_application.rabbitmq_server[0] : null
     pgbouncer = var.pgbouncer != null ? {
-      server       = length(juju_application.pgbouncer_server) > 0 ? juju_application.pgbouncer_server[0] : null
-      debarchive   = length(juju_application.pgbouncer_debarchive) > 0 ? juju_application.pgbouncer_debarchive[0] : null
-      task_handler = length(juju_application.pgbouncer_task_handler) > 0 ? juju_application.pgbouncer_task_handler[0] : null
+      server     = length(juju_application.pgbouncer_server) > 0 ? juju_application.pgbouncer_server[0] : null
+      debarchive = length(juju_application.pgbouncer_debarchive) > 0 ? juju_application.pgbouncer_debarchive[0] : null
     } : null
 
     landscape_debarchive   = var.landscape_debarchive != null && length(juju_application.landscape_debarchive) > 0 ? juju_application.landscape_debarchive[0] : null
