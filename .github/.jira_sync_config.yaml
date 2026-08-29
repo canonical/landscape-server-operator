@@ -1,0 +1,67 @@
+settings:
+  # Jira project key to create the issue in
+  jira_project_key: "LNDENG"
+
+  # Dictionary mapping GitHub issue status to Jira issue status
+  status_mapping:
+    opened: Untriaged
+    closed: done
+    # (Optional) Use different status for GitHub issues closed as not planned (instead of closed as
+    # completed)
+    # https://github.blog/changelog/2022-03-10-the-new-github-issues-march-10th-update/#%F0%9F%95%B5%F0%9F%8F%BD%E2%99%80%EF%B8%8F-issue-closed-reasons
+    # If not specified, `closed` status will be used.
+    not_planned: rejected
+
+  # (Optional) Jira project components that should be attached to the created issue
+  # Component names are case-sensitive
+  # components:
+  #   - IoT
+  #   - DACH TT
+
+  # (Optional) GitHub labels. Only issues with one of those labels will be synchronized.
+  # If not specified, all issues will be synchronized
+  labels:
+    - bug
+    - custom
+
+  # (Optional) (Default: false) Add a new comment in GitHub with a link to Jira created issue
+  add_gh_comment: false
+
+  # (Optional) (Default: false) Add a 'synced-to-jira' label to newly created issues once a
+  # corresponding ticket is successfully created in Jira.
+  # This label serves as confirmation that the issue sync process was completed successfully.
+  add_gh_synced_label: false
+
+  # (Optional) (Default: true) Synchronize issue description from GitHub to Jira
+  sync_description: true
+
+  # (Optional) (Default: true) Synchronize comments from GitHub to Jira
+  sync_comments: true
+
+  # (Optional) (Default: None) Parent Epic key to link the issue to
+  epic_key: "MTC-296"
+
+  # (Optional) Dictionary mapping GitHub issue labels to Jira issue types.
+  # If label on the issue is not in specified list, this issue will be created as a Bug
+  label_mapping:
+    enhancement: Story
+
+  # (Optional) JIRA issue's summary
+  # This field can be used to customize the JIRA issue's summary (title).
+  # The value of the field will be passed to the python
+  # format() method to generate the JIRA summary. The GH issue
+  # variable will be captured in the format() method so that users can
+  # use GH issue attribute's values to build the JIRA summary.
+  # See GH issue definition :
+  # https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28
+  #
+  # Examples:
+  # to use fixed title "github issue": "github issue"
+  # to use GH issue title: "{issue.title}"
+  # to add prefix "[GitHub]" : "[GitHub] {issue.title}"
+  # to add user in the title (between square brackets): "[{issue.user.login}] {issue.title}"
+  summary: "{issue.title}"
+
+  # (Optional) set to True if GitHub issue labels should be synced to Jira.
+  # Note, that will override all the labels in Jira.
+  sync_labels: false
