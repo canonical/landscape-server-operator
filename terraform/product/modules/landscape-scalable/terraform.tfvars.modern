@@ -8,10 +8,6 @@ landscape_server = {
     enable_hostagent_messenger     = "true"
     enable_ubuntu_installer_attach = "true"
     outbox_snap_channel            = "latest/stable"
-    additional_service_config      = <<-EOT
-      [features]
-      computer_soft_deletion = true
-    EOT
   }
   base = "ubuntu@24.04"
 }
