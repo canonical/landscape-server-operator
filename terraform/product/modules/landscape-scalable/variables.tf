@@ -136,3 +136,41 @@ variable "tls_certificates" {
   default  = {}
   nullable = true
 }
+
+variable "landscape_debarchive" {
+  description = "Configuration for the Landscape Debarchive charm. Set to null to skip deployment."
+  type = object({
+    app_name    = optional(string, "landscape-debarchive")
+    channel     = optional(string, "latest/stable")
+    charm_name  = optional(string, "landscape-debarchive")
+    config      = optional(map(string), {})
+    constraints = optional(string, "arch=amd64")
+    resources   = optional(map(string), {})
+    revision    = optional(number)
+    base        = optional(string, "ubuntu@24.04")
+    units       = optional(number, 1)
+    machines    = optional(set(string))
+  })
+
+  default  = null
+  nullable = true
+}
+
+variable "landscape_task_handler" {
+  description = "Configuration for the Landscape Task Handler charm. Set to null to skip deployment."
+  type = object({
+    app_name    = optional(string, "landscape-task-handler")
+    channel     = optional(string, "latest/stable")
+    charm_name  = optional(string, "landscape-task-handler")
+    config      = optional(map(string), {})
+    constraints = optional(string, "arch=amd64")
+    resources   = optional(map(string), {})
+    revision    = optional(number)
+    base        = optional(string, "ubuntu@24.04")
+    units       = optional(number, 1)
+    machines    = optional(set(string))
+  })
+
+  default  = null
+  nullable = true
+}

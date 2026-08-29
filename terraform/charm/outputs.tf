@@ -16,6 +16,7 @@ output "provides" {
     debarchive           = "debarchive"
     hosted               = "hosted"
     nrpe_external_master = "nrpe-external-master"
+    task_handler         = "task-handler"
     website              = "website"
   }
 }
