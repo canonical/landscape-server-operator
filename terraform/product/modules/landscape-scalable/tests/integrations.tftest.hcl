@@ -175,6 +175,9 @@ run "test_modern_postgres_interfaces" {
     landscape_server = {
       revision = 278
     }
+    # Explicit null: terraform ~1.10 (CI) coerces null-defaulted object
+    # variables to their defaults instead of preserving null
+    pgbouncer = null
   }
 
   assert {
