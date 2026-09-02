@@ -152,7 +152,7 @@ variable "landscape_debarchive" {
     machines    = optional(set(string))
   })
 
-  default  = null
+  default  = {}
   nullable = true
 }
 
@@ -171,6 +171,6 @@ variable "landscape_task_handler" {
     machines    = optional(set(string))
   })
 
-  default  = null
+  default  = {}
   nullable = true
 }
