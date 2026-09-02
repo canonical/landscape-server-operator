@@ -88,7 +88,7 @@ The Landscape Server charm includes Terraform modules for deploying the `landsca
 To deploy Landscape using the product Terraform module instead of a bundle, use:
 
 ```sh
-make deploy-landscape-scalable
+make deploy-landscape-scalable-legacy
 ```
 
 This deploys the 24.04 (legacy) configuration: Landscape Server `24.04/stable`, PostgreSQL `14/stable`, and HAProxy `latest/stable`.
@@ -96,7 +96,7 @@ This deploys the 24.04 (legacy) configuration: Landscape Server `24.04/stable`, 
 To deploy the modern (26.04+) configuration instead:
 
 ```sh
-make deploy-landscape-scalable-modern
+make deploy-landscape-scalable
 ```
 
 This requires [`terraform`](https://developer.hashicorp.com/terraform/install) and [`jq`](https://jqlang.org/download/) to be installed. The recipe creates a Juju model, then runs `terraform apply` using the model's UUID (retrieved via `juju show-model` and `jq`). You can customise the model name:

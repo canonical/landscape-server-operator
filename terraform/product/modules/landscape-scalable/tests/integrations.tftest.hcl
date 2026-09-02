@@ -15,27 +15,6 @@ variables {
 run "test_local_has_modern_amqp_relations_true" {
   command = plan
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
     condition     = local.has_modern_amqp_relations == true
@@ -51,23 +30,9 @@ run "test_local_has_modern_amqp_relations_true" {
 run "test_local_has_modern_amqp_relations_false" {
   command = plan
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
+  variables {
+    landscape_server = {
+      channel = "24.04/stable"
     }
   }
 
@@ -109,6 +74,12 @@ run "test_modern_amqp_interfaces" {
 run "test_legacy_amqp_interface" {
   command = plan
 
+  variables {
+    landscape_server = {
+      channel = "24.04/stable"
+    }
+  }
+
   assert {
     condition = (
       local.has_modern_amqp_relations == false ?
@@ -139,27 +110,6 @@ run "validate_all_modules_created" {
     }
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        website                               = "website"
-        amqp                                  = "amqp"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
     condition     = module.landscape_server != null
@@ -191,34 +141,7 @@ run "validate_all_integrations_created" {
     }
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      provides = {
-        website = "website"
-      }
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      requires = {
-        reverseproxy     = "reverseproxy"
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 1
@@ -247,6 +170,12 @@ run "validate_all_integrations_created" {
 
 run "test_modern_postgres_interfaces" {
   command = plan
+
+  variables {
+    landscape_server = {
+      revision = 278
+    }
+  }
 
   assert {
     condition = (
@@ -290,7 +219,7 @@ run "test_haproxy_route_integrations_created" {
 
   variables {
     landscape_server = {
-      revision = 216
+      revision = 278
       config = {
         enable_hostagent_messenger     = "true"
         enable_ubuntu_installer_attach = "true"
@@ -300,28 +229,6 @@ run "test_haproxy_route_integrations_created" {
     haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-      }
-      has_modern_haproxy_interface = true
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 1
@@ -384,30 +291,12 @@ run "test_pgbouncer_integration" {
   command = plan
 
   variables {
+    landscape_server = {
+      revision = 278
+    }
     pgbouncer = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_application.pgbouncer_server) == 1
@@ -434,30 +323,12 @@ run "test_pgbouncer_skipped" {
   command = plan
 
   variables {
+    landscape_server = {
+      revision = 278
+    }
     pgbouncer = null
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_application.pgbouncer_server) == 0
@@ -487,34 +358,7 @@ run "test_legacy_haproxy_reverseproxy_created" {
     haproxy = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      provides = {
-        website = "website"
-      }
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      requires = {
-        reverseproxy     = "reverseproxy"
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 1
@@ -536,45 +380,13 @@ run "test_modern_haproxy_reverseproxy_not_created" {
   command = plan
 
   variables {
+    landscape_server = {
+      revision = 278
+    }
     haproxy = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      provides = {
-        haproxy_route = "haproxy-route"
-      }
-      requires = {
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 0
@@ -594,19 +406,6 @@ run "test_legacy_haproxy_skipped_when_null" {
     haproxy = null
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 0
@@ -619,54 +418,14 @@ run "test_other_landscape_charms_created" {
 
   variables {
     landscape_server = {
-      revision = 216
+      revision = 278
     }
     landscape_debarchive   = {}
     landscape_task_handler = {}
     haproxy                = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      provides = {
-        debarchive   = "debarchive"
-        task_handler = "task-handler"
-        website      = "website"
-      }
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      provides = {
-        haproxy_route = "haproxy-route"
-      }
-      requires = {
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_application.landscape_debarchive) == 1

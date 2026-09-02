@@ -94,8 +94,8 @@ terraform-test-all: check-terraform
 	cd terraform/product && $(MAKE) test-product-modules
 
 # Variables: MODEL_NAME (default: <dir>-build), SKIP_CLEAN (default: false), SKIP_ADD_MODEL (default: false)
-.PHONY: deploy-landscape-scalable
-deploy-landscape-scalable: check-terraform check-jq
+.PHONY: deploy-landscape-scalable-legacy
+deploy-landscape-scalable-legacy: check-terraform check-jq
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	@if [ "$(SKIP_ADD_MODEL)" != "true" ]; then $(MAKE) add-model; else echo "skipping add-model..."; fi
 	cd terraform/product/modules/landscape-scalable && \
@@ -104,12 +104,12 @@ deploy-landscape-scalable: check-terraform check-jq
 		-var model_uuid=$$(juju show-model $(MODEL_NAME) --format=json | jq -r '.["$(MODEL_NAME)"]["model-uuid"]')
 
 # Variables: MODEL_NAME (default: <dir>-build), SKIP_CLEAN (default: false), SKIP_ADD_MODEL (default: false)
-.PHONY: deploy-landscape-scalable-modern
-deploy-landscape-scalable-modern: check-terraform check-jq
+.PHONY: deploy-landscape-scalable
+deploy-landscape-scalable: check-terraform check-jq
 	@if [ "$(SKIP_CLEAN)" != "true" ]; then $(MAKE) clean; else echo "skipping clean..."; fi
 	@if [ "$(SKIP_ADD_MODEL)" != "true" ]; then $(MAKE) add-model; else echo "skipping add-model..."; fi
 	cd terraform/product/modules/landscape-scalable && \
 	terraform init && \
 	terraform apply -auto-approve \
 		-var model_uuid=$$(juju show-model $(MODEL_NAME) --format=json | jq -r '.["$(MODEL_NAME)"]["model-uuid"]') \
-	    -var-file=terraform.tfvars.modern
+	    -var-file=terraform.tfvars
