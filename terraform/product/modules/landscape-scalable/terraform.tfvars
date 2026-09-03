@@ -1,9 +1,9 @@
+// Modern deloyment (26.04)
 landscape_server = {
   channel = "26.04/stable"
   config = {
     autoregistration               = "true"
     landscape_ppa                  = "ppa:landscape/self-hosted-26.04"
-    min_install                    = "true"
     root_url                       = "https://landscape.local/"
     enable_hostagent_messenger     = "true"
     enable_ubuntu_installer_attach = "true"
