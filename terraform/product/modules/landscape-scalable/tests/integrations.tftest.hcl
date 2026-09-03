@@ -421,7 +421,9 @@ run "test_other_landscape_charms_created" {
 
   variables {
     landscape_server = {
-      revision = 278
+      # rev 447: first revision with both the debarchive (added at 357) and
+      # task-handler (added at 447) relations
+      revision = 447
     }
     landscape_debarchive   = {}
     landscape_task_handler = {}
@@ -478,6 +480,79 @@ run "test_other_landscape_charms_created" {
   assert {
     condition     = length(juju_application.tls_certificates) == 1
     error_message = "tls-certificates should be deployed to satisfy task-handler certs"
+  }
+}
+
+run "test_debarchive_created_task_handler_skipped_between_thresholds" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      # rev 400: debarchive relation exists (added at 357) but the
+      # task-handler relation does not yet (added at 447)
+      revision = 400
+    }
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+    haproxy                = {}
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 1
+    error_message = "landscape-debarchive should be deployed once its relation exists, independent of task-handler"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 0
+    error_message = "landscape-task-handler should not be deployed before its relation exists, even if debarchive's does"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_landscape_server) == 1
+    error_message = "debarchive → landscape-server integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_landscape_server) == 0
+    error_message = "task-handler → landscape-server integration should not be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_certificates) == 0
+    error_message = "task-handler → tls-certificates integration should not be created since task-handler is not deployed"
+  }
+}
+
+run "test_other_landscape_charms_skipped_for_legacy_revision" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      revision = 216
+    }
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+    haproxy                = {}
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 0
+    error_message = "landscape-debarchive should not be deployed when landscape-server revision predates the debarchive relation"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 0
+    error_message = "landscape-task-handler should not be deployed when landscape-server revision predates the task-handler relation"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_landscape_server) == 0
+    error_message = "debarchive → landscape-server integration should not be created for legacy revisions"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_landscape_server) == 0
+    error_message = "task-handler → landscape-server integration should not be created for legacy revisions"
   }
 }
 
