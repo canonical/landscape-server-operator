@@ -1,3 +1,4 @@
+// Modern deloyment (26.04)
 landscape_server = {
   channel = "26.04/stable"
   config = {
