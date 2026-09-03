@@ -29,7 +29,7 @@ In a product module directory, such as `modules/landscape-scalable`, initialize 
 terraform init
 ```
 
-Then, modify `terraform.tfvars.example` per `variables.tf` to pass the model name and customize the module.
+Then, modify `terraform.tfvars` (or `terraform.legacy.tfvars` for the legacy deployment topology) per `variables.tf` to pass the model name and customize the module.
 
 Preview the changes:
 
