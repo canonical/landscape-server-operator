@@ -37,12 +37,11 @@ terraform apply -var model_uuid=<model-uuid>
 ```
 
 > [!TIP]
-> Customize the module inputs with a `terraform.tfvars` file. An example is `terraform.tfvars.example`, which can be used after removing the `.example` extension.
+> Customize the module inputs with the included `terraform.tfvars` file. To use the legacy configuration, use `terraform.legacy.tfvars`. You can specify the variable file used by providing it to `terraform plan/apply`:
 >
 > ```sh
-> cp terraform.tfvars.example terraform.tfvars
 > terraform init
-> terraform apply
+> terraform apply -var-file=terraform.tfvars # or terraform.legacy.tfvars
 > ```
 
 After deploying the module to the model, use the `juju status` command to monitor the lifecycle:
