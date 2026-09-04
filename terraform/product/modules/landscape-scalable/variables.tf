@@ -9,10 +9,12 @@ variable "landscape_server" {
   description = "Configuration for the Landscape Server charm."
   type = object({
     app_name   = optional(string, "landscape-server")
-    channel    = optional(string, "24.04/stable")
+    channel    = optional(string, "26.04/stable")
     charm_name = optional(string, "landscape-server")
     config = optional(map(string), {
-      landscape_ppa = "ppa:landscape/self-hosted-24.04"
+      landscape_ppa    = "ppa:landscape/self-hosted-26.04"
+      root_url         = "https://landscape.local/"
+      autoregistration = "true"
     })
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
@@ -28,7 +30,7 @@ variable "postgresql" {
   description = "Configuration for the PostgreSQL charm. Set to null to skip deployment."
   type = object({
     app_name = optional(string, "postgresql")
-    channel  = optional(string, "14/stable")
+    channel  = optional(string, "16/stable")
     config = optional(map(string), {
       plugin_plpython3u_enable     = "true"
       plugin_ltree_enable          = "true"
@@ -40,7 +42,7 @@ variable "postgresql" {
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
     revision    = optional(number)
-    base        = optional(string, "ubuntu@22.04")
+    base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
     machines    = optional(set(string))
   })
@@ -53,14 +55,9 @@ variable "postgresql" {
 variable "haproxy" {
   description = "Configuration for the HAProxy charm. Set to null to skip deployment."
   type = object({
-    app_name = optional(string, "haproxy")
-    channel  = optional(string, "latest/stable")
-    config = optional(map(string), {
-      default_timeouts            = "queue 60000, connect 5000, client 120000, server 120000"
-      global_default_bind_options = "no-tlsv10"
-      services                    = ""
-      ssl_cert                    = "SELFSIGNED"
-    })
+    app_name    = optional(string, "haproxy")
+    channel     = optional(string, "2.8/stable")
+    config      = optional(map(string), {})
     constraints = optional(string, "arch=amd64")
     resources   = optional(map(string), {})
     revision    = optional(number)
@@ -130,6 +127,44 @@ variable "tls_certificates" {
     constraints = optional(string, "arch=amd64")
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
+    machines    = optional(set(string))
+  })
+
+  default  = {}
+  nullable = true
+}
+
+variable "landscape_debarchive" {
+  description = "Configuration for the Landscape Debarchive charm. Set to null to skip deployment."
+  type = object({
+    app_name    = optional(string, "landscape-debarchive")
+    channel     = optional(string, "latest/stable")
+    charm_name  = optional(string, "landscape-debarchive")
+    config      = optional(map(string), {})
+    constraints = optional(string, "arch=amd64")
+    resources   = optional(map(string), {})
+    revision    = optional(number)
+    base        = optional(string, "ubuntu@24.04")
+    units       = optional(number, 1)
+    machines    = optional(set(string))
+  })
+
+  default  = {}
+  nullable = true
+}
+
+variable "landscape_task_handler" {
+  description = "Configuration for the Landscape Task Handler charm. Set to null to skip deployment."
+  type = object({
+    app_name    = optional(string, "landscape-task-handler")
+    channel     = optional(string, "latest/stable")
+    charm_name  = optional(string, "landscape-task-handler")
+    config      = optional(map(string), {})
+    constraints = optional(string, "arch=amd64")
+    resources   = optional(map(string), {})
+    revision    = optional(number)
+    base        = optional(string, "ubuntu@24.04")
+    units       = optional(number, 1)
     machines    = optional(set(string))
   })
 

@@ -1,10 +1,10 @@
 # Copyright 2026 Canonical Ltd.
-name: Release `main` to `26.04/edge` channel on Charmhub
+name: Release the `26.04` branch to `26.04/edge` channel on Charmhub
 
 on:
     push:
         branches:
-            - main
+            - "26.04"
 
         paths-ignore:
             - "tests/**"

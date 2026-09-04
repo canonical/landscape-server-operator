@@ -8,16 +8,46 @@ output "app_name" {
   value       = juju_application.landscape_server.name
 }
 
+locals {
+  # The debarchive relation was added in rev 357 (first release after PR #150,
+  # merged 2026-06-09), well before the task-handler relation below
+  legacy_debarchive_channel_tracks = ["latest", "24.04"]
+  legacy_debarchive_channel        = anytrue([for l in local.legacy_debarchive_channel_tracks : startswith(var.channel, l)])
+  debarchive_updated_rev           = 357
+  has_debarchive_relation          = !local.legacy_debarchive_channel && (var.revision != null ? var.revision >= local.debarchive_updated_rev : true)
+
+  # The task-handler relation was added later, in rev 447 (first release
+  # after PR #168, merged 2026-07-17)
+  legacy_task_handler_channel_tracks = ["latest", "24.04"]
+  legacy_task_handler_channel        = anytrue([for l in local.legacy_task_handler_channel_tracks : startswith(var.channel, l)])
+  task_handler_updated_rev           = 447
+  has_task_handler_relation          = !local.legacy_task_handler_channel && (var.revision != null ? var.revision >= local.task_handler_updated_rev : true)
+
+  companion_relations = merge(
+    local.has_debarchive_relation ? { debarchive = "debarchive" } : {},
+    local.has_task_handler_relation ? { task_handler = "task-handler" } : {},
+  )
+}
+
 output "provides" {
   description = "Map of integration endpoints this charm provides."
-  value = {
+  value = merge({
     cos_agent            = "cos-agent"
     data                 = "data"
-    debarchive           = "debarchive"
     hosted               = "hosted"
     nrpe_external_master = "nrpe-external-master"
     website              = "website"
-  }
+  }, local.companion_relations)
+}
+
+output "has_debarchive_relation" {
+  description = "Indicates whether the deployed revision provides the debarchive relation (added in rev 357)."
+  value       = local.has_debarchive_relation
+}
+
+output "has_task_handler_relation" {
+  description = "Indicates whether the deployed revision provides the task-handler relation (added in rev 447)."
+  value       = local.has_task_handler_relation
 }
 
 locals {

@@ -109,8 +109,8 @@ run "provides_relations" {
 
   variables {
     model_uuid = uuid()
-    channel    = "25.10/edge"
-    revision   = 200
+    channel    = "26.04/stable"
+    revision   = 447
     base       = "ubuntu@24.04"
   }
 
@@ -142,6 +142,11 @@ run "provides_relations" {
   assert {
     condition     = output.provides.debarchive == "debarchive"
     error_message = "Should provide debarchive relation"
+  }
+
+  assert {
+    condition     = output.provides.task_handler == "task-handler"
+    error_message = "Should provide task-handler relation"
   }
 }
 
@@ -365,6 +370,152 @@ run "external_haproxy_null_revision" {
   }
 }
 
+
+run "debarchive_relation_present_at_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 357
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_debarchive_relation == true
+    error_message = "Rev 357 is the first published revision with the debarchive relation"
+  }
+
+  assert {
+    condition     = output.provides.debarchive == "debarchive"
+    error_message = "Rev 357 should provide the debarchive relation"
+  }
+}
+
+run "debarchive_relation_absent_below_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 356
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_debarchive_relation == false
+    error_message = "Rev 356 predates the debarchive relation"
+  }
+
+  assert {
+    condition     = !can(output.provides.debarchive)
+    error_message = "Rev 356 should not provide the debarchive relation"
+  }
+}
+
+run "task_handler_relation_absent_between_debarchive_and_task_handler_thresholds" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 400
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_debarchive_relation == true
+    error_message = "Rev 400 postdates the debarchive relation (added at 357)"
+  }
+
+  assert {
+    condition     = output.has_task_handler_relation == false
+    error_message = "Rev 400 predates the task-handler relation (added at 447), even though debarchive is present"
+  }
+
+  assert {
+    condition     = output.provides.debarchive == "debarchive"
+    error_message = "Rev 400 should provide the debarchive relation"
+  }
+
+  assert {
+    condition     = !can(output.provides.task_handler)
+    error_message = "Rev 400 should not provide the task-handler relation"
+  }
+}
+
+run "task_handler_relation_present_at_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 447
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_task_handler_relation == true
+    error_message = "Rev 447 is the first published revision with the task-handler relation"
+  }
+
+  assert {
+    condition     = output.provides.task_handler == "task-handler"
+    error_message = "Rev 447 should provide the task-handler relation"
+  }
+}
+
+run "companion_relations_absent_for_legacy_channel" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "24.04/stable"
+    revision   = 500
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_debarchive_relation == false
+    error_message = "Legacy 24.04 channel should not have the debarchive relation regardless of revision"
+  }
+
+  assert {
+    condition     = output.has_task_handler_relation == false
+    error_message = "Legacy 24.04 channel should not have the task-handler relation regardless of revision"
+  }
+
+  assert {
+    condition     = !can(output.provides.debarchive)
+    error_message = "Legacy channels should not provide the debarchive relation"
+  }
+
+  assert {
+    condition     = !can(output.provides.task_handler)
+    error_message = "Legacy channels should not provide the task-handler relation"
+  }
+}
+
+run "companion_relations_null_revision_modern_channel" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = null
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.has_debarchive_relation == true
+    error_message = "Null revision on a modern channel should have the debarchive relation (latest will be deployed)"
+  }
+
+  assert {
+    condition     = output.has_task_handler_relation == true
+    error_message = "Null revision on a modern channel should have the task-handler relation (latest will be deployed)"
+  }
+}
 
 run "has_modern_haproxy_interface_true_for_modern" {
   command = plan

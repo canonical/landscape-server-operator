@@ -15,27 +15,6 @@ variables {
 run "test_local_has_modern_amqp_relations_true" {
   command = plan
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
     condition     = local.has_modern_amqp_relations == true
@@ -51,23 +30,9 @@ run "test_local_has_modern_amqp_relations_true" {
 run "test_local_has_modern_amqp_relations_false" {
   command = plan
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
+  variables {
+    landscape_server = {
+      channel = "24.04/stable"
     }
   }
 
@@ -109,6 +74,12 @@ run "test_modern_amqp_interfaces" {
 run "test_legacy_amqp_interface" {
   command = plan
 
+  variables {
+    landscape_server = {
+      channel = "24.04/stable"
+    }
+  }
+
   assert {
     condition = (
       local.has_modern_amqp_relations == false ?
@@ -139,27 +110,6 @@ run "validate_all_modules_created" {
     }
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        website                               = "website"
-        amqp                                  = "amqp"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
     condition     = module.landscape_server != null
@@ -191,34 +141,7 @@ run "validate_all_integrations_created" {
     }
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      provides = {
-        website = "website"
-      }
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      requires = {
-        reverseproxy     = "reverseproxy"
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 1
@@ -247,6 +170,15 @@ run "validate_all_integrations_created" {
 
 run "test_modern_postgres_interfaces" {
   command = plan
+
+  variables {
+    landscape_server = {
+      revision = 278
+    }
+    # Explicit null: terraform ~1.10 (CI) coerces null-defaulted object
+    # variables to their defaults instead of preserving null
+    pgbouncer = null
+  }
 
   assert {
     condition = (
@@ -290,7 +222,7 @@ run "test_haproxy_route_integrations_created" {
 
   variables {
     landscape_server = {
-      revision = 216
+      revision = 278
       config = {
         enable_hostagent_messenger     = "true"
         enable_ubuntu_installer_attach = "true"
@@ -300,28 +232,6 @@ run "test_haproxy_route_integrations_created" {
     haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-      }
-      has_modern_haproxy_interface = true
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 1
@@ -384,33 +294,15 @@ run "test_pgbouncer_integration" {
   command = plan
 
   variables {
+    landscape_server = {
+      revision = 278
+    }
     pgbouncer = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
-    condition     = length(juju_application.pgbouncer) == 1
+    condition     = length(juju_application.pgbouncer_server) == 1
     error_message = "PgBouncer application should be deployed when pgbouncer is set"
   }
 
@@ -420,7 +312,7 @@ run "test_pgbouncer_integration" {
   }
 
   assert {
-    condition     = length(juju_integration.pgbouncer_postgresql) == 1
+    condition     = length(juju_integration.pgbouncer_server_postgresql) == 1
     error_message = "pgbouncer → postgresql backend-database integration should be created"
   }
 
@@ -434,33 +326,15 @@ run "test_pgbouncer_skipped" {
   command = plan
 
   variables {
+    landscape_server = {
+      revision = 278
+    }
     pgbouncer = null
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-      }
-    }
-  }
 
   assert {
-    condition     = length(juju_application.pgbouncer) == 0
+    condition     = length(juju_application.pgbouncer_server) == 0
     error_message = "PgBouncer application should not be deployed when pgbouncer is null"
   }
 
@@ -470,7 +344,7 @@ run "test_pgbouncer_skipped" {
   }
 
   assert {
-    condition     = length(juju_integration.pgbouncer_postgresql) == 0
+    condition     = length(juju_integration.pgbouncer_server_postgresql) == 0
     error_message = "pgbouncer → postgresql integration should not be created when pgbouncer is null"
   }
 
@@ -487,34 +361,7 @@ run "test_legacy_haproxy_reverseproxy_created" {
     haproxy = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      provides = {
-        website = "website"
-      }
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      requires = {
-        reverseproxy     = "reverseproxy"
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 1
@@ -536,45 +383,13 @@ run "test_modern_haproxy_reverseproxy_not_created" {
   command = plan
 
   variables {
+    landscape_server = {
+      revision = 278
+    }
     haproxy = {}
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = true
-      requires = {
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        repository_haproxy_route              = "repository-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      provides = {
-        haproxy_route = "haproxy-route"
-      }
-      requires = {
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 0
@@ -594,22 +409,178 @@ run "test_legacy_haproxy_skipped_when_null" {
     haproxy = null
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
   assert {
     condition     = length(juju_integration.landscape_server_haproxy) == 0
     error_message = "No haproxy integration should be created when haproxy is null"
+  }
+}
+
+run "test_other_landscape_charms_created" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      # rev 447: first revision with both the debarchive (added at 357) and
+      # task-handler (added at 447) relations
+      revision = 447
+    }
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+    haproxy                = {}
+  }
+
+
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 1
+    error_message = "landscape-debarchive application should be deployed when set"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 1
+    error_message = "landscape-task-handler application should be deployed when set"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_landscape_server) == 1
+    error_message = "debarchive → landscape-server integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_postgresql) == 1
+    error_message = "debarchive → postgresql integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_haproxy_route_in_model) == 1
+    error_message = "debarchive → haproxy route (in-model) should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_landscape_server) == 1
+    error_message = "task-handler → landscape-server integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_postgresql) == 1
+    error_message = "task-handler → postgresql task-db integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_certificates) == 1
+    error_message = "task-handler → tls-certificates integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_grpc_haproxy_route_in_model) == 1
+    error_message = "task-handler → haproxy grpc route (in-model) should be created"
+  }
+
+  assert {
+    condition     = length(juju_application.tls_certificates) == 1
+    error_message = "tls-certificates should be deployed to satisfy task-handler certs"
+  }
+}
+
+run "test_debarchive_created_task_handler_skipped_between_thresholds" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      # rev 400: debarchive relation exists (added at 357) but the
+      # task-handler relation does not yet (added at 447)
+      revision = 400
+    }
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+    haproxy                = {}
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 1
+    error_message = "landscape-debarchive should be deployed once its relation exists, independent of task-handler"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 0
+    error_message = "landscape-task-handler should not be deployed before its relation exists, even if debarchive's does"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_landscape_server) == 1
+    error_message = "debarchive → landscape-server integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_landscape_server) == 0
+    error_message = "task-handler → landscape-server integration should not be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_certificates) == 0
+    error_message = "task-handler → tls-certificates integration should not be created since task-handler is not deployed"
+  }
+}
+
+run "test_other_landscape_charms_skipped_for_legacy_revision" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      revision = 216
+    }
+    landscape_debarchive   = {}
+    landscape_task_handler = {}
+    haproxy                = {}
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 0
+    error_message = "landscape-debarchive should not be deployed when landscape-server revision predates the debarchive relation"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 0
+    error_message = "landscape-task-handler should not be deployed when landscape-server revision predates the task-handler relation"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_landscape_server) == 0
+    error_message = "debarchive → landscape-server integration should not be created for legacy revisions"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_landscape_server) == 0
+    error_message = "task-handler → landscape-server integration should not be created for legacy revisions"
+  }
+}
+
+run "test_other_landscape_charms_skipped" {
+  command = plan
+
+  variables {
+    landscape_debarchive   = null
+    landscape_task_handler = null
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_debarchive) == 0
+    error_message = "landscape-debarchive should not be deployed when null"
+  }
+
+  assert {
+    condition     = length(juju_application.landscape_task_handler) == 0
+    error_message = "landscape-task-handler should not be deployed when null"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_debarchive_postgresql) == 0
+    error_message = "debarchive postgresql integration should not be created when null"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_task_handler_certificates) == 0
+    error_message = "task-handler certificates integration should not be created when null"
   }
 }
