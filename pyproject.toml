@@ -25,7 +25,7 @@ dev = [
   "urllib3==2.6.3",
 ]
 integration = [
-  "h2==4.3.0",
+  "h2==4.4.1",
   "jubilant==1.6.2",
   "requests==2.33.0",
   "urllib3==2.6.3",
