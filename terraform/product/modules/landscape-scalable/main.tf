@@ -10,7 +10,8 @@ module "landscape_server" {
   revision    = var.landscape_server.revision
   base        = var.landscape_server.base
   charm_name  = var.landscape_server.charm_name
-  units       = var.landscape_server.units
+  units       = var.landscape_server.machines == null ? var.landscape_server.units : null
+  machines    = var.landscape_server.machines
 }
 
 module "haproxy" {

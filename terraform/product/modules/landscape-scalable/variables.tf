@@ -19,6 +19,7 @@ variable "landscape_server" {
     revision    = optional(number)
     base        = optional(string, "ubuntu@24.04")
     units       = optional(number, 1)
+    machines    = optional(set(string))
   })
 
   default = {}
