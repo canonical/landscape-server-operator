@@ -426,13 +426,18 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 }
 
 locals {
-  has_modern_pg_interface    = can(module.landscape_server.requires.database)
-  has_haproxy_route          = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
+  has_modern_pg_interface = can(module.landscape_server.requires.database)
+  has_haproxy_route       = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
+  # The debarchive and task-handler relations were added to landscape-server
+  # at different times (rev 357 and rev 447 respectively); skip the companion
+  # charms when the deployed revision/channel predates its relation
+  deploy_debarchive          = var.landscape_debarchive != null && module.landscape_server.has_debarchive_relation
+  deploy_task_handler        = var.landscape_task_handler != null && module.landscape_server.has_task_handler_relation
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
 
   # deploy the certificates app if haproxy or task-handler is present
-  deploy_tls_certificates = var.tls_certificates != null && ((var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route) || var.landscape_task_handler != null)
+  deploy_tls_certificates = var.tls_certificates != null && ((var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route) || local.deploy_task_handler)
 }
 
 
@@ -542,7 +547,7 @@ resource "juju_application" "pgbouncer_debarchive" {
     ignore_changes = [units]
   }
 
-  count = var.pgbouncer != null && var.landscape_debarchive != null && local.has_modern_pg_interface ? 1 : 0
+  count = var.pgbouncer != null && local.deploy_debarchive && local.has_modern_pg_interface ? 1 : 0
 }
 
 resource "juju_application" "pgbouncer_server" {
@@ -580,7 +585,7 @@ resource "juju_integration" "landscape_debarchive_pgbouncer" {
 
   depends_on = [juju_application.landscape_debarchive, juju_application.pgbouncer_debarchive]
 
-  count = var.pgbouncer != null && var.landscape_debarchive != null && local.has_modern_pg_interface ? 1 : 0
+  count = var.pgbouncer != null && local.deploy_debarchive && local.has_modern_pg_interface ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_pgbouncer" {
@@ -616,7 +621,7 @@ resource "juju_integration" "pgbouncer_debarchive_postgresql" {
 
   depends_on = [juju_application.pgbouncer_debarchive, module.postgresql]
 
-  count = var.pgbouncer != null && var.landscape_debarchive != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+  count = var.pgbouncer != null && local.deploy_debarchive && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
 }
 
 resource "juju_integration" "pgbouncer_server_postgresql" {
@@ -654,7 +659,7 @@ resource "juju_application" "landscape_debarchive" {
     base     = var.landscape_debarchive.base
   }
 
-  count = var.landscape_debarchive != null ? 1 : 0
+  count = local.deploy_debarchive ? 1 : 0
 }
 
 resource "juju_integration" "landscape_debarchive_landscape_server" {
@@ -672,7 +677,7 @@ resource "juju_integration" "landscape_debarchive_landscape_server" {
 
   depends_on = [juju_application.landscape_debarchive, module.landscape_server]
 
-  count = var.landscape_debarchive != null ? 1 : 0
+  count = local.deploy_debarchive ? 1 : 0
 }
 
 resource "juju_integration" "landscape_debarchive_postgresql" {
@@ -690,7 +695,7 @@ resource "juju_integration" "landscape_debarchive_postgresql" {
 
   depends_on = [juju_application.landscape_debarchive, module.postgresql]
 
-  count = var.landscape_debarchive != null && var.postgresql != null ? 1 : 0
+  count = local.deploy_debarchive && var.postgresql != null ? 1 : 0
 }
 
 resource "juju_integration" "landscape_debarchive_haproxy_route_in_model" {
@@ -708,7 +713,7 @@ resource "juju_integration" "landscape_debarchive_haproxy_route_in_model" {
 
   depends_on = [juju_application.landscape_debarchive, module.haproxy]
 
-  count = var.landscape_debarchive != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+  count = local.deploy_debarchive && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_debarchive_haproxy_route_lbaas" {
@@ -725,7 +730,7 @@ resource "juju_integration" "landscape_debarchive_haproxy_route_lbaas" {
 
   depends_on = [juju_application.landscape_debarchive]
 
-  count = var.landscape_debarchive != null && var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+  count = local.deploy_debarchive && var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_application" "landscape_task_handler" {
@@ -745,7 +750,7 @@ resource "juju_application" "landscape_task_handler" {
     base     = var.landscape_task_handler.base
   }
 
-  count = var.landscape_task_handler != null ? 1 : 0
+  count = local.deploy_task_handler ? 1 : 0
 }
 
 resource "juju_integration" "landscape_task_handler_landscape_server" {
@@ -763,7 +768,7 @@ resource "juju_integration" "landscape_task_handler_landscape_server" {
 
   depends_on = [juju_application.landscape_task_handler, module.landscape_server]
 
-  count = var.landscape_task_handler != null ? 1 : 0
+  count = local.deploy_task_handler ? 1 : 0
 }
 
 resource "juju_integration" "landscape_task_handler_postgresql" {
@@ -781,7 +786,7 @@ resource "juju_integration" "landscape_task_handler_postgresql" {
 
   depends_on = [juju_application.landscape_task_handler, module.postgresql]
 
-  count = var.landscape_task_handler != null && var.postgresql != null ? 1 : 0
+  count = local.deploy_task_handler && var.postgresql != null ? 1 : 0
 }
 
 resource "juju_integration" "landscape_task_handler_certificates" {
@@ -798,7 +803,7 @@ resource "juju_integration" "landscape_task_handler_certificates" {
 
   depends_on = [juju_application.landscape_task_handler, juju_application.tls_certificates]
 
-  count = var.landscape_task_handler != null && var.tls_certificates != null ? 1 : 0
+  count = local.deploy_task_handler && var.tls_certificates != null ? 1 : 0
 }
 
 resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_in_model" {
@@ -816,7 +821,7 @@ resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_in_model"
 
   depends_on = [juju_application.landscape_task_handler, module.haproxy]
 
-  count = var.landscape_task_handler != null && var.haproxy != null && var.haproxy_route_tcp_offer_url == null ? 1 : 0
+  count = local.deploy_task_handler && var.haproxy != null && var.haproxy_route_tcp_offer_url == null ? 1 : 0
 }
 
 resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_lbaas" {
@@ -833,5 +838,5 @@ resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_lbaas" {
 
   depends_on = [juju_application.landscape_task_handler]
 
-  count = var.landscape_task_handler != null && var.haproxy_route_tcp_offer_url != null ? 1 : 0
+  count = local.deploy_task_handler && var.haproxy_route_tcp_offer_url != null ? 1 : 0
 }

@@ -14,18 +14,18 @@ run "validate_channel_defaults" {
   command = plan
 
   assert {
-    condition     = var.landscape_server.channel == "24.04/stable"
-    error_message = "Landscape Server channel should default to '24.04/stable'"
+    condition     = var.landscape_server.channel == "26.04/stable"
+    error_message = "Landscape Server channel should default to '26.04/stable'"
   }
 
   assert {
-    condition     = var.postgresql.channel == "14/stable"
-    error_message = "PostgreSQL channel should default to '14/stable'"
+    condition     = var.postgresql.channel == "16/stable"
+    error_message = "PostgreSQL channel should default to '16/stable'"
   }
 
   assert {
-    condition     = var.haproxy.channel == "latest/stable"
-    error_message = "HAProxy channel should default to 'latest/stable'"
+    condition     = var.haproxy.channel == "2.8/stable"
+    error_message = "HAProxy channel should default to '2.8/stable'"
   }
 
   assert {
@@ -77,8 +77,8 @@ run "validate_base_defaults" {
   }
 
   assert {
-    condition     = var.postgresql.base == "ubuntu@22.04"
-    error_message = "PostgreSQL base should default to 'ubuntu@22.04'"
+    condition     = var.postgresql.base == "ubuntu@24.04"
+    error_message = "PostgreSQL base should default to 'ubuntu@24.04'"
   }
 
   assert {
@@ -96,8 +96,8 @@ run "validate_config_defaults" {
   command = plan
 
   assert {
-    condition     = lookup(var.landscape_server.config, "landscape_ppa", null) == "ppa:landscape/self-hosted-24.04"
-    error_message = "Landscape Server should default to ppa:landscape/self-hosted-24.04"
+    condition     = lookup(var.landscape_server.config, "landscape_ppa", null) == "ppa:landscape/self-hosted-26.04"
+    error_message = "Landscape Server should default to ppa:landscape/self-hosted-26.04"
   }
 
   assert {
@@ -111,13 +111,8 @@ run "validate_config_defaults" {
   }
 
   assert {
-    condition     = lookup(var.haproxy.config, "ssl_cert", null) == "SELFSIGNED"
-    error_message = "HAProxy should default to ssl_cert = SELFSIGNED"
-  }
-
-  assert {
-    condition     = lookup(var.haproxy.config, "services", null) == ""
-    error_message = "HAProxy should default to empty services"
+    condition     = length(var.haproxy.config) == 0
+    error_message = "HAProxy should default to empty config"
   }
 }
 
@@ -145,22 +140,22 @@ run "validate_constraints_defaults" {
   }
 }
 
-run "validate_debarchive_null_by_default" {
+run "validate_landscape_charms_deployed_by_default" {
   command = plan
 
   assert {
-    condition     = var.landscape_debarchive == null
-    error_message = "landscape-debarchive should default to null (opt-in)"
+    condition     = var.landscape_debarchive != null
+    error_message = "landscape-debarchive should be deployed by default (set to null to opt out)"
+  }
+
+  assert {
+    condition     = var.landscape_task_handler != null
+    error_message = "landscape-task-handler should be deployed by default (set to null to opt out)"
   }
 }
 
 run "validate_other_landscape_charms_default_to_stable" {
   command = plan
-
-  variables {
-    landscape_debarchive   = {}
-    landscape_task_handler = {}
-  }
 
   assert {
     condition     = var.landscape_debarchive.channel == "latest/stable"

@@ -21,34 +21,7 @@ run "validate_output_structure" {
     }
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name                     = "landscape-server"
-      has_modern_haproxy_interface = false
-      provides = {
-        website = "website"
-      }
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-      requires = {
-        reverseproxy     = "reverseproxy"
-        certificates     = "certificates"
-        receive_ca_certs = "receive-ca-certs"
-      }
-    }
-  }
 
   assert {
     condition     = output.applications != null
