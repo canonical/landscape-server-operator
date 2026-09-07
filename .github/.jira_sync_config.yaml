@@ -20,17 +20,16 @@ settings:
 
   # (Optional) GitHub labels. Only issues with one of those labels will be synchronized.
   # If not specified, all issues will be synchronized
-  labels:
-    - bug
-    - custom
+  # labels:
+  #   - bug
 
   # (Optional) (Default: false) Add a new comment in GitHub with a link to Jira created issue
-  add_gh_comment: false
+  add_gh_comment: true
 
   # (Optional) (Default: false) Add a 'synced-to-jira' label to newly created issues once a
   # corresponding ticket is successfully created in Jira.
   # This label serves as confirmation that the issue sync process was completed successfully.
-  add_gh_synced_label: false
+  add_gh_synced_label: true
 
   # (Optional) (Default: true) Synchronize issue description from GitHub to Jira
   sync_description: true
@@ -39,12 +38,15 @@ settings:
   sync_comments: true
 
   # (Optional) (Default: None) Parent Epic key to link the issue to
-  epic_key: "MTC-296"
+  # epic_key: "MTC-296"
 
   # (Optional) Dictionary mapping GitHub issue labels to Jira issue types.
   # If label on the issue is not in specified list, this issue will be created as a Bug
   label_mapping:
+    bug: Bug
     enhancement: Story
+    documentation: Task
+    dependencies: Task
 
   # (Optional) JIRA issue's summary
   # This field can be used to customize the JIRA issue's summary (title).
@@ -60,7 +62,7 @@ settings:
   # to use GH issue title: "{issue.title}"
   # to add prefix "[GitHub]" : "[GitHub] {issue.title}"
   # to add user in the title (between square brackets): "[{issue.user.login}] {issue.title}"
-  summary: "{issue.title}"
+  summary: "[GitHub] {issue.title}"
 
   # (Optional) set to True if GitHub issue labels should be synced to Jira.
   # Note, that will override all the labels in Jira.
