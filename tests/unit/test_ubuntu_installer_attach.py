@@ -4,7 +4,7 @@
 
 from unittest.mock import patch
 
-from charms.operator_libs_linux.v0.apt import PackageError
+from charmlibs.apt import PackageError
 from ops.model import MaintenanceStatus
 from ops.testing import Context, State, StoredState
 

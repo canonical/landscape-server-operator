@@ -48,6 +48,8 @@ class LandscapeCharmConfiguration(BaseModel):
     admin_name: str | None = None
     admin_password: str | None = None
     registration_key: str | None = None
+    ssl_cert: str = "DEFAULT"
+    ssl_key: str = ""
     http_proxy: str | None = None
     https_proxy: str | None = None
     no_proxy: str | None = None
@@ -60,6 +62,7 @@ class LandscapeCharmConfiguration(BaseModel):
     db_schema_user: str | None = None
     db_schema_password: str | None = None
     deployment_mode: str
+    analytics_id: str | None = None
     additional_service_config: str | None = None
     secret_token: str | None = None
     cookie_encryption_key: str | None = None
@@ -79,6 +82,18 @@ class LandscapeCharmConfiguration(BaseModel):
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
     outbox_snap_channel: str
+    demo_data: bool = False
+    bootstrap_schema_override_args: str | None = None
+
+    @property
+    def bootstrap_schema_override_args_list(self) -> list[str]:
+        if not self.bootstrap_schema_override_args:
+            return []
+        return [
+            arg.strip()
+            for arg in self.bootstrap_schema_override_args.split(",")
+            if arg.strip()
+        ]
 
     @field_validator("deployment_mode")
     @classmethod
@@ -89,6 +104,21 @@ class LandscapeCharmConfiguration(BaseModel):
                 "Only letters, numbers, hyphens, and underscores are allowed."
             )
 
+        return v
+
+    @field_validator("analytics_id")
+    @classmethod
+    def analytics_id_safe_chars(cls, v: str | None):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", v):
+            raise ValueError(
+                f"analytics_id {v!r} contains invalid characters. "
+                "Only letters, numbers, dots, hyphens, and underscores are allowed."
+            )
         return v
 
     @model_validator(mode="after")
@@ -131,18 +161,12 @@ class LandscapeCharmConfiguration(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def oidc_minimum_fields(self):
-        """
-        If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
-        must provide all three.
-        """
-        required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
-        fields = self.model_dump(include=set(required_configs))
-
-        if any(fields.values()) and not all(fields.values()):
+    def check_deployment_mode_min_install(self):
+        """min_install is only valid with standalone deployments."""
+        if self.min_install and self.deployment_mode != "standalone":
             raise ValueError(
-                f"When using OIDC, must provide all of {required_configs}. "
-                f"Got {fields}."
+                f"min_install=True is not compatible with "
+                f"deployment_mode={self.deployment_mode!r}."
             )
         return self
 
@@ -174,6 +198,22 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"the following ports: {', '.join(map(str, overused_ports))}"
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def oidc_minimum_fields(self):
+        """
+        If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
+        must provide all three.
+        """
+        required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
+        fields = self.model_dump(include=set(required_configs))
+
+        if any(fields.values()) and not all(fields.values()):
+            raise ValueError(
+                f"When using OIDC, must provide all of {required_configs}. "
+                f"Got {fields}."
+            )
         return self
 
 

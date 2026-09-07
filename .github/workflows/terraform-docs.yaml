@@ -1,16 +1,19 @@
 name: Update Terraform documentation
 
 on:
-    workflow_dispatch:
-    pull_request:
-    push:
-        branches:
-            - main
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
-    terraform-docs:
-        name: Update Terraform documentation
-        uses: canonical/operator-workflows/.github/workflows/generate_terraform_docs.yaml@main
-        secrets: inherit
-        with:
-            terraform-directory: terraform/charm,terraform/product/modules/landscape-scalable
+  terraform-docs:
+    permissions:
+      contents: write
+      pull-requests: write
+    name: Update Terraform documentation
+    uses: canonical/operator-workflows/.github/workflows/generate_terraform_docs.yaml@main
+    secrets: inherit
+    with:
+      terraform-directory: terraform/charm,terraform/product/modules/landscape-scalable

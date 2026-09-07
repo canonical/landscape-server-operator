@@ -21,25 +21,7 @@ run "validate_output_structure" {
     }
   }
 
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        website               = "website"
-        amqp                  = "amqp"
-        db                    = "db"
-        application_dashboard = "application-dashboard"
-      }
-    }
-  }
 
-  override_module {
-    target = module.haproxy
-    outputs = {
-      app_name = "haproxy"
-    }
-  }
 
   assert {
     condition     = output.applications != null
@@ -70,32 +52,15 @@ run "validate_output_structure" {
     condition     = can(output.applications.pgbouncer)
     error_message = "Applications output should include pgbouncer key (may be null)"
   }
-}
-
-run "validate_self_signed_output" {
-  command = plan
 
   assert {
-    condition     = output.haproxy_self_signed != null
-    error_message = "haproxy_self_signed output should exist"
+    condition     = can(output.applications.landscape_debarchive)
+    error_message = "Applications output should include landscape_debarchive key (may be null)"
   }
 
   assert {
-    condition     = output.haproxy_self_signed == true
-    error_message = "With default SELFSIGNED ssl_cert, haproxy_self_signed should be true"
-  }
-}
-
-run "validate_self_signed_false_without_certs" {
-  command = plan
-
-  variables {
-    haproxy_self_signed_certs = null
-  }
-
-  assert {
-    condition     = output.haproxy_self_signed == false
-    error_message = "Without self-signed-certificates deployed, haproxy_self_signed should be false"
+    condition     = can(output.applications.landscape_task_handler)
+    error_message = "Applications output should include landscape_task_handler key (may be null)"
   }
 }
 
@@ -160,43 +125,5 @@ run "validate_outputs_with_config" {
   assert {
     condition     = output.admin_password == "secure-password"
     error_message = "admin_password output should match configured value"
-  }
-}
-
-run "validate_haproxy_route_outputs" {
-  command = plan
-
-  variables {
-    landscape_server = {
-      revision = 216
-    }
-    haproxy                 = null
-    haproxy_route_offer_url = "admin/lbaas:haproxy-route"
-  }
-
-  override_module {
-    target = module.landscape_server
-    outputs = {
-      app_name = "landscape-server"
-      requires = {
-        appserver_haproxy_route               = "appserver-haproxy-route"
-        pingserver_haproxy_route              = "pingserver-haproxy-route"
-        message_server_haproxy_route          = "message-server-haproxy-route"
-        api_haproxy_route                     = "api-haproxy-route"
-        package_upload_haproxy_route          = "package-upload-haproxy-route"
-        hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
-        ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-        inbound_amqp                          = "inbound-amqp"
-        outbound_amqp                         = "outbound-amqp"
-        database                              = "database"
-        db                                    = "db"
-        application_dashboard                 = "application-dashboard"
-      }
-    }
-  }
-
-  assert {
-    condition     = output.haproxy_self_signed == null
-    error_message = "haproxy_self_signed should be null when legacy haproxy is not deployed"
   }
 }

@@ -12,9 +12,15 @@ platforms:
 
 charm-libs:
   - lib: data_platform_libs.data_interfaces
-    version: "0"
+    version: "0.54"
+  - lib: grafana_agent.cos_agent
+    version: "0.25"
   - lib: haproxy.haproxy_route
-    version: "1"
+    version: "1.13"
+  - lib: haproxy.haproxy_route_tcp
+    version: "1.6"
+  - lib: smtp_integrator.smtp
+    version: "0.21"
 
 parts:
   # "uv-deps" is a magic part name charmcraft uses to satisfy the uv plugin's
