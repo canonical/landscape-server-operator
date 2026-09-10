@@ -15,7 +15,7 @@ module "landscape_server" {
 }
 
 module "haproxy" {
-  source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=haproxy-rev331"
+  source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=7d360d0"
   model_uuid  = var.model_uuid
   config      = var.haproxy.config
   app_name    = var.haproxy.app_name
@@ -23,8 +23,8 @@ module "haproxy" {
   constraints = var.haproxy.constraints
   revision    = var.haproxy.revision
   base        = var.haproxy.base
-  units       = var.haproxy.units
-  # machines is not supported by the external haproxy module (haproxy-rev331)
+  units       = var.haproxy.machines == null ? var.haproxy.units : null
+  machines    = var.haproxy.machines
 
   count = var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
@@ -128,7 +128,7 @@ resource "juju_integration" "landscape_server_haproxy" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].requires.reverseproxy
+    endpoint = module.haproxy[0].requires.reverseproxy.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -146,7 +146,7 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_in_model" 
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -164,7 +164,7 @@ resource "juju_integration" "landscape_server_pingserver_haproxy_route_in_model"
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -182,7 +182,7 @@ resource "juju_integration" "landscape_server_message_server_haproxy_route_in_mo
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -200,7 +200,7 @@ resource "juju_integration" "landscape_server_api_haproxy_route_in_model" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -218,7 +218,7 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route_in_mo
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -236,7 +236,7 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_in_model"
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -501,7 +501,7 @@ resource "juju_integration" "haproxy_certificates" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].requires.certificates
+    endpoint = module.haproxy[0].requires.certificates.endpoint
   }
 
   application {
@@ -518,7 +518,7 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].requires.receive_ca_certs
+    endpoint = module.haproxy[0].requires.receive_ca_certs.endpoint
   }
 
   application {
@@ -708,7 +708,7 @@ resource "juju_integration" "landscape_debarchive_haproxy_route_in_model" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [juju_application.landscape_debarchive, module.haproxy]
