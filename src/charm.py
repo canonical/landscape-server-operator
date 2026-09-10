@@ -145,7 +145,7 @@ LANDSCAPE_PACKAGES = (
     "landscape-common",
 )
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
-DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
+DEFAULT_OUTBOX_SNAP_CHANNEL = "1/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 
 TASK_HANDLER_RELATION = "task-handler"
