@@ -2437,6 +2437,12 @@ class TestCharm(unittest.TestCase):
             self.harness.charm._upgrade(event)
 
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+        check_call_mock.assert_any_call(
+            ["apt-mark", "unhold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+        )
+        check_call_mock.assert_any_call(
+            ["apt-mark", "hold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+        )
         self.assertGreaterEqual(event.log.call_count, 5)
         self.assertEqual(
             apt_mock.DebianPackage.from_apt_cache.call_count, len(LANDSCAPE_PACKAGES)
