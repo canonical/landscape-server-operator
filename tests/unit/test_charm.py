@@ -2437,6 +2437,12 @@ class TestCharm(unittest.TestCase):
             self.harness.charm._upgrade(event)
 
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
+        check_call_mock.assert_any_call(
+            ["apt-mark", "unhold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+        )
+        check_call_mock.assert_any_call(
+            ["apt-mark", "hold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+        )
         self.assertGreaterEqual(event.log.call_count, 5)
         self.assertEqual(
             apt_mock.DebianPackage.from_apt_cache.call_count, len(LANDSCAPE_PACKAGES)
@@ -2497,7 +2503,10 @@ class TestCharm(unittest.TestCase):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
 
-        with patch("charm.apt", spec_set=apt) as apt_mock, patch("charm.check_call"):
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call") as check_call_mock,
+        ):
             pkg_mock = Mock()
             apt_mock.DebianPackage.from_apt_cache.return_value = pkg_mock
             pkg_mock.ensure.side_effect = PackageNotFoundError("ouch")
@@ -2507,6 +2516,9 @@ class TestCharm(unittest.TestCase):
         event.fail.assert_called_once()
         apt_mock.DebianPackage.from_apt_cache.assert_called_once_with(
             "landscape-server"
+        )
+        check_call_mock.assert_any_call(
+            ["apt-mark", "hold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
         )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
