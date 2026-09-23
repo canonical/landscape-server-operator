@@ -15,7 +15,7 @@ module "landscape_server" {
 }
 
 module "haproxy" {
-  source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=7d360d0"
+  source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=haproxy-rev555"
   model_uuid  = var.model_uuid
   config      = var.haproxy.config
   app_name    = var.haproxy.app_name
@@ -30,7 +30,7 @@ module "haproxy" {
 }
 
 module "postgresql" {
-  source      = "git::https://github.com/canonical/postgresql-operator.git//terraform?ref=v16/1.305.0"
+  source      = "git::https://github.com/canonical/postgresql-operator.git//terraform?ref=v16/1.376.0"
   juju_model  = var.model_uuid
   config      = var.postgresql.config
   app_name    = var.postgresql.app_name
@@ -38,8 +38,8 @@ module "postgresql" {
   constraints = var.postgresql.constraints
   revision    = var.postgresql.revision
   base        = var.postgresql.base
-  units       = var.postgresql.units
-  # machines is not supported by the external postgresql module (v16/1.165.0)
+  units       = var.postgresql.machines == null ? var.postgresql.units : null
+  machines    = var.postgresql.machines
 
   count = var.postgresql != null ? 1 : 0
 }
