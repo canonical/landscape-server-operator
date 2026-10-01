@@ -1,6 +1,4 @@
 .coverage
-.cover/
-coverage.xml
 venv
 __pycache__
 *.charm

@@ -23,13 +23,6 @@ integration-test:
 coverage:
 	uv run coverage run --branch --source=src -m pytest -v --tb native tests/unit
 	uv run coverage report -m
-	uv run coverage xml
-
-# TiCS expects coverage info to be in ./.cover/cobertura.xml
-.PHONY: prepare-tics-analysis
-prepare-tics-analysis: coverage
-	mkdir -p .cover
-	cp coverage.xml .cover/cobertura.xml
 
 .PHONY: check
 check:
