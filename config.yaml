@@ -267,6 +267,132 @@ options:
       Maximum number of concurrent connections HAProxy will accept globally across all
       frontends and backends. This sets the 'maxconn' value in the global section of
       the HAProxy configuration.
+  haproxy_appserver_health_check_path:
+    type: string
+    default: /hash-id-databases
+    description: |
+      Path HAProxy requests when health checking the appserver backends.
+      Leave empty to disable the health check for this route.
+  haproxy_appserver_health_check_interval:
+    type: int
+    default: 2
+    description: |
+      Seconds between appserver backend health checks.
+  haproxy_appserver_health_check_rise:
+    type: int
+    default: 2
+    description: |
+      Number of successful checks before an appserver backend is considered up.
+  haproxy_appserver_health_check_fall:
+    type: int
+    default: 3
+    description: |
+      Number of failed checks before an appserver backend is considered down.
+  haproxy_pingserver_health_check_path:
+    type: string
+    default: /ping
+    description: |
+      Path HAProxy requests when health checking the pingserver backends.
+      Leave empty to disable the health check for this route.
+  haproxy_pingserver_health_check_interval:
+    type: int
+    default: 2
+    description: |
+      Seconds between pingserver backend health checks.
+  haproxy_pingserver_health_check_rise:
+    type: int
+    default: 2
+    description: |
+      Number of successful checks before a pingserver backend is considered up.
+  haproxy_pingserver_health_check_fall:
+    type: int
+    default: 3
+    description: |
+      Number of failed checks before a pingserver backend is considered down.
+  haproxy_message_server_health_check_path:
+    type: string
+    default: /message-system
+    description: |
+      Path HAProxy requests when health checking the message-server backends.
+      Leave empty to disable the health check for this route.
+  haproxy_message_server_health_check_interval:
+    type: int
+    default: 2
+    description: |
+      Seconds between message-server backend health checks.
+  haproxy_message_server_health_check_rise:
+    type: int
+    default: 2
+    description: |
+      Number of successful checks before a message-server backend is considered up.
+  haproxy_message_server_health_check_fall:
+    type: int
+    default: 3
+    description: |
+      Number of failed checks before a message-server backend is considered down.
+  haproxy_api_health_check_path:
+    type: string
+    default: /api/about
+    description: |
+      Path HAProxy requests when health checking the api backends.
+      Leave empty to disable the health check for this route.
+  haproxy_api_health_check_interval:
+    type: int
+    default: 2
+    description: |
+      Seconds between api backend health checks.
+  haproxy_api_health_check_rise:
+    type: int
+    default: 2
+    description: |
+      Number of successful checks before an api backend is considered up.
+  haproxy_api_health_check_fall:
+    type: int
+    default: 3
+    description: |
+      Number of failed checks before an api backend is considered down.
+  haproxy_package_upload_health_check_path:
+    type: string
+    default: /upload
+    description: |
+      Path HAProxy requests when health checking the package-upload backend.
+      Leave empty to disable the health check for this route.
+  haproxy_package_upload_health_check_interval:
+    type: int
+    default: 2
+    description: |
+      Seconds between package-upload backend health checks.
+  haproxy_package_upload_health_check_rise:
+    type: int
+    default: 2
+    description: |
+      Number of successful checks before the package-upload backend is considered up.
+  haproxy_package_upload_health_check_fall:
+    type: int
+    default: 3
+    description: |
+      Number of failed checks before the package-upload backend is considered down.
+  haproxy_repository_health_check_path:
+    type: string
+    default:
+    description: |
+      Path HAProxy requests when health checking the repository backends.
+      Leave empty to disable the health check for this route.
+  haproxy_repository_health_check_interval:
+    type: int
+    default: 2
+    description: |
+      Seconds between repository backend health checks.
+  haproxy_repository_health_check_rise:
+    type: int
+    default: 2
+    description: |
+      Number of successful checks before a repository backend is considered up.
+  haproxy_repository_health_check_fall:
+    type: int
+    default: 3
+    description: |
+      Number of failed checks before a repository backend is considered down.
   appserver_base_port:
     type: int
     default: 8080

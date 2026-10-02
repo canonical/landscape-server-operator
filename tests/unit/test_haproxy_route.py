@@ -288,7 +288,7 @@ class TestHealthChecks:
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "appserver")
-        assert calls[0].kwargs.get("check_path") == "/"
+        assert calls[0].kwargs.get("check_path") == "/hash-id-databases"
 
     def test_pingserver_check_path(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
@@ -361,6 +361,57 @@ class TestHealthChecks:
         assert calls[0].kwargs.get("check_interval") == 2
         assert calls[0].kwargs.get("check_rise") == 2
         assert calls[0].kwargs.get("check_fall") == 3
+
+
+HEALTH_CHECK_SERVICES = [
+    ("appserver", "appserver"),
+    ("pingserver", "pingserver"),
+    ("message_server", "message-server"),
+    ("api", "api"),
+    ("package_upload", "package-upload"),
+    ("repository", "repository"),
+]
+
+
+class TestConfigurableHealthChecks:
+    """Health check path and timing come from `haproxy_<service>_health_check_*`."""
+
+    @pytest.mark.parametrize("service,fragment", HEALTH_CHECK_SERVICES)
+    def test_health_check_options_are_passed_through(
+        self, replicas_network_state, service, fragment
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                f"haproxy_{service}_health_check_path": "/custom",
+                f"haproxy_{service}_health_check_interval": 7,
+                f"haproxy_{service}_health_check_rise": 4,
+                f"haproxy_{service}_health_check_fall": 5,
+            },
+            **replicas_network_state,
+        )
+        mock = _run_provide(context, state)
+        kwargs = _calls_for(mock, fragment)[0].kwargs
+        assert kwargs.get("check_path") == "/custom"
+        assert kwargs.get("check_interval") == 7
+        assert kwargs.get("check_rise") == 4
+        assert kwargs.get("check_fall") == 5
+
+    @pytest.mark.parametrize("service,fragment", HEALTH_CHECK_SERVICES)
+    def test_empty_path_disables_health_check(
+        self, replicas_network_state, service, fragment
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={f"haproxy_{service}_health_check_path": ""},
+            **replicas_network_state,
+        )
+        mock = _run_provide(context, state)
+        kwargs = _calls_for(mock, fragment)[0].kwargs
+        assert "check_path" not in kwargs
+        assert "check_interval" not in kwargs
+        assert "check_rise" not in kwargs
+        assert "check_fall" not in kwargs
 
 
 class TestConditionalRoutes:
