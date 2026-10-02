@@ -373,3 +373,13 @@ def test_health_check_values_must_be_positive(suffix):
     defaults[f"haproxy_api_health_check_{suffix}"] = 0
     with pytest.raises(ValidationError, match="at least 1"):
         LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize(
+    "path", ["/health check", "/a#b", "/a'b", '/a"b', "/a\\b", "/a$b", "/a\tb"]
+)
+def test_health_check_path_rejects_haproxy_invalid_characters(path):
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = path
+    with pytest.raises(ValidationError, match="HAProxy does not accept"):
+        LandscapeCharmConfiguration(**defaults)

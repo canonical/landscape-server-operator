@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from charms.haproxy.v1.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
 from pydantic import BaseModel, field_validator, model_validator
 import yaml
 
@@ -148,6 +149,11 @@ class LandscapeCharmConfiguration(BaseModel):
         if not v.startswith("/"):
             raise ValueError(
                 f"health check path {v!r} is invalid. Paths must start with '/'."
+            )
+        if invalid := sorted(set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS)):
+            raise ValueError(
+                f"health check path {v!r} is invalid. It contains characters "
+                f"HAProxy does not accept: {invalid!r}."
             )
         return v
 
