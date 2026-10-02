@@ -47,7 +47,7 @@ rather than disclosing it publicly.
 
 ## Reporting a vulnerability
 
-To report a security issue, file a [Private Security Report](https://github.com/Canonical/landscape-client/security/advisories/new)
+To report a security issue, file a [Private Security Report](https://github.com/Canonical/landscape-server-operator/security/advisories/new)
 or email [security@ubuntu.com](mailto:security@ubuntu.com) with a description of
 the issue, the steps you took to create the issue, affected versions, and, if
 known, mitigations for the issue.
