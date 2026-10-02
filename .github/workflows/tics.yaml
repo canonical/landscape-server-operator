@@ -1,0 +1,79 @@
+name: TiCS static analysis
+
+on:
+  schedule:
+    # SSDLC recommends biweekly runs.
+    - cron: '0 8 1,15 * *'  # 1st and 15th of the month, 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      detach:
+        description: Detach TiCS QServer before the run
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: tics-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TICS_PROJECT: landscape-server-operator
+
+jobs:
+  tics:
+    name: TiCS landscape-server-operator
+    timeout-minutes: 1440
+    runs-on: [self-hosted, linux, amd64, tiobe, noble]
+    steps:
+      - if: ${{ inputs.detach }}
+        name: Detach TiCS QServer to prevent "project already connected" issue
+        env:
+          TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}
+        run: &tics-detach |
+          source ~/.profile
+          TICSMaintenance -project "$TICS_PROJECT" -detach
+
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          python-version: "3.12"
+
+      # TiCS runs pylint and flake8 from PATH, and they need the charm's
+      # dependencies importable to avoid import errors lowering metric coverage.
+      - name: Install dependencies
+        run: |
+          uv sync --locked --all-groups
+          uv pip install flake8 pylint
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Generate coverage report
+        run: make prepare-tics-analysis
+
+      # Only analyse our own code; lib/charms holds vendored third-party charm libs.
+      - name: Generate TiCS filelist
+        run: printf '%s\n' src/ tests/ > "$RUNNER_TEMP/tics-filelist.txt"
+
+      - name: TiCS GitHub Action
+        uses: tiobe/tics-github-action@74bf696843d3f0980ae6d7a810abe40f82dfcd17 # v3.11.0
+        with:
+          mode: qserver
+          project: ${{ env.TICS_PROJECT }}
+          branchdir: ${{ github.workspace }}
+          viewerUrl: https://canonical.tiobe.com/tiobeweb/TICS/api/cfg?name=default
+          ticsAuthToken: ${{ secrets.TICSAUTHTOKEN }}
+          installTics: true
+          filelist: ${{ runner.temp }}/tics-filelist.txt
+
+      - if: ${{ cancelled() }}
+        name: Detach TiCS QServer to prevent "project already connected" issue
+        env:
+          TICSAUTHTOKEN: ${{ secrets.TICSAUTHTOKEN }}
+        run: *tics-detach
