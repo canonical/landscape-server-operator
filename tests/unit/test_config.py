@@ -62,6 +62,16 @@ def test_defaults():
     assert not config.enable_ubuntu_installer_attach
     assert config.max_global_haproxy_connections == 4096
 
+    assert config.haproxy_appserver_health_check_path == "/about"
+    assert config.haproxy_pingserver_health_check_path == "/ping"
+    assert config.haproxy_message_server_health_check_path == "/message-system"
+    assert config.haproxy_api_health_check_path == "/api/about"
+    assert config.haproxy_package_upload_health_check_path == "/upload"
+    assert config.haproxy_repository_health_check_path is None
+    assert config.haproxy_appserver_health_check_interval == 2
+    assert config.haproxy_appserver_health_check_rise == 2
+    assert config.haproxy_appserver_health_check_fall == 3
+
     assert config.appserver_base_port == 8080
     assert config.pingserver_base_port == 8070
     assert config.message_server_base_port == 8090
@@ -340,3 +350,36 @@ def test_bootstrap_schema_override_args_list():
         "--with-extra-computers",
         "10",
     ]
+
+
+@pytest.mark.parametrize("path,expected", [("", None), ("  ", None), ("/x", "/x")])
+def test_health_check_path_normalised(path, expected):
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = path
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.haproxy_appserver_health_check_path == expected
+
+
+def test_health_check_path_must_be_absolute():
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = "about"
+    with pytest.raises(ValidationError, match="must start with '/'"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize("suffix", ["interval", "rise", "fall"])
+def test_health_check_values_must_be_positive(suffix):
+    defaults = get_config_defaults()
+    defaults[f"haproxy_api_health_check_{suffix}"] = 0
+    with pytest.raises(ValidationError, match="at least 1"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize(
+    "path", ["/health check", "/a#b", "/a'b", '/a"b', "/a\\b", "/a$b", "/a\tb"]
+)
+def test_health_check_path_rejects_haproxy_invalid_characters(path):
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = path
+    with pytest.raises(ValidationError, match="HAProxy does not accept"):
+        LandscapeCharmConfiguration(**defaults)

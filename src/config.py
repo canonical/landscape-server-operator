@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from charms.haproxy.v1.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
 from pydantic import BaseModel, field_validator, model_validator
 import yaml
 
@@ -74,6 +75,30 @@ class LandscapeCharmConfiguration(BaseModel):
     enable_hostagent_messenger: bool
     enable_ubuntu_installer_attach: bool
     max_global_haproxy_connections: int
+    haproxy_appserver_health_check_path: str | None = None
+    haproxy_appserver_health_check_interval: int
+    haproxy_appserver_health_check_rise: int
+    haproxy_appserver_health_check_fall: int
+    haproxy_pingserver_health_check_path: str | None = None
+    haproxy_pingserver_health_check_interval: int
+    haproxy_pingserver_health_check_rise: int
+    haproxy_pingserver_health_check_fall: int
+    haproxy_message_server_health_check_path: str | None = None
+    haproxy_message_server_health_check_interval: int
+    haproxy_message_server_health_check_rise: int
+    haproxy_message_server_health_check_fall: int
+    haproxy_api_health_check_path: str | None = None
+    haproxy_api_health_check_interval: int
+    haproxy_api_health_check_rise: int
+    haproxy_api_health_check_fall: int
+    haproxy_package_upload_health_check_path: str | None = None
+    haproxy_package_upload_health_check_interval: int
+    haproxy_package_upload_health_check_rise: int
+    haproxy_package_upload_health_check_fall: int
+    haproxy_repository_health_check_path: str | None = None
+    haproxy_repository_health_check_interval: int
+    haproxy_repository_health_check_rise: int
+    haproxy_repository_health_check_fall: int
     appserver_base_port: int
     pingserver_base_port: int
     message_server_base_port: int
@@ -104,6 +129,58 @@ class LandscapeCharmConfiguration(BaseModel):
                 "Only letters, numbers, hyphens, and underscores are allowed."
             )
 
+        return v
+
+    @field_validator(
+        "haproxy_appserver_health_check_path",
+        "haproxy_pingserver_health_check_path",
+        "haproxy_message_server_health_check_path",
+        "haproxy_api_health_check_path",
+        "haproxy_package_upload_health_check_path",
+        "haproxy_repository_health_check_path",
+    )
+    @classmethod
+    def health_check_path_is_absolute(cls, v: str | None):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not v.startswith("/"):
+            raise ValueError(
+                f"health check path {v!r} is invalid. Paths must start with '/'."
+            )
+        if invalid := sorted(set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS)):
+            raise ValueError(
+                f"health check path {v!r} is invalid. It contains characters "
+                f"HAProxy does not accept: {invalid!r}."
+            )
+        return v
+
+    @field_validator(
+        "haproxy_appserver_health_check_interval",
+        "haproxy_appserver_health_check_rise",
+        "haproxy_appserver_health_check_fall",
+        "haproxy_pingserver_health_check_interval",
+        "haproxy_pingserver_health_check_rise",
+        "haproxy_pingserver_health_check_fall",
+        "haproxy_message_server_health_check_interval",
+        "haproxy_message_server_health_check_rise",
+        "haproxy_message_server_health_check_fall",
+        "haproxy_api_health_check_interval",
+        "haproxy_api_health_check_rise",
+        "haproxy_api_health_check_fall",
+        "haproxy_package_upload_health_check_interval",
+        "haproxy_package_upload_health_check_rise",
+        "haproxy_package_upload_health_check_fall",
+        "haproxy_repository_health_check_interval",
+        "haproxy_repository_health_check_rise",
+        "haproxy_repository_health_check_fall",
+    )
+    @classmethod
+    def health_check_value_is_positive(cls, v: int, info):
+        if v < 1:
+            raise ValueError(f"{info.field_name} must be at least 1. Got {v}.")
         return v
 
     @field_validator("analytics_id")
