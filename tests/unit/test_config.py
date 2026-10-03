@@ -62,7 +62,7 @@ def test_defaults():
     assert not config.enable_ubuntu_installer_attach
     assert config.max_global_haproxy_connections == 4096
 
-    assert config.haproxy_appserver_health_check_path == "/hash-id-databases"
+    assert config.haproxy_appserver_health_check_path == "/about"
     assert config.haproxy_pingserver_health_check_path == "/ping"
     assert config.haproxy_message_server_health_check_path == "/message-system"
     assert config.haproxy_api_health_check_path == "/api/about"
@@ -362,7 +362,7 @@ def test_health_check_path_normalised(path, expected):
 
 def test_health_check_path_must_be_absolute():
     defaults = get_config_defaults()
-    defaults["haproxy_appserver_health_check_path"] = "hash-id-databases"
+    defaults["haproxy_appserver_health_check_path"] = "about"
     with pytest.raises(ValidationError, match="must start with '/'"):
         LandscapeCharmConfiguration(**defaults)
 

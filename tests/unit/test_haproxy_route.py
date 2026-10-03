@@ -288,7 +288,7 @@ class TestHealthChecks:
         state = State(**replicas_network_state)
         mock = _run_provide(context, state)
         calls = _calls_for(mock, "appserver")
-        assert calls[0].kwargs.get("check_path") == "/hash-id-databases"
+        assert calls[0].kwargs.get("check_path") == "/about"
 
     def test_pingserver_check_path(self, replicas_network_state):
         context = Context(LandscapeServerCharm)

@@ -269,7 +269,7 @@ options:
       the HAProxy configuration.
   haproxy_appserver_health_check_path:
     type: string
-    default: /hash-id-databases
+    default: /about
     description: |
       Path HAProxy requests when health checking the appserver backends.
       Leave empty to disable the health check for this route.
