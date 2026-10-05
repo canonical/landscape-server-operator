@@ -3,13 +3,14 @@ Configuration for the Landscape charm.
 """
 
 from collections import Counter
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
 import re
 from typing import Any
 
 from charms.haproxy.v1.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 
 
@@ -21,6 +22,63 @@ class RedirectHTTPS(str, Enum):
     ALL = "all"
     NONE = "none"
     DEFAULT = "default"
+
+
+class HealthCheck(BaseModel):
+    """
+    HAProxy health check settings for a single haproxy-route.
+    """
+
+    path: str | None = None
+    interval: int = Field(ge=1)
+    rise: int = Field(ge=1)
+    fall: int = Field(ge=1)
+
+    @field_validator("path")
+    @classmethod
+    def path_is_valid(cls, v: str | None):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not v.startswith("/"):
+            raise ValueError(
+                f"health check path {v!r} is invalid. Paths must start with '/'."
+            )
+        if invalid := sorted(set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS)):
+            raise ValueError(
+                f"health check path {v!r} is invalid. It contains characters "
+                f"HAProxy does not accept: {invalid!r}."
+            )
+        return v
+
+    def route_kwargs(self) -> dict[str, Any]:
+        """
+        The haproxy-route health check arguments, or an empty mapping when no
+        path is configured (which disables the health check).
+        """
+        if not self.path:
+            return {}
+        return {
+            "check_path": self.path,
+            "check_interval": self.interval,
+            "check_rise": self.rise,
+            "check_fall": self.fall,
+        }
+
+
+class HAProxyHealthChecks(BaseModel):
+    """
+    Health check settings for each haproxy-route.
+    """
+
+    appserver: HealthCheck
+    pingserver: HealthCheck
+    message_server: HealthCheck
+    api: HealthCheck
+    package_upload: HealthCheck
+    repository: HealthCheck
 
 
 class LandscapeCharmConfiguration(BaseModel):
@@ -75,30 +133,7 @@ class LandscapeCharmConfiguration(BaseModel):
     enable_hostagent_messenger: bool
     enable_ubuntu_installer_attach: bool
     max_global_haproxy_connections: int
-    haproxy_appserver_health_check_path: str | None = None
-    haproxy_appserver_health_check_interval: int
-    haproxy_appserver_health_check_rise: int
-    haproxy_appserver_health_check_fall: int
-    haproxy_pingserver_health_check_path: str | None = None
-    haproxy_pingserver_health_check_interval: int
-    haproxy_pingserver_health_check_rise: int
-    haproxy_pingserver_health_check_fall: int
-    haproxy_message_server_health_check_path: str | None = None
-    haproxy_message_server_health_check_interval: int
-    haproxy_message_server_health_check_rise: int
-    haproxy_message_server_health_check_fall: int
-    haproxy_api_health_check_path: str | None = None
-    haproxy_api_health_check_interval: int
-    haproxy_api_health_check_rise: int
-    haproxy_api_health_check_fall: int
-    haproxy_package_upload_health_check_path: str | None = None
-    haproxy_package_upload_health_check_interval: int
-    haproxy_package_upload_health_check_rise: int
-    haproxy_package_upload_health_check_fall: int
-    haproxy_repository_health_check_path: str | None = None
-    haproxy_repository_health_check_interval: int
-    haproxy_repository_health_check_rise: int
-    haproxy_repository_health_check_fall: int
+    haproxy_health_checks: HAProxyHealthChecks
     appserver_base_port: int
     pingserver_base_port: int
     message_server_base_port: int
@@ -131,57 +166,25 @@ class LandscapeCharmConfiguration(BaseModel):
 
         return v
 
-    @field_validator(
-        "haproxy_appserver_health_check_path",
-        "haproxy_pingserver_health_check_path",
-        "haproxy_message_server_health_check_path",
-        "haproxy_api_health_check_path",
-        "haproxy_package_upload_health_check_path",
-        "haproxy_repository_health_check_path",
-    )
+    @model_validator(mode="before")
     @classmethod
-    def health_check_path_is_absolute(cls, v: str | None):
-        if v is None:
-            return None
-        v = v.strip()
-        if not v:
-            return None
-        if not v.startswith("/"):
-            raise ValueError(
-                f"health check path {v!r} is invalid. Paths must start with '/'."
-            )
-        if invalid := sorted(set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS)):
-            raise ValueError(
-                f"health check path {v!r} is invalid. It contains characters "
-                f"HAProxy does not accept: {invalid!r}."
-            )
-        return v
+    def fold_haproxy_health_checks(cls, data: Any):
+        """
+        Group the flat `haproxy_<service>_health_check_<setting>` charm options
+        into `haproxy_health_checks`.
+        """
+        if not isinstance(data, Mapping) or "haproxy_health_checks" in data:
+            return data
 
-    @field_validator(
-        "haproxy_appserver_health_check_interval",
-        "haproxy_appserver_health_check_rise",
-        "haproxy_appserver_health_check_fall",
-        "haproxy_pingserver_health_check_interval",
-        "haproxy_pingserver_health_check_rise",
-        "haproxy_pingserver_health_check_fall",
-        "haproxy_message_server_health_check_interval",
-        "haproxy_message_server_health_check_rise",
-        "haproxy_message_server_health_check_fall",
-        "haproxy_api_health_check_interval",
-        "haproxy_api_health_check_rise",
-        "haproxy_api_health_check_fall",
-        "haproxy_package_upload_health_check_interval",
-        "haproxy_package_upload_health_check_rise",
-        "haproxy_package_upload_health_check_fall",
-        "haproxy_repository_health_check_interval",
-        "haproxy_repository_health_check_rise",
-        "haproxy_repository_health_check_fall",
-    )
-    @classmethod
-    def health_check_value_is_positive(cls, v: int, info):
-        if v < 1:
-            raise ValueError(f"{info.field_name} must be at least 1. Got {v}.")
-        return v
+        data = dict(data)
+        data["haproxy_health_checks"] = {
+            service: {
+                setting: data.pop(f"haproxy_{service}_health_check_{setting}", None)
+                for setting in HealthCheck.model_fields
+            }
+            for service in HAProxyHealthChecks.model_fields
+        }
+        return data
 
     @field_validator("analytics_id")
     @classmethod

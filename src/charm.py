@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 import subprocess
 from subprocess import CalledProcessError, check_call
-from typing import Any, List
+from typing import List
 from urllib.parse import urlparse
 
 from charmlibs import apt, snap
@@ -280,26 +280,6 @@ class SSLConfigurationError(Exception):
     """
     Invalid SSL configuration.
     """
-
-
-def _health_check_kwargs(
-    cfg: LandscapeCharmConfiguration, service: str
-) -> dict[str, Any]:
-    """
-    Build the haproxy-route health check arguments for a service from its
-    `haproxy_<service>_health_check_*` configuration, or an empty mapping when
-    no health check path is configured.
-    """
-    path = getattr(cfg, f"haproxy_{service}_health_check_path")
-    if not path:
-        return {}
-
-    return {
-        "check_path": path,
-        "check_interval": getattr(cfg, f"haproxy_{service}_health_check_interval"),
-        "check_rise": getattr(cfg, f"haproxy_{service}_health_check_rise"),
-        "check_fall": getattr(cfg, f"haproxy_{service}_health_check_fall"),
-    }
 
 
 class LandscapeServerCharm(CharmBase):
@@ -1620,7 +1600,7 @@ class LandscapeServerCharm(CharmBase):
             ports=appserver_ports,
             paths=appserver_paths,
             protocol="http",
-            **_health_check_kwargs(cfg, "appserver"),
+            **cfg.haproxy_health_checks.appserver.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1643,7 +1623,7 @@ class LandscapeServerCharm(CharmBase):
             ports=pingserver_ports,
             paths=["/ping"],
             protocol="http",
-            **_health_check_kwargs(cfg, "pingserver"),
+            **cfg.haproxy_health_checks.pingserver.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
@@ -1654,7 +1634,7 @@ class LandscapeServerCharm(CharmBase):
             ports=message_server_ports,
             paths=["/message-system", "/attachment"],
             protocol="http",
-            **_health_check_kwargs(cfg, "message_server"),
+            **cfg.haproxy_health_checks.message_server.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1665,7 +1645,7 @@ class LandscapeServerCharm(CharmBase):
             ports=api_ports,
             paths=["/api"],
             protocol="http",
-            **_health_check_kwargs(cfg, "api"),
+            **cfg.haproxy_health_checks.api.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1676,7 +1656,7 @@ class LandscapeServerCharm(CharmBase):
             ports=[cfg.package_upload_base_port],
             paths=["/upload"],
             protocol="http",
-            **_health_check_kwargs(cfg, "package_upload"),
+            **cfg.haproxy_health_checks.package_upload.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1691,7 +1671,7 @@ class LandscapeServerCharm(CharmBase):
             ports=appserver_ports,
             paths=["/repository"],
             protocol="http",
-            **_health_check_kwargs(cfg, "repository"),
+            **cfg.haproxy_health_checks.repository.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
