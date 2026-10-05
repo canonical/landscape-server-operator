@@ -37,19 +37,17 @@ class HealthCheck(BaseModel):
     @field_validator("path")
     @classmethod
     def path_is_valid(cls, v: str | None):
-        if v is None:
+        if v is None or not v.strip():
             return None
         v = v.strip()
-        if not v:
-            return None
         if not v.startswith("/"):
             raise ValueError(
                 f"health check path {v!r} is invalid. Paths must start with '/'."
             )
-        if invalid := sorted(set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS)):
+        if invalid := set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS):
             raise ValueError(
                 f"health check path {v!r} is invalid. It contains characters "
-                f"HAProxy does not accept: {invalid!r}."
+                f"HAProxy does not accept: {sorted(invalid)!r}."
             )
         return v
 
