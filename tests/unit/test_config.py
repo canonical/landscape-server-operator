@@ -62,6 +62,16 @@ def test_defaults():
     assert not config.enable_ubuntu_installer_attach
     assert config.max_global_haproxy_connections == 4096
 
+    assert config.haproxy_health_checks.appserver.path == "/about"
+    assert config.haproxy_health_checks.pingserver.path == "/ping"
+    assert config.haproxy_health_checks.message_server.path == "/message-system"
+    assert config.haproxy_health_checks.api.path == "/api/about"
+    assert config.haproxy_health_checks.package_upload.path == "/upload"
+    assert config.haproxy_health_checks.repository.path is None
+    assert config.haproxy_health_checks.appserver.interval == 2
+    assert config.haproxy_health_checks.appserver.rise == 2
+    assert config.haproxy_health_checks.appserver.fall == 3
+
     assert config.appserver_base_port == 8080
     assert config.pingserver_base_port == 8070
     assert config.message_server_base_port == 8090
@@ -340,3 +350,54 @@ def test_bootstrap_schema_override_args_list():
         "--with-extra-computers",
         "10",
     ]
+
+
+@pytest.mark.parametrize("path,expected", [("", None), ("  ", None), ("/x", "/x")])
+def test_health_check_path_normalised(path, expected):
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = path
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.haproxy_health_checks.appserver.path == expected
+
+
+def test_health_check_path_must_be_absolute():
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = "about"
+    with pytest.raises(ValidationError, match="must start with '/'"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize("suffix", ["interval", "rise", "fall"])
+def test_health_check_values_must_be_positive(suffix):
+    defaults = get_config_defaults()
+    defaults[f"haproxy_api_health_check_{suffix}"] = 0
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+@pytest.mark.parametrize(
+    "path", ["/health check", "/a#b", "/a'b", '/a"b', "/a\\b", "/a$b", "/a\tb"]
+)
+def test_health_check_path_rejects_haproxy_invalid_characters(path):
+    defaults = get_config_defaults()
+    defaults["haproxy_appserver_health_check_path"] = path
+    with pytest.raises(ValidationError, match="HAProxy does not accept"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+def test_health_checks_are_grouped_per_service():
+    """
+    The flat `haproxy_<service>_health_check_*` options are grouped per service.
+    """
+    defaults = get_config_defaults()
+    defaults["haproxy_api_health_check_path"] = "/x"
+    defaults["haproxy_api_health_check_interval"] = 9
+    config = LandscapeCharmConfiguration(**defaults)
+
+    assert config.haproxy_health_checks.api.route_kwargs() == {
+        "check_path": "/x",
+        "check_interval": 9,
+        "check_rise": 2,
+        "check_fall": 3,
+    }
+    assert config.haproxy_health_checks.repository.route_kwargs() == {}
