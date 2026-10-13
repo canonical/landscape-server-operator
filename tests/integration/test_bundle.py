@@ -10,7 +10,6 @@ import json
 import lzma
 import re
 import shlex
-import subprocess
 from urllib.parse import urlparse
 
 import jubilant
@@ -1200,25 +1199,6 @@ def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
 
     juju.wait(all_landscape_active, timeout=300)
     haproxy_ip = _haproxy_ip(juju)
-
-    handshake = subprocess.run(
-        [
-            "openssl",
-            "s_client",
-            "-alpn",
-            "h2",
-            "-servername",
-            hostname,
-            "-connect",
-            f"{haproxy_ip}:50051",
-        ],
-        input="",
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    handshake_output = handshake.stdout + handshake.stderr
-    assert "ALPN protocol: h2" in handshake_output, handshake_output
 
     provider = app_status.relations["certificates"][0].related_app
     try:

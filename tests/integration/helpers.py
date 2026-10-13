@@ -375,13 +375,9 @@ def assert_grpc_secure_channel_ready(
     ip: str, port: int, hostname: str, ca_pem: str, timeout: float = 30
 ) -> None:
     """
-    Confirm a gRPC service is reachable through HAProxy using a plain, fully
-    verifying `grpc.secure_channel`.
-
-    This needs the frontend to negotiate ALPN "h2", which grpc-python
-    hard-requires; the channel only becomes ready after a successful
-    TLS + HTTP/2 handshake. `ip` is connected to directly while `hostname`
-    is used as the TLS server name.
+    Confirm a gRPC service is reachable with a verifying `grpc.secure_channel`,
+    which only becomes ready if the server negotiates ALPN "h2". `hostname` is
+    used as the TLS server name.
     """
     import grpc
 
