@@ -10,11 +10,12 @@ module "landscape_server" {
   revision    = var.landscape_server.revision
   base        = var.landscape_server.base
   charm_name  = var.landscape_server.charm_name
-  units       = var.landscape_server.units
+  units       = var.landscape_server.machines == null ? var.landscape_server.units : null
+  machines    = var.landscape_server.machines
 }
 
 module "haproxy" {
-  source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=haproxy-rev331"
+  source      = "git::https://github.com/canonical/haproxy-operator.git//terraform/charm/haproxy?ref=haproxy-rev555"
   model_uuid  = var.model_uuid
   config      = var.haproxy.config
   app_name    = var.haproxy.app_name
@@ -22,13 +23,14 @@ module "haproxy" {
   constraints = var.haproxy.constraints
   revision    = var.haproxy.revision
   base        = var.haproxy.base
-  units       = var.haproxy.units
+  units       = var.haproxy.machines == null ? var.haproxy.units : null
+  machines    = var.haproxy.machines
 
   count = var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
 }
 
 module "postgresql" {
-  source      = "git::https://github.com/canonical/postgresql-operator.git//terraform?ref=v16/1.165.0"
+  source      = "git::https://github.com/canonical/postgresql-operator.git//terraform?ref=v16/1.376.0"
   juju_model  = var.model_uuid
   config      = var.postgresql.config
   app_name    = var.postgresql.app_name
@@ -36,7 +38,8 @@ module "postgresql" {
   constraints = var.postgresql.constraints
   revision    = var.postgresql.revision
   base        = var.postgresql.base
-  units       = var.postgresql.units
+  units       = var.postgresql.machines == null ? var.postgresql.units : null
+  machines    = var.postgresql.machines
 
   count = var.postgresql != null ? 1 : 0
 }
@@ -45,7 +48,8 @@ module "postgresql" {
 resource "juju_application" "rabbitmq_server" {
   name        = var.rabbitmq_server.app_name
   model_uuid  = var.model_uuid
-  units       = var.rabbitmq_server.units
+  units       = var.rabbitmq_server.machines == null ? var.rabbitmq_server.units : null
+  machines    = var.rabbitmq_server.machines
   constraints = var.rabbitmq_server.constraints
   config      = var.rabbitmq_server.config
 
@@ -118,12 +122,13 @@ resource "juju_integration" "landscape_server_haproxy" {
   model_uuid = var.model_uuid
 
   application {
-    name = module.landscape_server.app_name
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.provides.website
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].requires.reverseproxy.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -136,12 +141,12 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_in_model" 
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "appserver-haproxy-route"
+    endpoint = module.landscape_server.requires.appserver_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -154,12 +159,12 @@ resource "juju_integration" "landscape_server_pingserver_haproxy_route_in_model"
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "pingserver-haproxy-route"
+    endpoint = module.landscape_server.requires.pingserver_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -172,12 +177,12 @@ resource "juju_integration" "landscape_server_message_server_haproxy_route_in_mo
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "message-server-haproxy-route"
+    endpoint = module.landscape_server.requires.message_server_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -190,12 +195,12 @@ resource "juju_integration" "landscape_server_api_haproxy_route_in_model" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "api-haproxy-route"
+    endpoint = module.landscape_server.requires.api_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -208,12 +213,12 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route_in_mo
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "package-upload-haproxy-route"
+    endpoint = module.landscape_server.requires.package_upload_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -226,12 +231,12 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_in_model"
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "repository-haproxy-route"
+    endpoint = module.landscape_server.requires.repository_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -244,17 +249,17 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "hostagent-messenger-haproxy-route"
+    endpoint = module.landscape_server.requires.hostagent_messenger_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = "haproxy-route-tcp"
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_in_model" {
@@ -262,17 +267,17 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "ubuntu-installer-attach-haproxy-route"
+    endpoint = module.landscape_server.requires.ubuntu_installer_attach_haproxy_route
   }
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route"
+    endpoint = "haproxy-route-tcp"
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
@@ -280,7 +285,7 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "appserver-haproxy-route"
+    endpoint = module.landscape_server.requires.appserver_haproxy_route
   }
 
   application {
@@ -306,7 +311,7 @@ resource "juju_integration" "landscape_server_pingserver_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "pingserver-haproxy-route"
+    endpoint = module.landscape_server.requires.pingserver_haproxy_route
   }
 
   application {
@@ -323,7 +328,7 @@ resource "juju_integration" "landscape_server_message_server_haproxy_route_lbaas
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "message-server-haproxy-route"
+    endpoint = module.landscape_server.requires.message_server_haproxy_route
   }
 
   application {
@@ -340,7 +345,7 @@ resource "juju_integration" "landscape_server_api_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "api-haproxy-route"
+    endpoint = module.landscape_server.requires.api_haproxy_route
   }
 
   application {
@@ -357,7 +362,7 @@ resource "juju_integration" "landscape_server_package_upload_haproxy_route_lbaas
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "package-upload-haproxy-route"
+    endpoint = module.landscape_server.requires.package_upload_haproxy_route
   }
 
   application {
@@ -374,7 +379,7 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_lbaas" {
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "repository-haproxy-route"
+    endpoint = module.landscape_server.requires.repository_haproxy_route
   }
 
   application {
@@ -391,16 +396,16 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "hostagent-messenger-haproxy-route"
+    endpoint = module.landscape_server.requires.hostagent_messenger_haproxy_route
   }
 
   application {
-    offer_url = var.haproxy_route_offer_url
+    offer_url = var.haproxy_route_tcp_offer_url
   }
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_lbaas" {
@@ -408,23 +413,31 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.landscape_server.app_name
-    endpoint = "ubuntu-installer-attach-haproxy-route"
+    endpoint = module.landscape_server.requires.ubuntu_installer_attach_haproxy_route
   }
 
   application {
-    offer_url = var.haproxy_route_offer_url
+    offer_url = var.haproxy_route_tcp_offer_url
   }
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 locals {
-  has_modern_pg_interface    = can(module.landscape_server.requires.database)
-  has_haproxy_route          = coalesce(module.landscape_server.has_haproxy_route_interface, false)
+  has_modern_pg_interface = can(module.landscape_server.requires.database)
+  has_haproxy_route       = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
+  # The debarchive and task-handler relations were added to landscape-server
+  # at different times (rev 357 and rev 447 respectively); skip the companion
+  # charms when the deployed revision/channel predates its relation
+  deploy_debarchive          = var.landscape_debarchive != null && module.landscape_server.has_debarchive_relation
+  deploy_task_handler        = var.landscape_task_handler != null && module.landscape_server.has_task_handler_relation
   enable_hostagent_messenger = try(var.landscape_server.config["enable_hostagent_messenger"], "false") == "true"
   enable_ubuntu_installer    = try(var.landscape_server.config["enable_ubuntu_installer_attach"], "false") == "true"
+
+  # deploy the certificates app if haproxy or task-handler is present
+  deploy_tls_certificates = var.tls_certificates != null && ((var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route) || local.deploy_task_handler)
 }
 
 
@@ -469,7 +482,8 @@ resource "juju_integration" "landscape_server_postgresql_modern" {
 resource "juju_application" "tls_certificates" {
   name        = var.tls_certificates.app_name
   model_uuid  = var.model_uuid
-  units       = 1
+  units       = var.tls_certificates.machines == null ? 1 : null
+  machines    = var.tls_certificates.machines
   constraints = var.tls_certificates.constraints
 
   charm {
@@ -479,7 +493,7 @@ resource "juju_application" "tls_certificates" {
     base     = var.tls_certificates.base
   }
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = local.deploy_tls_certificates ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_certificates" {
@@ -487,7 +501,7 @@ resource "juju_integration" "haproxy_certificates" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "certificates"
+    endpoint = module.haproxy[0].requires.certificates.endpoint
   }
 
   application {
@@ -496,7 +510,7 @@ resource "juju_integration" "haproxy_certificates" {
 
   depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
 resource "juju_integration" "haproxy_receive_ca_certs" {
@@ -504,7 +518,7 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "receive-ca-certs"
+    endpoint = module.haproxy[0].requires.receive_ca_certs.endpoint
   }
 
   application {
@@ -513,11 +527,31 @@ resource "juju_integration" "haproxy_receive_ca_certs" {
 
   depends_on = [module.haproxy, juju_application.tls_certificates]
 
-  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null ? 1 : 0
+  count = var.tls_certificates != null && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_application" "pgbouncer" {
-  name       = var.pgbouncer.app_name
+resource "juju_application" "pgbouncer_debarchive" {
+  name       = "${var.pgbouncer.app_name}-debarchive"
+  model_uuid = var.model_uuid
+  config     = var.pgbouncer.config
+
+  charm {
+    name     = "pgbouncer"
+    revision = var.pgbouncer.revision
+    channel  = var.pgbouncer.channel
+    base     = var.pgbouncer.base
+  }
+
+  lifecycle {
+    # It's a subordinate
+    ignore_changes = [units]
+  }
+
+  count = var.pgbouncer != null && local.deploy_debarchive && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_application" "pgbouncer_server" {
+  name       = "${var.pgbouncer.app_name}-server"
   model_uuid = var.model_uuid
   config     = var.pgbouncer.config
 
@@ -536,6 +570,24 @@ resource "juju_application" "pgbouncer" {
   count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
 }
 
+resource "juju_integration" "landscape_debarchive_pgbouncer" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "database"
+  }
+
+  application {
+    name     = juju_application.pgbouncer_debarchive[0].name
+    endpoint = "database"
+  }
+
+  depends_on = [juju_application.landscape_debarchive, juju_application.pgbouncer_debarchive]
+
+  count = var.pgbouncer != null && local.deploy_debarchive && local.has_modern_pg_interface ? 1 : 0
+}
+
 resource "juju_integration" "landscape_server_pgbouncer" {
   model_uuid = var.model_uuid
 
@@ -545,20 +597,20 @@ resource "juju_integration" "landscape_server_pgbouncer" {
   }
 
   application {
-    name     = juju_application.pgbouncer[0].name
+    name     = juju_application.pgbouncer_server[0].name
     endpoint = "database"
   }
 
-  depends_on = [module.landscape_server, juju_application.pgbouncer]
+  depends_on = [module.landscape_server, juju_application.pgbouncer_server]
 
   count = var.pgbouncer != null && local.has_modern_pg_interface ? 1 : 0
 }
 
-resource "juju_integration" "pgbouncer_postgresql" {
+resource "juju_integration" "pgbouncer_debarchive_postgresql" {
   model_uuid = var.model_uuid
 
   application {
-    name     = juju_application.pgbouncer[0].name
+    name     = juju_application.pgbouncer_debarchive[0].name
     endpoint = "backend-database"
   }
 
@@ -567,7 +619,224 @@ resource "juju_integration" "pgbouncer_postgresql" {
     endpoint = module.postgresql[0].provides.database
   }
 
-  depends_on = [juju_application.pgbouncer, module.postgresql]
+  depends_on = [juju_application.pgbouncer_debarchive, module.postgresql]
+
+  count = var.pgbouncer != null && local.deploy_debarchive && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_integration" "pgbouncer_server_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.pgbouncer_server[0].name
+    endpoint = "backend-database"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.pgbouncer_server, module.postgresql]
 
   count = var.pgbouncer != null && var.postgresql != null && local.has_modern_pg_interface ? 1 : 0
+}
+
+resource "juju_application" "landscape_debarchive" {
+  name        = var.landscape_debarchive.app_name
+  model_uuid  = var.model_uuid
+  units       = var.landscape_debarchive.machines == null ? var.landscape_debarchive.units : null
+  machines    = var.landscape_debarchive.machines
+  constraints = var.landscape_debarchive.constraints
+  config      = var.landscape_debarchive.config
+
+  expose {}
+
+  charm {
+    name     = var.landscape_debarchive.charm_name
+    revision = var.landscape_debarchive.revision
+    channel  = var.landscape_debarchive.channel
+    base     = var.landscape_debarchive.base
+  }
+
+  count = local.deploy_debarchive ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_landscape_server" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "landscape-server"
+  }
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.provides.debarchive
+  }
+
+  depends_on = [juju_application.landscape_debarchive, module.landscape_server]
+
+  count = local.deploy_debarchive ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "database"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.landscape_debarchive, module.postgresql]
+
+  count = local.deploy_debarchive && var.postgresql != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "debarchive-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
+  }
+
+  depends_on = [juju_application.landscape_debarchive, module.haproxy]
+
+  count = local.deploy_debarchive && var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_debarchive_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_debarchive[0].name
+    endpoint = "debarchive-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [juju_application.landscape_debarchive]
+
+  count = local.deploy_debarchive && var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_application" "landscape_task_handler" {
+  name        = var.landscape_task_handler.app_name
+  model_uuid  = var.model_uuid
+  units       = var.landscape_task_handler.machines == null ? var.landscape_task_handler.units : null
+  machines    = var.landscape_task_handler.machines
+  constraints = var.landscape_task_handler.constraints
+  config      = var.landscape_task_handler.config
+
+  expose {}
+
+  charm {
+    name     = var.landscape_task_handler.charm_name
+    revision = var.landscape_task_handler.revision
+    channel  = var.landscape_task_handler.channel
+    base     = var.landscape_task_handler.base
+  }
+
+  count = local.deploy_task_handler ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_landscape_server" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "landscape-server"
+  }
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.provides.task_handler
+  }
+
+  depends_on = [juju_application.landscape_task_handler, module.landscape_server]
+
+  count = local.deploy_task_handler ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_postgresql" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "task-db"
+  }
+
+  application {
+    name     = module.postgresql[0].application_name
+    endpoint = module.postgresql[0].provides.database
+  }
+
+  depends_on = [juju_application.landscape_task_handler, module.postgresql]
+
+  count = local.deploy_task_handler && var.postgresql != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_certificates" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "certificates"
+  }
+
+  application {
+    name = juju_application.tls_certificates[0].name
+  }
+
+  depends_on = [juju_application.landscape_task_handler, juju_application.tls_certificates]
+
+  count = local.deploy_task_handler && var.tls_certificates != null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "grpc-haproxy-route"
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = "haproxy-route-tcp"
+  }
+
+  depends_on = [juju_application.landscape_task_handler, module.haproxy]
+
+  count = local.deploy_task_handler && var.haproxy != null && var.haproxy_route_tcp_offer_url == null ? 1 : 0
+}
+
+resource "juju_integration" "landscape_task_handler_grpc_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = juju_application.landscape_task_handler[0].name
+    endpoint = "grpc-haproxy-route"
+  }
+
+  application {
+    offer_url = var.haproxy_route_tcp_offer_url
+  }
+
+  depends_on = [juju_application.landscape_task_handler]
+
+  count = local.deploy_task_handler && var.haproxy_route_tcp_offer_url != null ? 1 : 0
 }

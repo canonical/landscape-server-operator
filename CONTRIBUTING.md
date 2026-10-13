@@ -40,33 +40,6 @@ The integration tests can take a while to set up. If you already have an active 
 LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL=1 make integration-test
 ```
 
-#### LBaaS integration tests
-
-The LBaaS (Load Balancer as a Service) integration tests verify external HAProxy load balancing functionality with the Landscape Server cahrm. These tests require a separate Juju model with HAProxy deployed.
-
-To set up the LBaaS automatically:
-
-```sh
-make lbaas
-```
-
-This will deploy the Landscape Server model, create a separate `lbaas` model with HAProxy and the self-signed certificates operator, and then configure cross-model relations between the models. This allows Landscape to be load balanced by the external HAProxy.
-
-> [!IMPORTANT]
-> You need an SSH public key to access the Juju models. If you don't have one:
->
-> ```sh
-> ssh-keygen -t ed25519
-> ```
-
-Then, the exisitng models can be used for the integration tests by passing the following environment variables:
-
-```sh
-LANDSCAPE_CHARM_USE_HOST_JUJU_MODEL=1 LANDSCAPE_CHARM_USE_HOST_LBAAS_MODEL=1 LBAAS_MODEL_NAME=lbaas make integration-test
-```
-
-To access Landscape when being load balanced by the LBaaS, you must include the configured hostname in all requests: `landscape.local` (or the hostname of the `root_url` set in the charm config). For example, to access the Landscape UI in a web browser, add the hostname and the IP address of HAProxy to your `/etc/hosts` file.
-
 ### Lint and format code
 
 Run the following to lint the Python code:
@@ -112,7 +85,7 @@ The Landscape Server charm includes Terraform modules for deploying the `landsca
 
 ### Deploy landscape-scalable via Terraform
 
-To deploy Landscape using the product Terraform module instead of a bundle, use:
+To deploy Landscape using the product Terraform module with a modern (26.04+) configuration instead of a bundle, use:
 
 ```sh
 make deploy-landscape-scalable
@@ -123,6 +96,14 @@ This requires [`terraform`](https://developer.hashicorp.com/terraform/install) a
 ```sh
 make deploy-landscape-scalable MODEL_NAME=my-landscape SKIP_CLEAN=true
 ```
+
+To deploy the legacy (24.04) configuration instead:
+
+```sh
+make deploy-landscape-scalable-legacy
+```
+
+This deploys the 24.04 (legacy) configuration: Landscape Server `24.04/stable`, PostgreSQL `14/stable`, and HAProxy `latest/stable`.
 
 ### Run tests
 

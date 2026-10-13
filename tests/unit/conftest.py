@@ -1,6 +1,6 @@
 from configparser import ConfigParser
 import subprocess
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import scenario
@@ -22,6 +22,13 @@ class ConfigReader:
 def mock_write_deployment_mode_systemd_override(monkeypatch):
     monkeypatch.setattr(
         "charm.write_deployment_mode_systemd_override", lambda *a, **kw: None
+    )
+
+
+@pytest.fixture(autouse=True)
+def mock_write_analytics_id_systemd_override(monkeypatch):
+    monkeypatch.setattr(
+        "charm.write_analytics_id_systemd_override", lambda *a, **kw: None
     )
 
 
@@ -74,6 +81,13 @@ def subprocess_fixture(monkeypatch):
 @pytest.fixture(autouse=True, name="check_call_fixture")
 def check_call_fixture(monkeypatch):
     monkeypatch.setattr("charm.check_call", lambda *args, **kwargs: None)
+
+
+@pytest.fixture(autouse=True)
+def get_haproxy_error_files():
+    with patch("charm.get_haproxy_error_files") as m:
+        m.return_value = ()
+        yield m
 
 
 @pytest.fixture(name="replicas_networks")
@@ -129,21 +143,15 @@ def replicas_fixture() -> scenario.PeerRelation:
 
 @pytest.fixture(name="systemd_fixture")
 def systemd_fixture(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        "charms.operator_libs_linux.v1.systemd.service_reload", MagicMock()
-    )
+    monkeypatch.setattr("charmlibs.systemd.service_reload", MagicMock())
 
 
 @pytest.fixture(name="apt_fixture")
 def apt_fixture(monkeypatch: pytest.MonkeyPatch):
     add_package_mock = MagicMock()
     remove_package_mock = MagicMock()
-    monkeypatch.setattr(
-        "charms.operator_libs_linux.v0.apt.add_package", add_package_mock
-    )
-    monkeypatch.setattr(
-        "charms.operator_libs_linux.v0.apt.remove_package", remove_package_mock
-    )
+    monkeypatch.setattr("charmlibs.apt.add_package", add_package_mock)
+    monkeypatch.setattr("charmlibs.apt.remove_package", remove_package_mock)
     return add_package_mock, remove_package_mock
 
 

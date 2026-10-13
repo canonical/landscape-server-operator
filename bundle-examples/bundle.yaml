@@ -27,10 +27,11 @@ applications:
       enable_hostagent_messenger: True
       enable_ubuntu_installer_attach: True
       root_url: https://landscape.local/
+      demo_data: True
     base: ubuntu@24.04
   haproxy:
     charm: ch:haproxy
-    channel: 2.8/edge
+    channel: 2.8/stable
     num_units: 1
     constraints: arch=amd64
   self-signed-certificates:
@@ -50,6 +51,9 @@ relations:
   - [landscape-server:api-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route]
-  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route-tcp]
+  - [
+      landscape-server:ubuntu-installer-attach-haproxy-route,
+      haproxy:haproxy-route-tcp,
+    ]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]

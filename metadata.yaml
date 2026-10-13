@@ -43,20 +43,26 @@ requires:
     interface: haproxy-route
     limit: 1
   hostagent-messenger-haproxy-route:
-    interface: haproxy-route
+    interface: haproxy-route-tcp
     limit: 1
   ubuntu-installer-attach-haproxy-route:
-    interface: haproxy-route
+    interface: haproxy-route-tcp
     limit: 1
   repository-haproxy-route:
     interface: haproxy-route
     limit: 1
 
 provides:
+  debarchive:
+    interface: landscape-debarchive
+  task-handler:
+    interface: landscape-task-handler
   data:
     interface: block-storage
     scope: container
     optional: true
+  website:
+    interface: http
   hosted:
     interface: landscape-hosted
     scope: container

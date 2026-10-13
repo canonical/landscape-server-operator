@@ -3,12 +3,14 @@ Configuration for the Landscape charm.
 """
 
 from collections import Counter
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
 import re
 from typing import Any
 
-from pydantic import BaseModel, field_validator, model_validator
+from charms.haproxy.v1.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
+from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 
 
@@ -20,6 +22,61 @@ class RedirectHTTPS(str, Enum):
     ALL = "all"
     NONE = "none"
     DEFAULT = "default"
+
+
+class HealthCheck(BaseModel):
+    """
+    HAProxy health check settings for a single haproxy-route.
+    """
+
+    path: str | None = None
+    interval: int = Field(ge=1)
+    rise: int = Field(ge=1)
+    fall: int = Field(ge=1)
+
+    @field_validator("path")
+    @classmethod
+    def path_is_valid(cls, v: str | None):
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        if not v.startswith("/"):
+            raise ValueError(
+                f"health check path {v!r} is invalid. Paths must start with '/'."
+            )
+        if invalid := set(v) & set(HAPROXY_CONFIG_INVALID_CHARACTERS):
+            raise ValueError(
+                f"health check path {v!r} is invalid. It contains characters "
+                f"HAProxy does not accept: {sorted(invalid)!r}."
+            )
+        return v
+
+    def route_kwargs(self) -> dict[str, Any]:
+        """
+        The haproxy-route health check arguments, or an empty mapping when no
+        path is configured (which disables the health check).
+        """
+        if not self.path:
+            return {}
+        return {
+            "check_path": self.path,
+            "check_interval": self.interval,
+            "check_rise": self.rise,
+            "check_fall": self.fall,
+        }
+
+
+class HAProxyHealthChecks(BaseModel):
+    """
+    Health check settings for each haproxy-route.
+    """
+
+    appserver: HealthCheck
+    pingserver: HealthCheck
+    message_server: HealthCheck
+    api: HealthCheck
+    package_upload: HealthCheck
+    repository: HealthCheck
 
 
 class LandscapeCharmConfiguration(BaseModel):
@@ -48,6 +105,8 @@ class LandscapeCharmConfiguration(BaseModel):
     admin_name: str | None = None
     admin_password: str | None = None
     registration_key: str | None = None
+    ssl_cert: str = "DEFAULT"
+    ssl_key: str = ""
     http_proxy: str | None = None
     https_proxy: str | None = None
     no_proxy: str | None = None
@@ -60,6 +119,7 @@ class LandscapeCharmConfiguration(BaseModel):
     db_schema_user: str | None = None
     db_schema_password: str | None = None
     deployment_mode: str
+    analytics_id: str | None = None
     additional_service_config: str | None = None
     secret_token: str | None = None
     cookie_encryption_key: str | None = None
@@ -71,6 +131,7 @@ class LandscapeCharmConfiguration(BaseModel):
     enable_hostagent_messenger: bool
     enable_ubuntu_installer_attach: bool
     max_global_haproxy_connections: int
+    haproxy_health_checks: HAProxyHealthChecks
     appserver_base_port: int
     pingserver_base_port: int
     message_server_base_port: int
@@ -79,6 +140,18 @@ class LandscapeCharmConfiguration(BaseModel):
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
     outbox_snap_channel: str
+    demo_data: bool = False
+    bootstrap_schema_override_args: str | None = None
+
+    @property
+    def bootstrap_schema_override_args_list(self) -> list[str]:
+        if not self.bootstrap_schema_override_args:
+            return []
+        return [
+            arg.strip()
+            for arg in self.bootstrap_schema_override_args.split(",")
+            if arg.strip()
+        ]
 
     @field_validator("deployment_mode")
     @classmethod
@@ -89,6 +162,41 @@ class LandscapeCharmConfiguration(BaseModel):
                 "Only letters, numbers, hyphens, and underscores are allowed."
             )
 
+        return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def fold_haproxy_health_checks(cls, data: Any):
+        """
+        Group the flat `haproxy_<service>_health_check_<setting>` charm options
+        into `haproxy_health_checks`.
+        """
+        if not isinstance(data, Mapping) or "haproxy_health_checks" in data:
+            return data
+
+        data = dict(data)
+        data["haproxy_health_checks"] = {
+            service: {
+                setting: data.pop(f"haproxy_{service}_health_check_{setting}", None)
+                for setting in HealthCheck.model_fields
+            }
+            for service in HAProxyHealthChecks.model_fields
+        }
+        return data
+
+    @field_validator("analytics_id")
+    @classmethod
+    def analytics_id_safe_chars(cls, v: str | None):
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", v):
+            raise ValueError(
+                f"analytics_id {v!r} contains invalid characters. "
+                "Only letters, numbers, dots, hyphens, and underscores are allowed."
+            )
         return v
 
     @model_validator(mode="after")
@@ -131,18 +239,12 @@ class LandscapeCharmConfiguration(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def oidc_minimum_fields(self):
-        """
-        If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
-        must provide all three.
-        """
-        required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
-        fields = self.model_dump(include=set(required_configs))
-
-        if any(fields.values()) and not all(fields.values()):
+    def check_deployment_mode_min_install(self):
+        """min_install is only valid with standalone deployments."""
+        if self.min_install and self.deployment_mode != "standalone":
             raise ValueError(
-                f"When using OIDC, must provide all of {required_configs}. "
-                f"Got {fields}."
+                f"min_install=True is not compatible with "
+                f"deployment_mode={self.deployment_mode!r}."
             )
         return self
 
@@ -174,6 +276,22 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"the following ports: {', '.join(map(str, overused_ports))}"
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def oidc_minimum_fields(self):
+        """
+        If providing any of `oidc_issuer`, `oidc_client_id`, or `oidc_client_secret`,
+        must provide all three.
+        """
+        required_configs = ("oidc_issuer", "oidc_client_id", "oidc_client_secret")
+        fields = self.model_dump(include=set(required_configs))
+
+        if any(fields.values()) and not all(fields.values()):
+            raise ValueError(
+                f"When using OIDC, must provide all of {required_configs}. "
+                f"Got {fields}."
+            )
         return self
 
 
