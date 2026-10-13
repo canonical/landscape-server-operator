@@ -2595,11 +2595,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 )
                 installed = apt.DebianPackage.from_installed_package(package)
                 event.log(f"Upgraded to {installed.version}...")
-            except PackageNotFoundError as e:
-                logger.error(
-                    f"Could not upgrade package {package}. Reason: {e.message}"
-                )
-                event.fail(f"Could not upgrade package {package}. Reason: {e.message}")
+            except (PackageNotFoundError, PackageError, CalledProcessError) as e:
+                reason = getattr(e, "message", None) or str(e)
+                logger.error(f"Could not upgrade package {package}. Reason: {reason}")
+                event.fail(f"Could not upgrade package {package}. Reason: {reason}")
                 self.unit.status = BlockedStatus("Failed to upgrade packages")
                 return
             finally:

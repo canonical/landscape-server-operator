@@ -2601,6 +2601,29 @@ class TestCharm(unittest.TestCase):
         )
         self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
 
+    def test_action_upgrade_install_CalledProcessError(self):
+        event = Mock(spec=ActionEvent)
+        event.params = {}
+        self.harness.charm._stored.running = False
+
+        def fail_apt_get_install(cmd, *args, **kwargs):
+            if cmd[:2] == ["apt-get", "install"]:
+                raise CalledProcessError(100, cmd)
+
+        with (
+            patch("charm.apt", spec_set=apt),
+            patch(
+                "charm.check_call", side_effect=fail_apt_get_install
+            ) as check_call_mock,
+        ):
+            self.harness.charm._upgrade(event)
+
+        event.fail.assert_called_once()
+        check_call_mock.assert_any_call(
+            ["apt-mark", "hold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+        )
+        self.assertIsInstance(self.harness.charm.unit.status, BlockedStatus)
+
     def test_action_upgrade_add_apt_repository_CalledProcessError(self):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
