@@ -2923,7 +2923,16 @@ class TestDebResourceInstall:
                 version="1.0"
             )
             ctx.run(ctx.on.action("upgrade"), state)
-        check_call_mock.assert_any_call(["apt-get", "install", "-y", str(deb)])
+        check_call_mock.assert_any_call(
+            [
+                "apt-get",
+                "install",
+                "-y",
+                "-o",
+                "Dpkg::Options::=--force-confold",
+                str(deb),
+            ]
+        )
         # landscape-server skipped in loop; other packages still upgraded via apt
         for call_args in apt_mock.DebianPackage.from_apt_cache.call_args_list:
             assert call_args.args[0] != LANDSCAPE_SERVER

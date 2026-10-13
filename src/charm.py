@@ -2556,7 +2556,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     )
                 if package == LANDSCAPE_SERVER and local_deb:
                     event.log(f"Installing {package} from local deb: {local_deb}")
-                    cmd = ["apt-get", "install", "-y"]
+                    # service.conf is managed by the charm; never prompt to replace it.
+                    cmd = [
+                        "apt-get",
+                        "install",
+                        "-y",
+                        "-o",
+                        "Dpkg::Options::=--force-confold",
+                    ]
                     if self.charm_config.min_install:
                         cmd.append("--no-install-recommends")
                     check_call([*cmd, str(local_deb)])
