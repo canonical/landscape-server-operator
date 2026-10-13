@@ -1217,7 +1217,8 @@ def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
         text=True,
         timeout=30,
     )
-    assert "ALPN protocol: h2" in handshake.stdout, handshake.stdout
+    handshake_output = handshake.stdout + handshake.stderr
+    assert "ALPN protocol: h2" in handshake_output, handshake_output
 
     ca_pem = juju.run("self-signed-certificates/leader", "get-ca-certificate").results[
         "ca-certificate"

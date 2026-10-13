@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from ops.testing import Context, State
+from ops.testing import Context, Relation, State
 import pytest
 
 from charm import LandscapeServerCharm
@@ -222,16 +222,14 @@ class TestHostname:
                 f"Wrong hostname for {c.kwargs.get('service')}"
             )
 
-    def test_hostname_falls_back_to_leader_ip_when_no_root_url(
-        self, replicas_network_state
-    ):
+    def test_hostname_omitted_when_no_root_url(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(config={}, **replicas_network_state)
         mock = _run_provide(context, state, leader_ip=LEADER_IP)
         assert mock.called
         for c in mock.call_args_list:
-            assert c.kwargs.get("hostname") == LEADER_IP, (
-                f"Expected leader IP as hostname for {c.kwargs.get('service')}"
+            assert c.kwargs.get("hostname") is None, (
+                f"A leader IP is not a valid hostname for {c.kwargs.get('service')}"
             )
 
 
@@ -490,9 +488,19 @@ class TestConditionalRoutes:
 class TestUbuntuInstallerAttachRoute:
     """ubuntu-installer-attach serves TLS and is routed with haproxy-route (HTTPS)."""
 
-    def _calls(self, replicas_network_state, leader_ip=LEADER_IP, **config):
+    def _calls(
+        self, replicas_network_state, leader_ip=LEADER_IP, certificates=True, **config
+    ):
         context = Context(LandscapeServerCharm)
-        state = State(config=config, **replicas_network_state)
+        relations = list(replicas_network_state.get("relations", []))
+        if certificates:
+            relations.append(
+                Relation(endpoint="certificates", interface="tls-certificates")
+            )
+        state = State(
+            config=config,
+            **{**replicas_network_state, "relations": relations},
+        )
         mock = _run_provide(context, state, leader_ip=leader_ip)
         return _calls_for(mock, "ubuntu-installer-attach")
 
@@ -522,10 +530,21 @@ class TestUbuntuInstallerAttachRoute:
         assert kwargs["unit_address"]
         assert "paths" not in kwargs
 
-    def test_hostname_falls_back_to_leader_ip(self, replicas_network_state):
+    def test_hostname_omitted_without_domain(self, replicas_network_state):
         calls = self._calls(
             replicas_network_state,
             enable_ubuntu_installer_attach=True,
             root_url="",
         )
-        assert calls[-1].kwargs["hostname"] == LEADER_IP
+        assert calls[-1].kwargs["hostname"] is None
+
+    def test_plain_http_route_without_certificates(self, replicas_network_state):
+        """Without a certificate the backend is plaintext, so the route must be too."""
+        calls = self._calls(
+            replicas_network_state,
+            certificates=False,
+            enable_ubuntu_installer_attach=True,
+        )
+        kwargs = calls[-1].kwargs
+        assert kwargs["protocol"] == "http"
+        assert kwargs["external_grpc_port"] is None

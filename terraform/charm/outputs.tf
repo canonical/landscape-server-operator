@@ -79,8 +79,13 @@ locals {
     repository_haproxy_route              = "repository-haproxy-route"
     hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-    certificates                          = "certificates"
   } : { website = "website" }
+
+  # In earlier revisions ubuntu-installer-attach-haproxy-route is a
+  # haproxy-route-tcp endpoint and there is no certificates endpoint
+  installer_attach_https_updated_rev = 540
+  has_installer_attach_https         = local.has_modern_haproxy_interface && (var.revision != null ? var.revision >= local.installer_attach_https_updated_rev : true)
+  certificates_relations             = local.has_installer_attach_https ? { certificates = "certificates" } : {}
 
 }
 
@@ -89,7 +94,12 @@ output "requires" {
   value = merge({
     application_dashboard = "application-dashboard",
     smtp                  = "smtp",
-  }, local.amqp_relations, local.db_relations, local.haproxy_relations)
+  }, local.amqp_relations, local.db_relations, local.haproxy_relations, local.certificates_relations)
+}
+
+output "has_installer_attach_https" {
+  description = "Indicates whether the deployed revision serves ubuntu-installer-attach over HTTPS through haproxy-route and exposes the certificates endpoint."
+  value       = local.has_installer_attach_https
 }
 
 output "has_modern_haproxy_interface" {

@@ -594,7 +594,7 @@ class LandscapeServerCharm(CharmBase):
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
-        except PackageError as e:
+        except (PackageError, CalledProcessError) as e:
             # TODO Should be "blocked" eventually, but this causes the charm to be
             # stuck in the "blocked" state permanently.
             self.unit.status = MaintenanceStatus(
@@ -1595,7 +1595,9 @@ class LandscapeServerCharm(CharmBase):
     ) -> None:
         self._provide_all_haproxy_route_requirements()
 
-    def _provide_all_haproxy_route_requirements(self) -> None:
+    def _provide_all_haproxy_route_requirements(
+        self, tls_relation_broken: bool = False
+    ) -> None:
         unit_ip = self.unit_ip
         leader_ip = self._stored.leader_ip
         if not unit_ip or not leader_ip:
@@ -1625,9 +1627,9 @@ class LandscapeServerCharm(CharmBase):
             if name := parsed.hostname:
                 hostname = name
 
-        # haproxy-route-tcp's `sni` field is validated as a domain name, so it
-        # can't be set to `hostname` when that's still the leader_ip fallback
-        # (i.e. root_url isn't configured with a real hostname).
+        # The `sni` and haproxy-route `hostname` fields are validated as domain
+        # names, so they can't be set to `hostname` when that's still the
+        # leader_ip fallback (i.e. root_url isn't configured with a real hostname).
         sni = hostname if validators.domain(hostname) else None
 
         appserver_paths = ["/", "/hash-id-databases"]
@@ -1643,7 +1645,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
             # Because this route contains `/`
             # it will swallow the others so they
             # need to be denied to avoid a race.
@@ -1666,7 +1668,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         self.message_server_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-message-server-{model_uuid}",
@@ -1677,7 +1679,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         self.api_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-api-{model_uuid}",
@@ -1688,7 +1690,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         self.package_upload_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-package-upload-{model_uuid}",
@@ -1699,7 +1701,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         # Repository uses appserver ports and allow_http=True because clients
         # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
@@ -1714,7 +1716,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_tcp_requirements(
@@ -1726,13 +1728,18 @@ class LandscapeServerCharm(CharmBase):
                 sni=sni,
             )
         if cfg.enable_ubuntu_installer_attach:
+            # The backend is only TLS when a certificate is going to be served,
+            # so the route has to follow that state.
+            serves_tls = self._ubuntu_installer_attach_tls_wanted(tls_relation_broken)
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
                 service=f"landscape-ubuntu-installer-attach-{model_uuid}",
                 ports=[cfg.ubuntu_installer_attach_base_port],
-                protocol="https",
-                external_grpc_port=UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT,
+                protocol="https" if serves_tls else "http",
+                external_grpc_port=(
+                    UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT if serves_tls else None
+                ),
                 unit_address=unit_ip,
-                hostname=hostname,
+                hostname=sni,
             )
 
     def _get_certificate_requests(
@@ -1754,9 +1761,24 @@ class LandscapeServerCharm(CharmBase):
 
     def _on_certificate_available(self, _) -> None:
         self._sync_ubuntu_installer_attach_tls()
+        self._provide_all_haproxy_route_requirements()
 
     def _on_certificates_relation_broken(self, _) -> None:
         self._sync_ubuntu_installer_attach_tls(relation_broken=True)
+        self._provide_all_haproxy_route_requirements(tls_relation_broken=True)
+
+    def _ubuntu_installer_attach_tls_wanted(
+        self, relation_broken: bool = False
+    ) -> bool:
+        has_relation = any(
+            relation.active
+            for relation in self.model.relations.get(CERTIFICATES_RELATION, [])
+        )
+        return bool(
+            self.charm_config.enable_ubuntu_installer_attach
+            and has_relation
+            and not relation_broken
+        )
 
     def _sync_ubuntu_installer_attach_tls(self, relation_broken: bool = False) -> None:
         """
@@ -1766,15 +1788,7 @@ class LandscapeServerCharm(CharmBase):
         Until the first certificate is issued the service stays plaintext. A
         certificate being renewed keeps being served until its replacement arrives.
         """
-        has_relation = any(
-            relation.active
-            for relation in self.model.relations.get(CERTIFICATES_RELATION, [])
-        )
-        wanted = (
-            self._stored.enable_ubuntu_installer_attach
-            and has_relation
-            and not relation_broken
-        )
+        wanted = self._ubuntu_installer_attach_tls_wanted(relation_broken)
 
         try:
             if not wanted:
