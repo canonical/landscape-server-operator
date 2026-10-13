@@ -3768,7 +3768,9 @@ class TestPackageInstall:
         assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
 
-    def test_install_landscape_server_hosted_min_install_blocked(self, empty_deb_resource):
+    def test_install_landscape_server_hosted_min_install_blocked(
+        self, empty_deb_resource
+    ):
         """
         min_install=True with a non-standalone deployment_mode is a config error
         since landscape-hosted depends on landscape-hashids.
