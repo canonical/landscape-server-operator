@@ -37,6 +37,13 @@ LICENSE_FILE_PROTOCOLS = (
 SERVICE_CONF = "/etc/landscape/service.conf"
 SSL_CERT_PATH = "/etc/ssl/certs/landscape_server_ca.crt"
 
+UBUNTU_INSTALLER_ATTACH_SECTION = "ubuntu_installer_attach"
+UBUNTU_INSTALLER_ATTACH_TLS_DIR = "/etc/landscape/ubuntu-installer-attach"
+UBUNTU_INSTALLER_ATTACH_TLS_KEYS = {
+    "ssl_server_cert": "server.crt",
+    "ssl_server_private_key": "server.key",
+}
+
 DEFAULT_POSTGRES_PORT = "5432"
 
 AMQP_USERNAME = "landscape"
@@ -251,6 +258,107 @@ def update_service_conf(updates: dict) -> None:
         config.write(config_fp)
 
     migrate_service_conf()
+
+
+def remove_service_conf_keys(section: str, keys: list[str]) -> bool:
+    """
+    Removes `keys` from `section` of the Landscape Server configuration file.
+
+    Returns True if the file was changed.
+    """
+    if not os.path.isfile(SERVICE_CONF):
+        raise ServiceConfMissing("Landscape server install failed!")
+
+    config = ConfigParser()
+    config.read(SERVICE_CONF)
+
+    removed = (
+        [key for key in keys if config.remove_option(section, key)]
+        if (config.has_section(section))
+        else []
+    )
+    if not removed:
+        return False
+
+    with open(SERVICE_CONF, "w") as config_fp:
+        config.write(config_fp)
+
+    migrate_service_conf()
+    return True
+
+
+def _write_file_if_changed(path: str, content: str, mode: int, uid: int, gid: int):
+    """Atomically writes `content` to `path`. Returns True if it changed."""
+    try:
+        with open(path) as existing_fp:
+            if existing_fp.read() == content:
+                os.chmod(path, mode)
+                os.chown(path, uid, gid)
+                return False
+    except FileNotFoundError:
+        pass
+
+    tmp_path = f"{path}.tmp"
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as tmp_fp:
+        tmp_fp.write(content)
+    os.chmod(tmp_path, mode)
+    os.chown(tmp_path, uid, gid)
+    os.replace(tmp_path, path)
+    return True
+
+
+def write_ubuntu_installer_attach_tls(
+    certificate: str, private_key: str, uid: int, gid: int
+) -> bool:
+    """
+    Writes the Ubuntu installer attach server certificate (leaf followed by any
+    chain) and private key, and points `service.conf` at them.
+
+    The key is readable by group `gid` only, so the service user can load it.
+
+    Returns True if any file or setting changed.
+    """
+    os.makedirs(UBUNTU_INSTALLER_ATTACH_TLS_DIR, mode=0o750, exist_ok=True)
+    os.chmod(UBUNTU_INSTALLER_ATTACH_TLS_DIR, 0o750)
+    os.chown(UBUNTU_INSTALLER_ATTACH_TLS_DIR, uid, gid)
+
+    cert_path = os.path.join(
+        UBUNTU_INSTALLER_ATTACH_TLS_DIR,
+        UBUNTU_INSTALLER_ATTACH_TLS_KEYS["ssl_server_cert"],
+    )
+    key_path = os.path.join(
+        UBUNTU_INSTALLER_ATTACH_TLS_DIR,
+        UBUNTU_INSTALLER_ATTACH_TLS_KEYS["ssl_server_private_key"],
+    )
+    changed = _write_file_if_changed(cert_path, certificate, 0o644, uid, gid)
+    changed |= _write_file_if_changed(key_path, private_key, 0o640, uid, gid)
+
+    section = read_service_conf().get(UBUNTU_INSTALLER_ATTACH_SECTION, {})
+    desired = {"ssl_server_cert": cert_path, "ssl_server_private_key": key_path}
+    if any(section.get(key) != value for key, value in desired.items()):
+        update_service_conf({UBUNTU_INSTALLER_ATTACH_SECTION: desired})
+        changed = True
+
+    return changed
+
+
+def remove_ubuntu_installer_attach_tls() -> bool:
+    """
+    Removes the TLS settings from `service.conf` and the key material from disk.
+
+    Returns True if anything was removed.
+    """
+    changed = remove_service_conf_keys(
+        UBUNTU_INSTALLER_ATTACH_SECTION, list(UBUNTU_INSTALLER_ATTACH_TLS_KEYS)
+    )
+    for filename in UBUNTU_INSTALLER_ATTACH_TLS_KEYS.values():
+        try:
+            os.remove(os.path.join(UBUNTU_INSTALLER_ATTACH_TLS_DIR, filename))
+        except FileNotFoundError:
+            continue
+        changed = True
+    return changed
 
 
 def generate_secret_token():

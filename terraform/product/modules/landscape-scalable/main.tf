@@ -272,12 +272,31 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = "haproxy-route-tcp"
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
   }
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+}
+
+# ubuntu-installer-attach serves TLS itself, so haproxy re-encrypts to it using the
+# certificate issued to the unit through this relation
+resource "juju_integration" "landscape_server_certificates" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.certificates
+  }
+
+  application {
+    name = juju_application.tls_certificates[0].name
+  }
+
+  depends_on = [module.landscape_server, juju_application.tls_certificates]
+
+  count = local.deploy_tls_certificates && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
@@ -417,12 +436,12 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
   }
 
   application {
-    offer_url = var.haproxy_route_tcp_offer_url
+    offer_url = var.haproxy_route_offer_url
   }
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer ? 1 : 0
 }
 
 locals {

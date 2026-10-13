@@ -10,6 +10,7 @@ import json
 import lzma
 import re
 import shlex
+import subprocess
 from urllib.parse import urlparse
 
 import jubilant
@@ -27,6 +28,7 @@ from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
     all_landscape_active,
     assert_grpc_reachable,
+    assert_grpc_secure_channel_ready,
     get_cos_agent_config,
     get_session,
     has_cos_agent,
@@ -689,10 +691,9 @@ def test_ubuntu_installer_attach_grpc_haproxy_route(juju: jubilant.Juju):
     unit = leader_unit_name(juju, "landscape-server")
     data = relation_app_data(juju, unit, "ubuntu-installer-attach-haproxy-route")
 
-    assert data.get("port") == "50051", f"Expected port 50051, got {data.get('port')}"
-    hosts = json.loads(data.get("hosts", "[]"))
-    unit_address = juju.status().apps["landscape-server"].units[unit].public_address
-    assert unit_address in hosts, f"Expected {unit_address} in hosts, got {hosts}"
+    assert data.get("service", "").startswith("landscape-ubuntu-installer-attach-")
+    assert data.get("protocol") == "https"
+    assert str(data.get("external_grpc_port")) == "50051"
 
 
 @pytest.mark.skipif(
@@ -1177,6 +1178,10 @@ def test_grpc_hostagent_messenger(juju: jubilant.Juju):
 
 
 def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
+    """
+    Ubuntu installer attach is served over TLS and haproxy-route (HTTPS), so the
+    frontend negotiates ALPN h2 and a plain `grpc.secure_channel` works.
+    """
     config = juju.config("landscape-server")
     root_url = config.get("root_url", "https://landscape.local/")
     hostname = urlparse(root_url).hostname
@@ -1186,20 +1191,35 @@ def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
     app_status = juju.status().apps["landscape-server"]
     if "ubuntu-installer-attach-haproxy-route" not in app_status.relations:
         pytest.skip("ubuntu-installer-attach-haproxy-route not configured")
+    if "certificates" not in app_status.relations:
+        pytest.skip("landscape-server certificates not integrated")
 
     ubuntu_installer_attach = config.get("enable_ubuntu_installer_attach", False)
     if not ubuntu_installer_attach:
         pytest.skip("Ubuntu Installer Attach not configured....")
 
-    unit = leader_unit_name(juju, "landscape-server")
-    remote_data = remote_relation_app_data(
-        juju, unit, "ubuntu-installer-attach-haproxy-route"
-    )
-    endpoints = json.loads(remote_data.get("endpoints", "[]"))
-    if not endpoints:
-        pytest.skip("No endpoints published by the haproxy-route-tcp provider")
-    _, _, port_str = endpoints[0].rpartition(":")
+    juju.wait(all_landscape_active, timeout=300)
+    haproxy_ip = _haproxy_ip(juju)
 
-    # Connect to the real HAProxy unit IP, but keep the published hostname
-    # as SNI so we still exercise the routed TLS frontend correctly.
-    assert_grpc_reachable(_haproxy_ip(juju), int(port_str), hostname)
+    handshake = subprocess.run(
+        [
+            "openssl",
+            "s_client",
+            "-alpn",
+            "h2",
+            "-servername",
+            hostname,
+            "-connect",
+            f"{haproxy_ip}:50051",
+        ],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert "ALPN protocol: h2" in handshake.stdout, handshake.stdout
+
+    ca_pem = juju.run("self-signed-certificates/leader", "get-ca-certificate").results[
+        "ca-certificate"
+    ]
+    assert_grpc_secure_channel_ready(haproxy_ip, 50051, hostname, ca_pem)

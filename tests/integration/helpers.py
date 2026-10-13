@@ -369,3 +369,26 @@ def assert_grpc_reachable(
             events = conn.receive_data(data)
 
     assert events, f"No HTTP/2 response received from {ip}:{port}"
+
+
+def assert_grpc_secure_channel_ready(
+    ip: str, port: int, hostname: str, ca_pem: str, timeout: float = 30
+) -> None:
+    """
+    Confirm a gRPC service is reachable through HAProxy using a plain, fully
+    verifying `grpc.secure_channel`.
+
+    This needs the frontend to negotiate ALPN "h2", which grpc-python
+    hard-requires; the channel only becomes ready after a successful
+    TLS + HTTP/2 handshake. `ip` is connected to directly while `hostname`
+    is used as the TLS server name.
+    """
+    import grpc
+
+    credentials = grpc.ssl_channel_credentials(root_certificates=ca_pem.encode())
+    options = (("grpc.ssl_target_name_override", hostname),)
+    with grpc.secure_channel(f"{ip}:{port}", credentials, options=options) as channel:
+        try:
+            grpc.channel_ready_future(channel).result(timeout=timeout)
+        except grpc.FutureTimeoutError:
+            pytest.fail(f"gRPC secure channel to {ip}:{port} did not become ready")

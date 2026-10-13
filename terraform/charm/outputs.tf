@@ -79,6 +79,7 @@ locals {
     repository_haproxy_route              = "repository-haproxy-route"
     hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
+    certificates                          = "certificates"
   } : { website = "website" }
 
 }
