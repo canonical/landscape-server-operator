@@ -1595,9 +1595,7 @@ class LandscapeServerCharm(CharmBase):
     ) -> None:
         self._provide_all_haproxy_route_requirements()
 
-    def _provide_all_haproxy_route_requirements(
-        self, tls_relation_broken: bool = False
-    ) -> None:
+    def _provide_all_haproxy_route_requirements(self) -> None:
         unit_ip = self.unit_ip
         leader_ip = self._stored.leader_ip
         if not unit_ip or not leader_ip:
@@ -1730,7 +1728,7 @@ class LandscapeServerCharm(CharmBase):
         if cfg.enable_ubuntu_installer_attach:
             # The backend is only TLS when a certificate is going to be served,
             # so the route has to follow that state.
-            serves_tls = self._ubuntu_installer_attach_tls_wanted(tls_relation_broken)
+            serves_tls = self._ubuntu_installer_attach_tls_wanted()
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
                 service=f"landscape-ubuntu-installer-attach-{model_uuid}",
                 ports=[cfg.ubuntu_installer_attach_base_port],
@@ -1764,23 +1762,19 @@ class LandscapeServerCharm(CharmBase):
         self._provide_all_haproxy_route_requirements()
 
     def _on_certificates_relation_broken(self, _) -> None:
-        self._sync_ubuntu_installer_attach_tls(relation_broken=True)
-        self._provide_all_haproxy_route_requirements(tls_relation_broken=True)
+        self._sync_ubuntu_installer_attach_tls()
+        self._provide_all_haproxy_route_requirements()
 
-    def _ubuntu_installer_attach_tls_wanted(
-        self, relation_broken: bool = False
-    ) -> bool:
-        has_relation = any(
-            relation.active
-            for relation in self.model.relations.get(CERTIFICATES_RELATION, [])
-        )
+    def _ubuntu_installer_attach_tls_wanted(self) -> bool:
         return bool(
             self.charm_config.enable_ubuntu_installer_attach
-            and has_relation
-            and not relation_broken
+            and any(
+                relation.active
+                for relation in self.model.relations.get(CERTIFICATES_RELATION, [])
+            )
         )
 
-    def _sync_ubuntu_installer_attach_tls(self, relation_broken: bool = False) -> None:
+    def _sync_ubuntu_installer_attach_tls(self) -> None:
         """
         Make the ubuntu-installer-attach service serve TLS with the certificate
         issued over the `certificates` relation, or plaintext when there is none.
@@ -1788,10 +1782,8 @@ class LandscapeServerCharm(CharmBase):
         Until the first certificate is issued the service stays plaintext. A
         certificate being renewed keeps being served until its replacement arrives.
         """
-        wanted = self._ubuntu_installer_attach_tls_wanted(relation_broken)
-
         try:
-            if not wanted:
+            if not self._ubuntu_installer_attach_tls_wanted():
                 changed = remove_ubuntu_installer_attach_tls()
             else:
                 requests = self._get_certificate_requests()

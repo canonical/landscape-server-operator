@@ -11,6 +11,7 @@ from collections import defaultdict
 from configparser import ConfigParser
 import os
 import secrets
+import shutil
 from string import ascii_letters, digits
 import tempfile
 from urllib.error import URLError
@@ -39,10 +40,6 @@ SSL_CERT_PATH = "/etc/ssl/certs/landscape_server_ca.crt"
 
 UBUNTU_INSTALLER_ATTACH_SECTION = "ubuntu_installer_attach"
 UBUNTU_INSTALLER_ATTACH_TLS_DIR = "/etc/landscape/ubuntu-installer-attach"
-UBUNTU_INSTALLER_ATTACH_TLS_KEYS = {
-    "ssl_server_cert": "server.crt",
-    "ssl_server_private_key": "server.key",
-}
 
 DEFAULT_POSTGRES_PORT = "5432"
 
@@ -260,52 +257,21 @@ def update_service_conf(updates: dict) -> None:
     migrate_service_conf()
 
 
-def remove_service_conf_keys(section: str, keys: list[str]) -> bool:
-    """
-    Removes `keys` from `section` of the Landscape Server configuration file.
-
-    Returns True if the file was changed.
-    """
-    if not os.path.isfile(SERVICE_CONF):
-        raise ServiceConfMissing("Landscape server install failed!")
-
-    config = ConfigParser()
-    config.read(SERVICE_CONF)
-
-    removed = (
-        [key for key in keys if config.remove_option(section, key)]
-        if (config.has_section(section))
-        else []
-    )
-    if not removed:
-        return False
-
-    with open(SERVICE_CONF, "w") as config_fp:
-        config.write(config_fp)
-
-    migrate_service_conf()
-    return True
-
-
-def _write_file_if_changed(path: str, content: str, mode: int, uid: int, gid: int):
-    """Atomically writes `content` to `path`. Returns True if it changed."""
+def _write_file(path: str, content: str, mode: int, uid: int, gid: int) -> bool:
+    """Writes `content` to `path`. Returns True if the content changed."""
     try:
         with open(path) as existing_fp:
-            if existing_fp.read() == content:
-                os.chmod(path, mode)
-                os.chown(path, uid, gid)
-                return False
+            changed = existing_fp.read() != content
     except FileNotFoundError:
-        pass
+        changed = True
 
-    tmp_path = f"{path}.tmp"
-    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as tmp_fp:
-        tmp_fp.write(content)
-    os.chmod(tmp_path, mode)
-    os.chown(tmp_path, uid, gid)
-    os.replace(tmp_path, path)
-    return True
+    if changed:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w") as fp:
+            fp.write(content)
+    os.chmod(path, mode)
+    os.chown(path, uid, gid)
+    return changed
 
 
 def write_ubuntu_installer_attach_tls(
@@ -323,16 +289,10 @@ def write_ubuntu_installer_attach_tls(
     os.chmod(UBUNTU_INSTALLER_ATTACH_TLS_DIR, 0o750)
     os.chown(UBUNTU_INSTALLER_ATTACH_TLS_DIR, uid, gid)
 
-    cert_path = os.path.join(
-        UBUNTU_INSTALLER_ATTACH_TLS_DIR,
-        UBUNTU_INSTALLER_ATTACH_TLS_KEYS["ssl_server_cert"],
-    )
-    key_path = os.path.join(
-        UBUNTU_INSTALLER_ATTACH_TLS_DIR,
-        UBUNTU_INSTALLER_ATTACH_TLS_KEYS["ssl_server_private_key"],
-    )
-    changed = _write_file_if_changed(cert_path, certificate, 0o644, uid, gid)
-    changed |= _write_file_if_changed(key_path, private_key, 0o640, uid, gid)
+    cert_path = os.path.join(UBUNTU_INSTALLER_ATTACH_TLS_DIR, "server.crt")
+    key_path = os.path.join(UBUNTU_INSTALLER_ATTACH_TLS_DIR, "server.key")
+    changed = _write_file(cert_path, certificate, 0o644, uid, gid)
+    changed |= _write_file(key_path, private_key, 0o640, uid, gid)
 
     section = read_service_conf().get(UBUNTU_INSTALLER_ATTACH_SECTION, {})
     desired = {"ssl_server_cert": cert_path, "ssl_server_private_key": key_path}
@@ -345,19 +305,23 @@ def write_ubuntu_installer_attach_tls(
 
 def remove_ubuntu_installer_attach_tls() -> bool:
     """
-    Removes the TLS settings from `service.conf` and the key material from disk.
+    Points `service.conf` away from the TLS files and removes them.
 
-    Returns True if anything was removed.
+    Returns True if anything changed.
     """
-    changed = remove_service_conf_keys(
-        UBUNTU_INSTALLER_ATTACH_SECTION, list(UBUNTU_INSTALLER_ATTACH_TLS_KEYS)
-    )
-    for filename in UBUNTU_INSTALLER_ATTACH_TLS_KEYS.values():
-        try:
-            os.remove(os.path.join(UBUNTU_INSTALLER_ATTACH_TLS_DIR, filename))
-        except FileNotFoundError:
-            continue
+    section = read_service_conf().get(UBUNTU_INSTALLER_ATTACH_SECTION, {})
+    changed = False
+    if section.get("ssl_server_cert") or section.get("ssl_server_private_key"):
+        update_service_conf(
+            {
+                UBUNTU_INSTALLER_ATTACH_SECTION: {
+                    "ssl_server_cert": "",
+                    "ssl_server_private_key": "",
+                }
+            }
+        )
         changed = True
+    shutil.rmtree(UBUNTU_INSTALLER_ATTACH_TLS_DIR, ignore_errors=True)
     return changed
 
 

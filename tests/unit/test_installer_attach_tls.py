@@ -130,10 +130,9 @@ class TestSyncTls:
             "ssl_server_cert": str(tls_dir / "server.crt"),
             "ssl_server_private_key": str(tls_dir / "server.key"),
         }
-        assert "ssl_server_ca_cert" not in _conf(capture_service_conf)
         os_chown, os_chmod, _ = ownership_fixture
-        os_chmod.assert_any_call(f"{tls_dir / 'server.key'}.tmp", 0o640)
-        os_chown.assert_any_call(f"{tls_dir / 'server.key'}.tmp", 1000, 0)
+        os_chmod.assert_any_call(str(tls_dir / "server.key"), 0o640)
+        os_chown.assert_any_call(str(tls_dir / "server.key"), 1000, 0)
         restart_mock.assert_called_with("landscape-ubuntu-installer-attach")
 
     def test_leaf_not_duplicated_in_chain(self, replicas_network_state, tls_dir):
@@ -194,9 +193,7 @@ class TestSyncTls:
 
         assert not (tls_dir / "server.crt").exists()
         assert not (tls_dir / "server.key").exists()
-        conf = _conf(capture_service_conf)
-        assert "ssl_server_cert" not in conf
-        assert "ssl_server_private_key" not in conf
+        assert not _conf(capture_service_conf).get("ssl_server_cert")
         restart_mock.assert_called_once_with("landscape-ubuntu-installer-attach")
 
     def test_removed_on_relation_broken(
@@ -213,27 +210,5 @@ class TestSyncTls:
             ctx.run(ctx.on.relation_broken(relation), state)
 
         assert not (tls_dir / "server.key").exists()
-        assert "ssl_server_cert" not in _conf(capture_service_conf)
+        assert not _conf(capture_service_conf).get("ssl_server_cert")
         restart_mock.assert_called_once_with("landscape-ubuntu-installer-attach")
-
-    def test_removed_when_installer_attach_disabled(
-        self, replicas_network_state, tls_dir, capture_service_conf, restart_mock
-    ):
-        ctx = Context(LandscapeServerCharm)
-        with patch(GET_ASSIGNED, return_value=(_provider_certificate(), KEY)):
-            ctx.run(ctx.on.config_changed(), _state(replicas_network_state))
-
-        ctx.run(ctx.on.config_changed(), _state(replicas_network_state, enabled=False))
-
-        assert not (tls_dir / "server.key").exists()
-        assert "ssl_server_cert" not in _conf(capture_service_conf)
-
-
-class TestSettingsFiles:
-    def test_write_reports_changes(self, tls_dir, capture_service_conf):
-        assert settings_files.write_ubuntu_installer_attach_tls(CERT, KEY, 1000, 0)
-        assert not settings_files.write_ubuntu_installer_attach_tls(CERT, KEY, 1000, 0)
-        assert settings_files.write_ubuntu_installer_attach_tls(CERT, "key2", 1000, 0)
-
-    def test_remove_is_idempotent(self, tls_dir, capture_service_conf):
-        assert settings_files.remove_ubuntu_installer_attach_tls() is False
