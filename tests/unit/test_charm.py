@@ -2865,7 +2865,9 @@ class TestDebResourceInstall:
         ):
             apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
-        check_call_mock.assert_any_call(["apt", "install", "-y", str(deb)])
+        check_call_mock.assert_any_call(
+            ["apt-get", "install", "-y", str(deb), LANDSCAPE_HASH_IDS]
+        )
         apt_mock.add_package.assert_not_called()
 
     def test_local_deb_min_install_uses_no_install_recommends(self, tmp_path):
@@ -2891,7 +2893,7 @@ class TestDebResourceInstall:
             apt_mock.add_package.return_value = None
             ctx.run(ctx.on.install(), state)
         check_call_mock.assert_any_call(
-            ["apt", "install", "-y", "--no-install-recommends", str(deb)]
+            ["apt-get", "install", "--no-install-recommends", "-y", str(deb)]
         )
         apt_mock.add_package.assert_not_called()
 
@@ -2921,13 +2923,12 @@ class TestDebResourceInstall:
                 version="1.0"
             )
             ctx.run(ctx.on.action("upgrade"), state)
-        check_call_mock.assert_any_call(["apt", "install", "-y", str(deb)])
+        check_call_mock.assert_any_call(["apt-get", "install", "-y", str(deb)])
         # landscape-server skipped in loop; other packages still upgraded via apt
         for call_args in apt_mock.DebianPackage.from_apt_cache.call_args_list:
             assert call_args.args[0] != LANDSCAPE_SERVER
 
 
-@unittest.skip("Broken in `de29548e2b09c71db3a55f606ab318b5ea25550d`")
 class TestBootstrapAccount(unittest.TestCase):
     def setUp(self):
         self.harness = Harness(LandscapeServerCharm)

@@ -876,10 +876,14 @@ class LandscapeServerCharm(CharmBase):
         Installs a Debian package via apt with `--install-recommends`.
         """
 
-        # Explicitly ensure cache is up-to-date after adding the PPA.
         try:
-            apt.add_package(package_names, update_cache=True)
-        except PackageError as e:
+            if any(name.endswith(".deb") for name in package_names):
+                # charmlibs.apt can't install from a local file path.
+                check_call(["apt-get", "install", "-y", *package_names])
+            else:
+                # Explicitly ensure cache is up-to-date after adding the PPA.
+                apt.add_package(package_names, update_cache=True)
+        except (PackageError, CalledProcessError) as e:
             logger.error("Failed to install packages: %s", str(e))
             raise e
 
@@ -934,18 +938,11 @@ class LandscapeServerCharm(CharmBase):
                 raise e
 
         local_deb = self._get_landscape_server_deb_resource()
-        if local_deb is not None:
+        server_package = str(local_deb) if local_deb else LANDSCAPE_SERVER
+        if local_deb:
             logger.info(f"Installing landscape-server from local deb: {local_deb}")
-            cmd = ["apt", "install", "-y"]
-            if self.charm_config.min_install:
-                cmd.append("--no-install-recommends")
-            try:
-                check_call(cmd + [str(local_deb)])
-            except CalledProcessError as e:
-                logger.error("Failed to install %s: %s", local_deb, str(e))
-                raise e
-            self._hold_debian_packages([LANDSCAPE_SERVER])
-        elif self.charm_config.min_install:
+
+        if self.charm_config.min_install:
             try:
                 check_call(
                     [
@@ -953,19 +950,19 @@ class LandscapeServerCharm(CharmBase):
                         "install",
                         "--no-install-recommends",
                         "-y",
-                        LANDSCAPE_SERVER,
+                        server_package,
                     ]
                 )
             except CalledProcessError as e:
-                logger.error("Failed to install %s: %s", LANDSCAPE_SERVER, str(e))
+                logger.error("Failed to install %s: %s", server_package, str(e))
                 raise e
             self._hold_debian_packages([LANDSCAPE_SERVER])
         else:
-            pkg_list = [LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
+            pkg_list = [server_package, LANDSCAPE_HASH_IDS]
             if self.charm_config.deployment_mode != "standalone":
                 pkg_list.append(LANDSCAPE_HOSTED)
             self._install_debian_packages_with_recommends(pkg_list)
-            self._hold_debian_packages(pkg_list)
+            self._hold_debian_packages([LANDSCAPE_SERVER, *pkg_list[1:]])
 
         # Enable landscape-hosted cron jobs in SaaS mode
         if self.charm_config.deployment_mode != "standalone":
@@ -2549,26 +2546,23 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         apt.update()
 
         local_deb = self._get_landscape_server_deb_resource()
-        if local_deb is not None:
-            event.log(f"Installing landscape-server from local deb: {local_deb}")
-            check_call(["apt-mark", "unhold", LANDSCAPE_SERVER])
-            cmd = ["apt", "install", "-y"]
-            if self.charm_config.min_install:
-                cmd.append("--no-install-recommends")
-            check_call(cmd + [str(local_deb)])
-            check_call(["apt-mark", "hold", LANDSCAPE_SERVER])
 
         for package in LANDSCAPE_PACKAGES:
-            if local_deb is not None and package == LANDSCAPE_SERVER:
-                continue
             try:
                 event.log(f"Upgrading {package}...")
                 if package == LANDSCAPE_SERVER:
                     check_call(
                         ["apt-mark", "unhold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
                     )
-                pkg = apt.DebianPackage.from_apt_cache(package)
-                pkg.ensure(state=apt.PackageState.Latest)
+                if package == LANDSCAPE_SERVER and local_deb:
+                    event.log(f"Installing {package} from local deb: {local_deb}")
+                    cmd = ["apt-get", "install", "-y"]
+                    if self.charm_config.min_install:
+                        cmd.append("--no-install-recommends")
+                    check_call([*cmd, str(local_deb)])
+                else:
+                    pkg = apt.DebianPackage.from_apt_cache(package)
+                    pkg.ensure(state=apt.PackageState.Latest)
                 installed = apt.DebianPackage.from_installed_package(package)
                 event.log(f"Upgraded to {installed.version}...")
             except PackageNotFoundError as e:
