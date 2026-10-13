@@ -2493,6 +2493,19 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         """Return path to an attached ubuntu installer attach .deb, or None."""
         return self._get_deb_resource("ubuntu-installer-attach-deb")
 
+    def _apt_install(self, target: str, conffile_option: str, *extra: str) -> None:
+        check_call(
+            [
+                "apt-get",
+                "install",
+                "-y",
+                "-o",
+                f"Dpkg::Options::={conffile_option}",
+                *extra,
+                target,
+            ]
+        )
+
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()
         for proxy_var, proxy_var_value in [
@@ -2576,23 +2589,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     # Raises PackageNotFoundError if the package is unknown to APT.
                     apt.DebianPackage.from_apt_cache(package)
                     install_target = package
-                check_call(
-                    [
-                        "apt-get",
-                        "install",
-                        "-y",
-                        "-o",
-                        f"Dpkg::Options::={conffile_option}",
-                        *(
-                            ["--no-install-recommends"]
-                            if package == LANDSCAPE_SERVER
-                            and local_deb
-                            and self.charm_config.min_install
-                            else []
-                        ),
-                        install_target,
-                    ]
+                no_recommends = (
+                    ["--no-install-recommends"]
+                    if package == LANDSCAPE_SERVER
+                    and local_deb
+                    and self.charm_config.min_install
+                    else []
                 )
+                self._apt_install(install_target, conffile_option, *no_recommends)
                 installed = apt.DebianPackage.from_installed_package(package)
                 event.log(f"Upgraded to {installed.version}...")
             except (PackageNotFoundError, PackageError, CalledProcessError) as e:
@@ -2614,16 +2618,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 f"{installer_attach_deb}"
             )
             try:
-                check_call(
-                    [
-                        "apt-get",
-                        "install",
-                        "-y",
-                        "-o",
-                        f"Dpkg::Options::={conffile_option}",
-                        str(installer_attach_deb),
-                    ]
-                )
+                self._apt_install(str(installer_attach_deb), conffile_option)
             except CalledProcessError as e:
                 logger.error(
                     f"Could not install {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}: {e}"
@@ -2705,16 +2700,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                         f"local deb: {local_deb}"
                     )
                     apt.update()
-                    check_call(
-                        [
-                            "apt-get",
-                            "install",
-                            "-y",
-                            "-o",
-                            "Dpkg::Options::=--force-confold",
-                            str(local_deb),
-                        ]
-                    )
+                    self._apt_install(str(local_deb), "--force-confold")
                 else:
                     apt.add_package(
                         LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True
