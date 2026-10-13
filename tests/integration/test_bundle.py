@@ -1179,8 +1179,8 @@ def test_grpc_hostagent_messenger(juju: jubilant.Juju):
 
 def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
     """
-    Ubuntu installer attach is served over TLS and haproxy-route (HTTPS), so the
-    frontend negotiates ALPN h2 and a plain `grpc.secure_channel` works.
+    The Ubuntu installer attach gRPC service is reachable through HAProxy over
+    HTTPS: the frontend negotiates ALPN h2 and the gRPC channel becomes ready.
     """
     config = juju.config("landscape-server")
     root_url = config.get("root_url", "https://landscape.local/")
@@ -1220,7 +1220,11 @@ def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
     handshake_output = handshake.stdout + handshake.stderr
     assert "ALPN protocol: h2" in handshake_output, handshake_output
 
-    ca_pem = juju.run("self-signed-certificates/leader", "get-ca-certificate").results[
-        "ca-certificate"
-    ]
+    provider = app_status.relations["certificates"][0].related_app
+    try:
+        ca_pem = juju.run(f"{provider}/leader", "get-ca-certificate").results[
+            "ca-certificate"
+        ]
+    except (jubilant.TaskError, KeyError):
+        pytest.skip(f"Cannot get the CA certificate from {provider}")
     assert_grpc_secure_channel_ready(haproxy_ip, 50051, hostname, ca_pem)

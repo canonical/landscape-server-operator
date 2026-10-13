@@ -81,12 +81,10 @@ locals {
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
   } : { website = "website" }
 
-  # In earlier revisions ubuntu-installer-attach-haproxy-route is a
-  # haproxy-route-tcp endpoint and there is no certificates endpoint.
-  # 565 is the latest revision published without this change.
-  installer_attach_https_updated_rev = 566
-  has_installer_attach_https         = local.has_modern_haproxy_interface && (var.revision != null ? var.revision >= local.installer_attach_https_updated_rev : true)
-  certificates_relations             = local.has_installer_attach_https ? { certificates = "certificates" } : {}
+  # The 26.04 charm exposes ubuntu-installer-attach-haproxy-route as a
+  # haproxy-route-tcp endpoint and has no certificates endpoint.
+  has_installer_attach_https = local.has_modern_haproxy_interface && !startswith(var.channel, "26.04")
+  certificates_relations     = local.has_installer_attach_https ? { certificates = "certificates" } : {}
 
 }
 
@@ -96,11 +94,6 @@ output "requires" {
     application_dashboard = "application-dashboard",
     smtp                  = "smtp",
   }, local.amqp_relations, local.db_relations, local.haproxy_relations, local.certificates_relations)
-}
-
-output "has_installer_attach_https" {
-  description = "Indicates whether the deployed revision serves ubuntu-installer-attach over HTTPS through haproxy-route and exposes the certificates endpoint."
-  value       = local.has_installer_attach_https
 }
 
 output "has_modern_haproxy_interface" {

@@ -595,7 +595,7 @@ run "test_installer_attach_https_cross_model" {
 
   variables {
     landscape_server = {
-      revision = 566
+      channel = "26.10/stable"
       config = {
         enable_ubuntu_installer_attach = "true"
       }
@@ -615,7 +615,7 @@ run "test_installer_attach_https_cross_model" {
   }
 
   assert {
-    condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_certificates) == 1
+    condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_certificates) == 1
     error_message = "A certificate provider should be deployed and related to landscape-server"
   }
 }
@@ -625,7 +625,7 @@ run "test_installer_attach_without_certificate_provider_uses_tcp" {
 
   variables {
     landscape_server = {
-      revision = 566
+      channel = "26.10/stable"
       config = {
         enable_ubuntu_installer_attach = "true"
       }

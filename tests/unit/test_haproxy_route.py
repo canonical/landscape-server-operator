@@ -488,34 +488,32 @@ class TestConditionalRoutes:
 class TestUbuntuInstallerAttachRoute:
     """ubuntu-installer-attach serves TLS and is routed with haproxy-route (HTTPS)."""
 
-    def _calls(
-        self, replicas_network_state, leader_ip=LEADER_IP, certificates=True, **config
-    ):
-        context = Context(LandscapeServerCharm)
-        relations = list(replicas_network_state.get("relations", []))
-        if certificates:
+    @staticmethod
+    def _routes(network_state, with_certificates=True, **config):
+        """Route requirements published for ubuntu-installer-attach."""
+        relations = list(network_state.get("relations", []))
+        if with_certificates:
             relations.append(
                 Relation(endpoint="certificates", interface="tls-certificates")
             )
-        state = State(
-            config=config,
-            **{**replicas_network_state, "relations": relations},
-        )
-        mock = _run_provide(context, state, leader_ip=leader_ip)
+        state = State(config=config, **{**network_state, "relations": relations})
+        mock = _run_provide(Context(LandscapeServerCharm), state)
         return _calls_for(mock, "ubuntu-installer-attach")
 
     def test_published_when_enabled(self, replicas_network_state):
-        calls = self._calls(replicas_network_state, enable_ubuntu_installer_attach=True)
+        calls = self._routes(
+            replicas_network_state, enable_ubuntu_installer_attach=True
+        )
         assert calls
 
     def test_not_published_when_disabled(self, replicas_network_state):
-        calls = self._calls(
+        calls = self._routes(
             replicas_network_state, enable_ubuntu_installer_attach=False
         )
         assert calls == []
 
     def test_route_data(self, replicas_network_state):
-        calls = self._calls(
+        calls = self._routes(
             replicas_network_state,
             enable_ubuntu_installer_attach=True,
             root_url="https://my.landscape.example.com/",
@@ -531,7 +529,7 @@ class TestUbuntuInstallerAttachRoute:
         assert "paths" not in kwargs
 
     def test_hostname_omitted_without_domain(self, replicas_network_state):
-        calls = self._calls(
+        calls = self._routes(
             replicas_network_state,
             enable_ubuntu_installer_attach=True,
             root_url="",
@@ -540,9 +538,9 @@ class TestUbuntuInstallerAttachRoute:
 
     def test_plain_http_route_without_certificates(self, replicas_network_state):
         """Without a certificate the backend is plaintext, so the route must be too."""
-        calls = self._calls(
+        calls = self._routes(
             replicas_network_state,
-            certificates=False,
+            with_certificates=False,
             enable_ubuntu_installer_attach=True,
         )
         kwargs = calls[-1].kwargs
