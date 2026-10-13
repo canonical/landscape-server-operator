@@ -595,7 +595,7 @@ run "test_installer_attach_https_cross_model" {
 
   variables {
     landscape_server = {
-      revision = 540
+      revision = 566
       config = {
         enable_ubuntu_installer_attach = "true"
       }
@@ -625,7 +625,7 @@ run "test_installer_attach_without_certificate_provider_uses_tcp" {
 
   variables {
     landscape_server = {
-      revision = 540
+      revision = 566
       config = {
         enable_ubuntu_installer_attach = "true"
       }

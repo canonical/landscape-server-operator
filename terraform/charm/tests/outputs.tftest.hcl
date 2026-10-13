@@ -571,18 +571,18 @@ run "installer_attach_https_before_support" {
   variables {
     model_uuid = uuid()
     channel    = "26.04/edge"
-    revision   = 539
+    revision   = 565
     base       = "ubuntu@24.04"
   }
 
   assert {
     condition     = output.has_installer_attach_https == false
-    error_message = "Rev 539 should not serve ubuntu-installer-attach over HTTPS"
+    error_message = "Rev 565 should not serve ubuntu-installer-attach over HTTPS"
   }
 
   assert {
     condition     = try(output.requires.certificates, null) == null
-    error_message = "Rev 539 should not have a certificates relation"
+    error_message = "Rev 565 should not have a certificates relation"
   }
 }
 
@@ -592,17 +592,17 @@ run "installer_attach_https_supported" {
   variables {
     model_uuid = uuid()
     channel    = "26.04/edge"
-    revision   = 540
+    revision   = 566
     base       = "ubuntu@24.04"
   }
 
   assert {
     condition     = output.has_installer_attach_https == true
-    error_message = "Rev 540 should serve ubuntu-installer-attach over HTTPS"
+    error_message = "Rev 566 should serve ubuntu-installer-attach over HTTPS"
   }
 
   assert {
     condition     = output.requires.certificates == "certificates"
-    error_message = "Rev 540 should have a certificates relation"
+    error_message = "Rev 566 should have a certificates relation"
   }
 }

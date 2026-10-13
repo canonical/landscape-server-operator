@@ -82,8 +82,9 @@ locals {
   } : { website = "website" }
 
   # In earlier revisions ubuntu-installer-attach-haproxy-route is a
-  # haproxy-route-tcp endpoint and there is no certificates endpoint
-  installer_attach_https_updated_rev = 540
+  # haproxy-route-tcp endpoint and there is no certificates endpoint.
+  # 565 is the latest revision published without this change.
+  installer_attach_https_updated_rev = 566
   has_installer_attach_https         = local.has_modern_haproxy_interface && (var.revision != null ? var.revision >= local.installer_attach_https_updated_rev : true)
   certificates_relations             = local.has_installer_attach_https ? { certificates = "certificates" } : {}
 
