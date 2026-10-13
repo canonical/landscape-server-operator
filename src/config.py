@@ -66,6 +66,36 @@ class HealthCheck(BaseModel):
         }
 
 
+class Timeouts(BaseModel):
+    """
+    HAProxy timeouts, in seconds, for a single haproxy-route.
+    """
+
+    connect: int = Field(ge=1)
+    queue: int = Field(ge=1)
+    server: int = Field(ge=1)
+
+    def route_kwargs(self) -> dict[str, int]:
+        return {
+            "connect_timeout": self.connect,
+            "queue_timeout": self.queue,
+            "server_timeout": self.server,
+        }
+
+
+class HAProxyTimeouts(BaseModel):
+    """
+    Timeouts for each haproxy-route.
+    """
+
+    appserver: Timeouts
+    pingserver: Timeouts
+    message_server: Timeouts
+    api: Timeouts
+    package_upload: Timeouts
+    repository: Timeouts
+
+
 class HAProxyHealthChecks(BaseModel):
     """
     Health check settings for each haproxy-route.
@@ -132,6 +162,7 @@ class LandscapeCharmConfiguration(BaseModel):
     enable_ubuntu_installer_attach: bool
     max_global_haproxy_connections: int
     haproxy_health_checks: HAProxyHealthChecks
+    haproxy_timeouts: HAProxyTimeouts
     appserver_base_port: int
     pingserver_base_port: int
     message_server_base_port: int
@@ -181,6 +212,26 @@ class LandscapeCharmConfiguration(BaseModel):
                 for setting in HealthCheck.model_fields
             }
             for service in HAProxyHealthChecks.model_fields
+        }
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def fold_haproxy_timeouts(cls, data: Any):
+        """
+        Group the flat `haproxy_<service>_<kind>_timeout` charm options into
+        `haproxy_timeouts`.
+        """
+        if not isinstance(data, Mapping) or "haproxy_timeouts" in data:
+            return data
+
+        data = dict(data)
+        data["haproxy_timeouts"] = {
+            service: {
+                kind: data.pop(f"haproxy_{service}_{kind}_timeout", None)
+                for kind in Timeouts.model_fields
+            }
+            for service in HAProxyTimeouts.model_fields
         }
         return data
 
