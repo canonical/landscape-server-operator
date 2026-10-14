@@ -1725,20 +1725,22 @@ class LandscapeServerCharm(CharmBase):
                 unit_address=unit_ip,
                 sni=sni,
             )
-        if cfg.enable_ubuntu_installer_attach:
-            # The backend is only TLS when a certificate is going to be served,
-            # so the route has to follow that state.
-            serves_tls = self._ubuntu_installer_attach_tls_wanted()
+        if self._ubuntu_installer_attach_tls_wanted():
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
                 service=f"landscape-ubuntu-installer-attach-{model_uuid}",
                 ports=[cfg.ubuntu_installer_attach_base_port],
-                protocol="https" if serves_tls else "http",
-                external_grpc_port=(
-                    UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT if serves_tls else None
-                ),
+                protocol="https",
+                external_grpc_port=UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT,
                 unit_address=unit_ip,
                 hostname=sni,
             )
+        else:
+            for relation in self.model.relations.get(
+                "ubuntu-installer-attach-haproxy-route", []
+            ):
+                relation.data[self.unit].clear()
+                if self.unit.is_leader():
+                    relation.data[self.app].clear()
 
     def _get_certificate_requests(
         self, _capabilities=None

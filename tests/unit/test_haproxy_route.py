@@ -536,13 +536,33 @@ class TestUbuntuInstallerAttachRoute:
         )
         assert calls[-1].kwargs["hostname"] is None
 
-    def test_plain_http_route_without_certificates(self, replicas_network_state):
-        """Without a certificate the backend is plaintext, so the route must be too."""
-        calls = self._routes(
-            replicas_network_state,
-            with_certificates=False,
-            enable_ubuntu_installer_attach=True,
+    def test_not_published_without_certificates(self, replicas_network_state):
+        """gRPC routing needs an HTTPS backend, so no certificate means no route."""
+        route = Relation(
+            endpoint="ubuntu-installer-attach-haproxy-route",
+            interface="haproxy-route",
+            local_app_data={"service": '"landscape-ubuntu-installer-attach"'},
+            local_unit_data={"address": '"10.0.0.1"'},
         )
-        kwargs = calls[-1].kwargs
-        assert kwargs["protocol"] == "http"
-        assert kwargs["external_grpc_port"] is None
+        state = State(
+            config={"enable_ubuntu_installer_attach": True},
+            leader=True,
+            **{
+                **replicas_network_state,
+                "relations": [
+                    *replicas_network_state.get("relations", []),
+                    route,
+                ],
+            },
+        )
+        context = Context(LandscapeServerCharm)
+        with patch(PATCH_PROVIDE) as mock_provide:
+            with context(context.on.config_changed(), state) as manager:
+                manager.charm._stored.leader_ip = LEADER_IP
+                manager.charm._provide_all_haproxy_route_requirements()
+                result = manager.run()
+
+        assert _calls_for(mock_provide, "ubuntu-installer-attach") == []
+        cleared = result.get_relation(route.id)
+        assert cleared.local_app_data == {}
+        assert cleared.local_unit_data == {}
