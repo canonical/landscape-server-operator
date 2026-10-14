@@ -27,7 +27,6 @@ dev = [
 ]
 integration = [
   "grpcio==1.84.0",
-  "h2==4.3.0",
   "jubilant==1.6.2",
   "requests==2.33.0",
   "urllib3==2.6.3",

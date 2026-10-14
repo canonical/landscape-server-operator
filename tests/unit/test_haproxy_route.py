@@ -12,12 +12,6 @@ PATCH_PROVIDE = (
     "charms.haproxy.v2.haproxy_route.HaproxyRouteRequirer"
     ".provide_haproxy_route_requirements"
 )
-# The hostagent-messenger grpc backend uses the tcp route requirer, with TLS
-# terminated at haproxy since the backend can't terminate TLS itself.
-PATCH_PROVIDE_TCP = (
-    "charms.haproxy.v1.haproxy_route_tcp.HaproxyRouteTcpRequirer"
-    ".provide_haproxy_route_tcp_requirements"
-)
 
 
 @pytest.fixture(autouse=True)
@@ -56,18 +50,6 @@ def _run_provide(context, state, leader_ip=LEADER_IP):
             mgr.charm._stored.leader_ip = leader_ip
             mgr.charm._provide_all_haproxy_route_requirements()
     return mock_provide
-
-
-def _run_provide_tcp(context, state, leader_ip=LEADER_IP):
-    """
-    Same as _run_provide, but captures calls to the tcp route requirer
-    used by the hostagent-messenger grpc backend.
-    """
-    with patch(PATCH_PROVIDE_TCP) as mock_provide_tcp:
-        with context(context.on.config_changed(), state) as mgr:
-            mgr.charm._stored.leader_ip = leader_ip
-            mgr.charm._provide_all_haproxy_route_requirements()
-    return mock_provide_tcp
 
 
 class TestCalledOnEvents:
@@ -409,80 +391,6 @@ class TestConfigurableHealthChecks:
         assert "check_interval" not in kwargs
         assert "check_rise" not in kwargs
         assert "check_fall" not in kwargs
-
-
-class TestConditionalRoutes:
-    """The hostagent-messenger route is conditional.
-
-    This grpc backend uses haproxy-route-tcp (TLS terminated at haproxy,
-    plaintext to backend) rather than haproxy-route, since it can't terminate
-    TLS itself.
-    """
-
-    def test_hostagent_messenger_published_when_enabled(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_hostagent_messenger": True}, **replicas_network_state
-        )
-        mock = _run_provide_tcp(context, state)
-        ports = [c.kwargs.get("port") for c in mock.call_args_list]
-        assert 6554 in ports
-
-    def test_hostagent_messenger_not_published_when_disabled(
-        self, replicas_network_state
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_hostagent_messenger": False}, **replicas_network_state
-        )
-        mock = _run_provide_tcp(context, state)
-        ports = [c.kwargs.get("port") for c in mock.call_args_list]
-        assert 6554 not in ports
-
-    def test_hostagent_messenger_uses_correct_grpc_port(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_hostagent_messenger": True}, **replicas_network_state
-        )
-        mock = _run_provide_tcp(context, state)
-        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
-        assert calls
-        assert calls[0].kwargs.get("backend_port") is not None
-        assert calls[0].kwargs.get("tls_terminate") is True
-
-    def test_hostagent_messenger_sni_omitted_when_no_root_url(
-        self, replicas_network_state
-    ):
-        """sni must not be an IP address, since haproxy-route-tcp validates it
-        as a domain name. When root_url isn't configured, hostname falls back
-        to leader_ip (an IP), so sni should be omitted entirely rather than
-        set to that IP.
-        """
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_hostagent_messenger": True, "root_url": ""},
-            **replicas_network_state,
-        )
-        mock = _run_provide_tcp(context, state, leader_ip=LEADER_IP)
-        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
-        assert calls
-        assert calls[0].kwargs.get("sni") is None
-
-    def test_hostagent_messenger_sni_set_when_root_url_has_hostname(
-        self, replicas_network_state
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={
-                "enable_hostagent_messenger": True,
-                "root_url": "https://my.landscape.example.com/",
-            },
-            **replicas_network_state,
-        )
-        mock = _run_provide_tcp(context, state)
-        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
-        assert calls
-        assert calls[0].kwargs.get("sni") == "my.landscape.example.com"
 
 
 class TestUbuntuInstallerAttachRoute:
