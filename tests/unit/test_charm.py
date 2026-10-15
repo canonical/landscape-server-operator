@@ -1113,9 +1113,50 @@ class TestOnConfigChangedEnableUbuntuInstallerAttach:
                 "-o",
                 "Dpkg::Options::=--force-confold",
                 str(deb),
-            ]
+            ],
+            env=ANY,
+        )
+        assert (
+            check_call_mock.call_args.kwargs["env"]["DEBIAN_FRONTEND"]
+            == "noninteractive"
         )
         add_package_mock.assert_not_called()
+
+    def test_enable_local_deb_install_failure_sets_maintenance(
+        self, apt_fixture, replicas_network_state, empty_deb_resource, tmp_path
+    ):
+        from subprocess import CalledProcessError
+
+        from ops.testing import Resource
+
+        deb = tmp_path / "landscape-ubuntu-installer-attach.deb"
+        deb.write_bytes(b"\x00" * 100)
+        ctx = Context(LandscapeServerCharm)
+        state_in = State(
+            **{
+                **replicas_network_state,
+                "resources": [
+                    empty_deb_resource,
+                    Resource(name="ubuntu-installer-attach-deb", path=deb),
+                ],
+            },
+            config={"enable_ubuntu_installer_attach": True},
+            stored_states=[
+                StoredState(
+                    owner_path="LandscapeServerCharm",
+                    content={"enable_ubuntu_installer_attach": False},
+                )
+            ],
+        )
+
+        with (
+            patch("charm.check_call", side_effect=CalledProcessError(100, "apt-get")),
+            patch("charm.apt.update"),
+        ):
+            state_out = ctx.run(ctx.on.config_changed(), state_in)
+
+        assert isinstance(state_out.unit_status, MaintenanceStatus)
+        assert "landscape-ubuntu-installer-attach" in state_out.unit_status.message
 
     def test_disable(self, apt_fixture, replicas_network_state):
         """
@@ -2501,7 +2542,8 @@ class TestCharm(unittest.TestCase):
                     "-o",
                     "Dpkg::Options::=--force-confold",
                     package,
-                ]
+                ],
+                env=ANY,
             )
         self.assertEqual(self.harness.charm.unit.status, prev_status)
 
@@ -2524,7 +2566,8 @@ class TestCharm(unittest.TestCase):
                 "-o",
                 "Dpkg::Options::=--force-confnew",
                 LANDSCAPE_SERVER,
-            ]
+            ],
+            env=ANY,
         )
 
     def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
@@ -3056,7 +3099,8 @@ class TestDebResourceInstall:
                 "-o",
                 "Dpkg::Options::=--force-confold",
                 str(deb),
-            ]
+            ],
+            env=ANY,
         )
         # landscape-server skipped in loop; other packages still upgraded via apt
         for call_args in apt_mock.DebianPackage.from_apt_cache.call_args_list:
@@ -3103,7 +3147,8 @@ class TestDebResourceInstall:
                 "-o",
                 "Dpkg::Options::=--force-confold",
                 str(deb),
-            ]
+            ],
+            env=ANY,
         )
 
 

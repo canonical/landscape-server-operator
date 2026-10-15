@@ -2621,7 +2621,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 f"Dpkg::Options::={conffile_option}",
                 *extra,
                 target,
-            ]
+            ],
+            env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
         )
 
     def _build_add_apt_repository_env(self) -> dict:
