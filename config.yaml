@@ -397,7 +397,7 @@ options:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits to connect to an appserver backend.
+      Seconds HAProxy can wait to connect to an appserver backend.
   haproxy_appserver_queue_timeout:
     type: int
     default: 60
@@ -407,13 +407,13 @@ options:
     type: int
     default: 300
     description: |
-      Seconds HAProxy waits for an appserver backend to respond. Requests that take
+      Seconds HAProxy can wait for an appserver backend to respond. Requests that take
       longer fail with a 504.
   haproxy_pingserver_connect_timeout:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits to connect to a pingserver backend.
+      Seconds HAProxy can wait to connect to a pingserver backend.
   haproxy_pingserver_queue_timeout:
     type: int
     default: 60
@@ -423,12 +423,12 @@ options:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits for a pingserver backend to respond.
+      Seconds HAProxy can wait for a pingserver backend to respond.
   haproxy_message_server_connect_timeout:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits to connect to a message-server backend.
+      Seconds HAProxy can wait to connect to a message-server backend.
   haproxy_message_server_queue_timeout:
     type: int
     default: 60
@@ -438,12 +438,12 @@ options:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits for a message-server backend to respond.
+      Seconds HAProxy can wait for a message-server backend to respond.
   haproxy_api_connect_timeout:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits to connect to an api backend.
+      Seconds HAProxy can wait to connect to an api backend.
   haproxy_api_queue_timeout:
     type: int
     default: 60
@@ -453,12 +453,12 @@ options:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits for an api backend to respond.
+      Seconds HAProxy can wait for an api backend to respond.
   haproxy_package_upload_connect_timeout:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits to connect to the package-upload backend.
+      Seconds HAProxy can wait to connect to the package-upload backend.
   haproxy_package_upload_queue_timeout:
     type: int
     default: 60
@@ -468,12 +468,12 @@ options:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits for the package-upload backend to respond.
+      Seconds HAProxy can wait for the package-upload backend to respond.
   haproxy_repository_connect_timeout:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits to connect to a repository backend.
+      Seconds HAProxy can wait to connect to a repository backend.
   haproxy_repository_queue_timeout:
     type: int
     default: 60
@@ -483,7 +483,7 @@ options:
     type: int
     default: 60
     description: |
-      Seconds HAProxy waits for a repository backend to respond.
+      Seconds HAProxy can wait for a repository backend to respond.
   appserver_base_port:
     type: int
     default: 8080

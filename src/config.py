@@ -66,6 +66,19 @@ class HealthCheck(BaseModel):
         }
 
 
+class HAProxyHealthChecks(BaseModel):
+    """
+    Health check settings for each haproxy-route.
+    """
+
+    appserver: HealthCheck
+    pingserver: HealthCheck
+    message_server: HealthCheck
+    api: HealthCheck
+    package_upload: HealthCheck
+    repository: HealthCheck
+
+
 class Timeouts(BaseModel):
     """
     HAProxy timeouts, in seconds, for a single haproxy-route.
@@ -94,19 +107,6 @@ class HAProxyTimeouts(BaseModel):
     api: Timeouts
     package_upload: Timeouts
     repository: Timeouts
-
-
-class HAProxyHealthChecks(BaseModel):
-    """
-    Health check settings for each haproxy-route.
-    """
-
-    appserver: HealthCheck
-    pingserver: HealthCheck
-    message_server: HealthCheck
-    api: HealthCheck
-    package_upload: HealthCheck
-    repository: HealthCheck
 
 
 class LandscapeCharmConfiguration(BaseModel):
