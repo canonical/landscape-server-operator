@@ -360,7 +360,7 @@ class TestHealthChecks:
         assert calls[0].kwargs.get("check_fall") == 3
 
 
-HEALTH_CHECK_SERVICES = [
+HAPROXY_SERVICES = [
     ("appserver", "appserver"),
     ("pingserver", "pingserver"),
     ("message_server", "message-server"),
@@ -373,7 +373,7 @@ HEALTH_CHECK_SERVICES = [
 class TestConfigurableHealthChecks:
     """Health check path and timing come from `haproxy_<service>_health_check_*`."""
 
-    @pytest.mark.parametrize("service,fragment", HEALTH_CHECK_SERVICES)
+    @pytest.mark.parametrize("service,fragment", HAPROXY_SERVICES)
     def test_health_check_options_are_passed_through(
         self, replicas_network_state, service, fragment
     ):
@@ -394,7 +394,7 @@ class TestConfigurableHealthChecks:
         assert kwargs.get("check_rise") == 4
         assert kwargs.get("check_fall") == 5
 
-    @pytest.mark.parametrize("service,fragment", HEALTH_CHECK_SERVICES)
+    @pytest.mark.parametrize("service,fragment", HAPROXY_SERVICES)
     def test_empty_path_disables_health_check(
         self, replicas_network_state, service, fragment
     ):
@@ -409,6 +409,44 @@ class TestConfigurableHealthChecks:
         assert "check_interval" not in kwargs
         assert "check_rise" not in kwargs
         assert "check_fall" not in kwargs
+
+
+class TestConfigurableTimeouts:
+    """Timeouts come from `haproxy_<service>_<kind>_timeout`."""
+
+    @pytest.mark.parametrize("service,fragment", HAPROXY_SERVICES)
+    def test_timeout_options_are_passed_through(
+        self, replicas_network_state, service, fragment
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                f"haproxy_{service}_connect_timeout": 11,
+                f"haproxy_{service}_queue_timeout": 12,
+                f"haproxy_{service}_server_timeout": 13,
+            },
+            **replicas_network_state,
+        )
+        kwargs = _calls_for(_run_provide(context, state), fragment)[0].kwargs
+        assert kwargs["connect_timeout"] == 11
+        assert kwargs["queue_timeout"] == 12
+        assert kwargs["server_timeout"] == 13
+
+    def test_appserver_server_timeout_defaults_to_300(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        kwargs = _calls_for(_run_provide(context, state), "appserver")[0].kwargs
+        assert kwargs["server_timeout"] == 300
+        assert kwargs["connect_timeout"] == 60
+        assert kwargs["queue_timeout"] == 60
+
+    def test_other_routes_keep_60_second_timeouts(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**replicas_network_state)
+        mock = _run_provide(context, state)
+        for _, fragment in HAPROXY_SERVICES[1:]:
+            kwargs = _calls_for(mock, fragment)[0].kwargs
+            assert kwargs["server_timeout"] == 60
 
 
 class TestConditionalRoutes:
