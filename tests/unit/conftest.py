@@ -105,10 +105,13 @@ def replicas_networks_fixture():
 def replicas_network_state_fixture(
     replicas,
     replicas_networks,
+    empty_deb_resource,
+    empty_installer_attach_deb_resource,
 ) -> dict:
     return {
         "relations": [replicas],
         "networks": [replicas_networks],
+        "resources": [empty_deb_resource, empty_installer_attach_deb_resource],
     }
 
 
@@ -162,6 +165,15 @@ def empty_deb_resource(tmp_path):
     empty = tmp_path / "landscape-server.deb"
     empty.write_bytes(b"")
     return Resource(name="landscape-server-deb", path=empty)
+
+
+@pytest.fixture
+def empty_installer_attach_deb_resource(tmp_path):
+    from ops.testing import Resource
+
+    empty = tmp_path / "landscape-ubuntu-installer-attach.deb"
+    empty.write_bytes(b"")
+    return Resource(name="ubuntu-installer-attach-deb", path=empty)
 
 
 class FakeSnapModule:
