@@ -1,3 +1,6 @@
+# Copyright 2025 Canonical Ltd.
+# See LICENSE file for licensing details.
+
 # pylint: disable=too-many-lines
 """Haproxy-route interface library.
 
@@ -7,7 +10,7 @@ To get started using the library, you just need to fetch the library using `char
 
 ```shell
 cd some-charm
-charmcraft fetch-lib charms.haproxy.v1.haproxy_route
+charmcraft fetch-lib charms.haproxy.v2.haproxy_route
 ```
 
 In the `metadata.yaml` of the charm, add the following:
@@ -22,7 +25,7 @@ requires:
 Then, to initialise the library:
 
 ```python
-from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
+from charms.haproxy.v2.haproxy_route import HaproxyRouteRequirer
 
 class SomeCharm(CharmBase):
   def __init__(self, *args):
@@ -107,7 +110,7 @@ Note that this interface supports relating to multiple endpoints.
 
 Then, to initialise the library:
 ```python
-from charms.haproxy.v1.haproxy_route import HaproxyRouteProvider
+from charms.haproxy.v2.haproxy_route import HaproxyRouteProvider
 
 class SomeCharm(CharmBase):
     self.haproxy_route_provider = HaproxyRouteProvider(self)
@@ -144,16 +147,17 @@ from pydantic import (
 )
 from pydantic.dataclasses import dataclass
 from typing_extensions import Self
+from validators import domain
 
 # The unique Charmhub library identifier, never change it
 LIBID = "08b6347482f6455486b5f5bb4dc4e6cf"
 
 # Increment this major API version when introducing breaking changes
-LIBAPI = 1
+LIBAPI = 2
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 13
+LIBPATCH = 4
 
 logger = logging.getLogger(__name__)
 HAPROXY_ROUTE_RELATION_NAME = "haproxy-route"
@@ -181,6 +185,24 @@ def value_contains_invalid_characters(
 
     if [char for char in value if char in invalid_characters]:
         raise ValueError(f"Relation data contains invalid character(s) {value}")
+    return value
+
+
+def valid_domain_with_wildcard(value: str) -> str:
+    """Validate if value is a valid domain that can include a wildcard.
+
+    The wildcard character (*) can't be at the TLD level, for example *.com is not valid.
+    This is supported natively by the library ( e.g domain("com") will raise a ValidationError ).
+
+    Raises:
+        ValueError: When value is not a valid domain.
+
+    Args:
+        value: The value to validate.
+    """
+    fqdn = value[2:] if value.startswith("*.") else value
+    if not bool(domain(fqdn)):
+        raise ValueError(f"Invalid domain: {value}")
     return value
 
 
@@ -486,13 +508,17 @@ class TimeoutConfiguration(BaseModel):
     server: int = Field(
         description="Timeout (in seconds) for requests from haproxy to backend servers.",
         default=60,
+        gt=0,
     )
     connect: int = Field(
-        description="Timeout (in seconds) for client requests to haproxy.", default=60
+        description="Timeout (in seconds) for client requests to haproxy.",
+        default=60,
+        gt=0,
     )
     queue: int = Field(
         description="Timeout (in seconds) for requests in the queue.",
         default=60,
+        gt=0,
     )
 
 
@@ -571,9 +597,11 @@ class RequirerApplicationData(_DatabagModel):
     paths: list[VALIDSTR] = Field(
         description="The list of paths to route to this service.", default=[]
     )
-    hostname: Optional[VALIDSTR] = Field(description="Hostname of this service.", default=None)
-    additional_hostnames: list[VALIDSTR] = Field(
-        description="The list of additional hostnames of this service.", default=[]
+    hostname: Optional[Annotated[str, BeforeValidator(valid_domain_with_wildcard)]] = Field(
+        description="Hostname of this service.", default=None
+    )
+    additional_hostnames: list[Annotated[str, BeforeValidator(valid_domain_with_wildcard)]] = (
+        Field(description="The list of additional hostnames of this service.", default=[])
     )
     rewrites: list[RewriteConfiguration] = Field(
         description="The list of path rewrite rules.", default=[]
@@ -704,19 +732,25 @@ class HaproxyRouteRequirersData:
     @model_validator(mode="after")
     def check_services_unique(self) -> Self:
         """Check that requirers define unique services.
-
-        Raises:
-            DataValidationError: When requirers declared duplicate services.
+        If multiple requirers declare the same service name,
+        their relation ids are added to relation_ids_with_invalid_data.
 
         Returns:
             The validated model.
         """
-        services = [
-            requirer_data.application_data.service for requirer_data in self.requirers_data
-        ]
-        if len(services) != len(set(services)):
-            raise DataValidationError("Services declaration by requirers must be unique.")
+        relation_ids_per_service: dict[str, list[int]] = defaultdict(list[int])
+        for requirer_data in self.requirers_data:
+            relation_ids_per_service[requirer_data.application_data.service].append(
+                requirer_data.relation_id
+            )
 
+        self.relation_ids_with_invalid_data.update(
+            *[
+                set(relation_ids)
+                for relation_ids in relation_ids_per_service.values()
+                if len(relation_ids) > 1
+            ]
+        )
         return self
 
     @model_validator(mode="after")
@@ -736,10 +770,11 @@ class HaproxyRouteRequirersData:
                 )
 
         self.relation_ids_with_invalid_data.update(
-            relation_id
-            for relation_ids in relation_ids_per_port.values()
-            for relation_id in relation_ids
-            if len(relation_ids) > 1
+            *[
+                set(relation_ids)
+                for relation_ids in relation_ids_per_port.values()
+                if len(relation_ids) > 1
+            ]
         )
         return self
 
@@ -984,7 +1019,7 @@ class HaproxyRouteRequirer(Object):
         service: Optional[str] = None,
         ports: Optional[list[int]] = None,
         protocol: Literal["http", "https"] = "http",
-        hosts: Optional[list[str]] = None,
+        hosts: Optional[list[IPvAnyAddress]] = None,
         paths: Optional[list[str]] = None,
         hostname: Optional[str] = None,
         additional_hostnames: Optional[list[str]] = None,
@@ -1123,7 +1158,7 @@ class HaproxyRouteRequirer(Object):
         service: str,
         ports: list[int],
         protocol: Literal["http", "https"] = "http",
-        hosts: Optional[list[str]] = None,
+        hosts: Optional[list[IPvAnyAddress]] = None,
         paths: Optional[list[str]] = None,
         hostname: Optional[str] = None,
         additional_hostnames: Optional[list[str]] = None,
@@ -1237,7 +1272,7 @@ class HaproxyRouteRequirer(Object):
         service: Optional[str] = None,
         ports: Optional[list[int]] = None,
         protocol: Literal["http", "https"] = "http",
-        hosts: Optional[list[str]] = None,
+        hosts: Optional[list[IPvAnyAddress]] = None,
         paths: Optional[list[str]] = None,
         hostname: Optional[str] = None,
         additional_hostnames: Optional[list[str]] = None,

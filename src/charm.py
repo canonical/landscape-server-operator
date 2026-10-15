@@ -25,10 +25,16 @@ from urllib.parse import urlparse
 
 from charmlibs import apt, snap
 from charmlibs.apt import PackageError, PackageNotFoundError
+from charmlibs.interfaces.tls_certificates import (
+    CertificateRequestAttributes,
+    Mode,
+    TLSCertificatesRequiresV4,
+)
 from charmlibs.passwd import group_exists, user_exists
 from charmlibs.systemd import (
     service_pause,
     service_reload,
+    service_restart,
     service_resume,
     service_running,
     SystemdError,
@@ -39,8 +45,8 @@ from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseRequires,
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
-from charms.haproxy.v1.haproxy_route import HaproxyRouteRequirer
 from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
+from charms.haproxy.v2.haproxy_route import HaproxyRouteRequirer
 from charms.smtp_integrator.v0.smtp import (
     SmtpDataAvailableEvent,
     SmtpRequires,
@@ -106,6 +112,8 @@ from settings_files import (
     merge_service_conf,
     prepend_default_settings,
     read_service_conf,
+    remove_ubuntu_installer_attach_tls,
+    ServiceConfMissing,
     SSLCertReadException,
     update_db_conf,
     update_default_settings,
@@ -115,6 +123,7 @@ from settings_files import (
     write_deployment_mode_systemd_override,
     write_license_file,
     write_ssl_cert,
+    write_ubuntu_installer_attach_tls,
 )
 
 DEBCONF_SET_SELECTIONS = "/usr/bin/debconf-set-selections"
@@ -147,8 +156,10 @@ LANDSCAPE_PACKAGES = (
 LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
 DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
+UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT = 50051
 
 TASK_HANDLER_RELATION = "task-handler"
+CERTIFICATES_RELATION = "certificates"
 OUTBOX_GRPC_CERTS_DIR = Path("/var/snap/landscape-outbox/common/grpc-certs")
 DEFAULT_STORE_NAMES = {
     "main": "landscape-standalone-main",
@@ -473,13 +484,30 @@ class LandscapeServerCharm(CharmBase):
         self.repository_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="repository-haproxy-route"
         )
-        # grpc backends only support plaintext (no add_secure_port), so TLS must
-        # terminate at haproxy itself rather than being re-encrypted to the backend.
+        # The hostagent-messenger gRPC backend only supports plaintext (no
+        # add_secure_port), so TLS must terminate at haproxy itself rather than being
+        # re-encrypted to the backend. Ubuntu installer attach can serve TLS itself
+        # (see `certificates`), so it uses a regular HTTPS route with ALPN h2.
         self.hostagent_messenger_haproxy_route = HaproxyRouteTcpRequirer(
             self, relation_name="hostagent-messenger-haproxy-route"
         )
-        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteTcpRequirer(
+        self.ubuntu_installer_attach_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="ubuntu-installer-attach-haproxy-route"
+        )
+        self.certificates = TLSCertificatesRequiresV4(
+            self,
+            relationship_name=CERTIFICATES_RELATION,
+            certificate_requests=self._get_certificate_requests,
+            mode=Mode.UNIT,
+            refresh_events=[self.on.config_changed],
+        )
+        self.framework.observe(
+            self.certificates.on.certificate_available,
+            self._on_certificate_available,
+        )
+        self.framework.observe(
+            self.on[CERTIFICATES_RELATION].relation_broken,
+            self._on_certificates_relation_broken,
         )
 
         for relation_name in (
@@ -620,6 +648,8 @@ class LandscapeServerCharm(CharmBase):
 
         if self.charm_config.additional_service_config:
             merge_service_conf(self.charm_config.additional_service_config)
+
+        self._sync_ubuntu_installer_attach_tls()
 
         if self.charm_config.license_file:
             self.unit.status = MaintenanceStatus("Writing Landscape license file")
@@ -1586,9 +1616,9 @@ class LandscapeServerCharm(CharmBase):
             if name := parsed.hostname:
                 hostname = name
 
-        # haproxy-route-tcp's `sni` field is validated as a domain name, so it
-        # can't be set to `hostname` when that's still the leader_ip fallback
-        # (i.e. root_url isn't configured with a real hostname).
+        # The `sni` and haproxy-route `hostname` fields are validated as domain
+        # names, so they can't be set to `hostname` when that's still the
+        # leader_ip fallback (i.e. root_url isn't configured with a real hostname).
         sni = hostname if validators.domain(hostname) else None
 
         appserver_paths = ["/", "/hash-id-databases"]
@@ -1607,7 +1637,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
             # Because this route contains `/`
             # it will swallow the others so they
             # need to be denied to avoid a race.
@@ -1633,7 +1663,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         self.message_server_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-message-server-{model_uuid}",
@@ -1647,7 +1677,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         self.api_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-api-{model_uuid}",
@@ -1661,7 +1691,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         self.package_upload_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-package-upload-{model_uuid}",
@@ -1675,7 +1705,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         # Repository uses appserver ports and allow_http=True because clients
         # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
@@ -1689,7 +1719,7 @@ class LandscapeServerCharm(CharmBase):
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
-            hostname=hostname,
+            hostname=sni,
         )
         if cfg.enable_hostagent_messenger:
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_tcp_requirements(
@@ -1700,15 +1730,103 @@ class LandscapeServerCharm(CharmBase):
                 unit_address=unit_ip,
                 sni=sni,
             )
-        if cfg.enable_ubuntu_installer_attach:
-            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_tcp_requirements(
-                port=50051,
-                backend_port=cfg.ubuntu_installer_attach_base_port,
-                hosts=[unit_ip],
-                tls_terminate=True,
+        if self._ubuntu_installer_attach_tls_wanted():
+            self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
+                service=f"landscape-ubuntu-installer-attach-{model_uuid}",
+                ports=[cfg.ubuntu_installer_attach_base_port],
+                protocol="https",
+                external_grpc_port=UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT,
                 unit_address=unit_ip,
-                sni=sni,
+                hostname=sni,
             )
+        else:
+            for relation in self.model.relations.get(
+                "ubuntu-installer-attach-haproxy-route", []
+            ):
+                relation.data[self.unit].clear()
+                if self.unit.is_leader():
+                    relation.data[self.app].clear()
+
+    def _get_certificate_requests(
+        self, _capabilities=None
+    ) -> list[CertificateRequestAttributes]:
+        """Return the certificate request for ubuntu-installer-attach, if wanted."""
+        unit_ip = self.unit_ip
+        if not self._stored.enable_ubuntu_installer_attach or not unit_ip:
+            return []
+
+        hostname = urlparse(self.charm_config.root_url or "").hostname
+        if hostname and validators.domain(hostname):
+            return [
+                CertificateRequestAttributes(
+                    common_name=hostname, sans_ip=[unit_ip], sans_dns=[hostname]
+                )
+            ]
+        return [CertificateRequestAttributes(common_name=unit_ip, sans_ip=[unit_ip])]
+
+    def _on_certificate_available(self, _) -> None:
+        self._sync_ubuntu_installer_attach_tls()
+        self._provide_all_haproxy_route_requirements()
+
+    def _on_certificates_relation_broken(self, _) -> None:
+        self._sync_ubuntu_installer_attach_tls()
+        self._provide_all_haproxy_route_requirements()
+
+    def _ubuntu_installer_attach_tls_wanted(self) -> bool:
+        return bool(
+            self.charm_config.enable_ubuntu_installer_attach
+            and any(
+                relation.active
+                for relation in self.model.relations.get(CERTIFICATES_RELATION, [])
+            )
+        )
+
+    def _sync_ubuntu_installer_attach_tls(self) -> None:
+        """
+        Make the ubuntu-installer-attach service serve TLS with the certificate
+        issued over the `certificates` relation, or plaintext when there is none.
+
+        Until the first certificate is issued the service stays plaintext. A
+        certificate being renewed keeps being served until its replacement arrives.
+        """
+        try:
+            if not self._ubuntu_installer_attach_tls_wanted():
+                changed = remove_ubuntu_installer_attach_tls()
+            else:
+                requests = self._get_certificate_requests()
+                if not requests:
+                    return
+                certificate, private_key = self.certificates.get_assigned_certificate(
+                    requests[0]
+                )
+                if not certificate or not private_key:
+                    logger.info(
+                        "Waiting for a TLS certificate for "
+                        "`landscape-ubuntu-installer-attach`"
+                    )
+                    return
+                leaf = str(certificate.certificate)
+                chain = "\n".join(
+                    [leaf] + [str(c) for c in certificate.chain if str(c) != leaf]
+                )
+                changed = write_ubuntu_installer_attach_tls(
+                    chain,
+                    str(private_key),
+                    user_exists("landscape").pw_uid,
+                    self.root_gid,
+                )
+        except (OSError, ServiceConfMissing) as e:
+            logger.error("Failed to configure ubuntu-installer-attach TLS: %s", e)
+            self.unit.status = BlockedStatus(
+                "Failed to configure `landscape-ubuntu-installer-attach` TLS"
+            )
+            return
+
+        if changed and self._stored.enable_ubuntu_installer_attach:
+            try:
+                service_restart(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+            except SystemdError as e:
+                logger.error("Failed to restart ubuntu-installer-attach: %s", e)
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:
         event.set_results({"config": json.dumps(read_service_conf())})

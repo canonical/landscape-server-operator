@@ -2,19 +2,18 @@
 
 from unittest.mock import patch
 
-from ops.testing import Context, State
+from ops.testing import Context, Relation, State
 import pytest
 
 from charm import LandscapeServerCharm
 
 LEADER_IP = "10.0.0.1"
 PATCH_PROVIDE = (
-    "charms.haproxy.v1.haproxy_route.HaproxyRouteRequirer"
+    "charms.haproxy.v2.haproxy_route.HaproxyRouteRequirer"
     ".provide_haproxy_route_requirements"
 )
-# grpc backends (hostagent-messenger, ubuntu-installer-attach) use the tcp
-# route requirer, with TLS terminated at haproxy since the backends can't
-# terminate TLS themselves.
+# The hostagent-messenger grpc backend uses the tcp route requirer, with TLS
+# terminated at haproxy since the backend can't terminate TLS itself.
 PATCH_PROVIDE_TCP = (
     "charms.haproxy.v1.haproxy_route_tcp.HaproxyRouteTcpRequirer"
     ".provide_haproxy_route_tcp_requirements"
@@ -62,7 +61,7 @@ def _run_provide(context, state, leader_ip=LEADER_IP):
 def _run_provide_tcp(context, state, leader_ip=LEADER_IP):
     """
     Same as _run_provide, but captures calls to the tcp route requirer
-    used by the grpc backends (hostagent-messenger, ubuntu-installer-attach).
+    used by the hostagent-messenger grpc backend.
     """
     with patch(PATCH_PROVIDE_TCP) as mock_provide_tcp:
         with context(context.on.config_changed(), state) as mgr:
@@ -223,16 +222,14 @@ class TestHostname:
                 f"Wrong hostname for {c.kwargs.get('service')}"
             )
 
-    def test_hostname_falls_back_to_leader_ip_when_no_root_url(
-        self, replicas_network_state
-    ):
+    def test_hostname_omitted_when_no_root_url(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(config={}, **replicas_network_state)
         mock = _run_provide(context, state, leader_ip=LEADER_IP)
         assert mock.called
         for c in mock.call_args_list:
-            assert c.kwargs.get("hostname") == LEADER_IP, (
-                f"Expected leader IP as hostname for {c.kwargs.get('service')}"
+            assert c.kwargs.get("hostname") is None, (
+                f"A leader IP is not a valid hostname for {c.kwargs.get('service')}"
             )
 
 
@@ -364,11 +361,11 @@ class TestHealthChecks:
 
 
 class TestConditionalRoutes:
-    """hostagent-messenger and ubuntu-installer-attach routes are conditional.
+    """The hostagent-messenger route is conditional.
 
-    These two grpc backends use haproxy-route-tcp (TLS terminated at haproxy,
-    plaintext to backend) rather than haproxy-route, since the backends can't
-    terminate TLS themselves.
+    This grpc backend uses haproxy-route-tcp (TLS terminated at haproxy,
+    plaintext to backend) rather than haproxy-route, since it can't terminate
+    TLS itself.
     """
 
     def test_hostagent_messenger_published_when_enabled(self, replicas_network_state):
@@ -391,28 +388,6 @@ class TestConditionalRoutes:
         ports = [c.kwargs.get("port") for c in mock.call_args_list]
         assert 6554 not in ports
 
-    def test_ubuntu_installer_attach_published_when_enabled(
-        self, replicas_network_state
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_ubuntu_installer_attach": True}, **replicas_network_state
-        )
-        mock = _run_provide_tcp(context, state)
-        ports = [c.kwargs.get("port") for c in mock.call_args_list]
-        assert 50051 in ports
-
-    def test_ubuntu_installer_attach_not_published_when_disabled(
-        self, replicas_network_state
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_ubuntu_installer_attach": False}, **replicas_network_state
-        )
-        mock = _run_provide_tcp(context, state)
-        ports = [c.kwargs.get("port") for c in mock.call_args_list]
-        assert 50051 not in ports
-
     def test_hostagent_messenger_uses_correct_grpc_port(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(
@@ -420,19 +395,6 @@ class TestConditionalRoutes:
         )
         mock = _run_provide_tcp(context, state)
         calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
-        assert calls
-        assert calls[0].kwargs.get("backend_port") is not None
-        assert calls[0].kwargs.get("tls_terminate") is True
-
-    def test_ubuntu_installer_attach_uses_correct_grpc_port(
-        self, replicas_network_state
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_ubuntu_installer_attach": True}, **replicas_network_state
-        )
-        mock = _run_provide_tcp(context, state)
-        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 50051]
         assert calls
         assert calls[0].kwargs.get("backend_port") is not None
         assert calls[0].kwargs.get("tls_terminate") is True
@@ -455,19 +417,6 @@ class TestConditionalRoutes:
         assert calls
         assert calls[0].kwargs.get("sni") is None
 
-    def test_ubuntu_installer_attach_sni_omitted_when_no_root_url(
-        self, replicas_network_state
-    ):
-        context = Context(LandscapeServerCharm)
-        state = State(
-            config={"enable_ubuntu_installer_attach": True, "root_url": ""},
-            **replicas_network_state,
-        )
-        mock = _run_provide_tcp(context, state, leader_ip=LEADER_IP)
-        calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 50051]
-        assert calls
-        assert calls[0].kwargs.get("sni") is None
-
     def test_hostagent_messenger_sni_set_when_root_url_has_hostname(
         self, replicas_network_state
     ):
@@ -483,3 +432,86 @@ class TestConditionalRoutes:
         calls = [c for c in mock.call_args_list if c.kwargs.get("port") == 6554]
         assert calls
         assert calls[0].kwargs.get("sni") == "my.landscape.example.com"
+
+
+class TestUbuntuInstallerAttachRoute:
+    """ubuntu-installer-attach serves TLS and is routed with haproxy-route (HTTPS)."""
+
+    @staticmethod
+    def _routes(network_state, with_certificates=True, **config):
+        """Route requirements published for ubuntu-installer-attach."""
+        relations = list(network_state.get("relations", []))
+        if with_certificates:
+            relations.append(
+                Relation(endpoint="certificates", interface="tls-certificates")
+            )
+        state = State(config=config, **{**network_state, "relations": relations})
+        mock = _run_provide(Context(LandscapeServerCharm), state)
+        return _calls_for(mock, "ubuntu-installer-attach")
+
+    def test_published_when_enabled(self, replicas_network_state):
+        calls = self._routes(
+            replicas_network_state, enable_ubuntu_installer_attach=True
+        )
+        assert calls
+
+    def test_not_published_when_disabled(self, replicas_network_state):
+        calls = self._routes(
+            replicas_network_state, enable_ubuntu_installer_attach=False
+        )
+        assert calls == []
+
+    def test_route_data(self, replicas_network_state):
+        calls = self._routes(
+            replicas_network_state,
+            enable_ubuntu_installer_attach=True,
+            root_url="https://my.landscape.example.com/",
+            ubuntu_installer_attach_base_port=50123,
+        )
+        kwargs = calls[-1].kwargs
+        assert kwargs["service"].startswith("landscape-ubuntu-installer-attach-")
+        assert kwargs["protocol"] == "https"
+        assert kwargs["external_grpc_port"] == 50051
+        assert kwargs["ports"] == [50123]
+        assert kwargs["hostname"] == "my.landscape.example.com"
+        assert kwargs["unit_address"]
+        assert "paths" not in kwargs
+
+    def test_hostname_omitted_without_domain(self, replicas_network_state):
+        calls = self._routes(
+            replicas_network_state,
+            enable_ubuntu_installer_attach=True,
+            root_url="",
+        )
+        assert calls[-1].kwargs["hostname"] is None
+
+    def test_not_published_without_certificates(self, replicas_network_state):
+        """gRPC routing needs an HTTPS backend, so no certificate means no route."""
+        route = Relation(
+            endpoint="ubuntu-installer-attach-haproxy-route",
+            interface="haproxy-route",
+            local_app_data={"service": '"landscape-ubuntu-installer-attach"'},
+            local_unit_data={"address": '"10.0.0.1"'},
+        )
+        state = State(
+            config={"enable_ubuntu_installer_attach": True},
+            leader=True,
+            **{
+                **replicas_network_state,
+                "relations": [
+                    *replicas_network_state.get("relations", []),
+                    route,
+                ],
+            },
+        )
+        context = Context(LandscapeServerCharm)
+        with patch(PATCH_PROVIDE) as mock_provide:
+            with context(context.on.config_changed(), state) as manager:
+                manager.charm._stored.leader_ip = LEADER_IP
+                manager.charm._provide_all_haproxy_route_requirements()
+                result = manager.run()
+
+        assert _calls_for(mock_provide, "ubuntu-installer-attach") == []
+        cleared = result.get_relation(route.id)
+        assert cleared.local_app_data == {}
+        assert cleared.local_unit_data == {}
