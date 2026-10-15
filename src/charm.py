@@ -1651,6 +1651,7 @@ class LandscapeServerCharm(CharmBase):
             paths=appserver_paths,
             protocol="http",
             **cfg.haproxy_health_checks.appserver.route_kwargs(),
+            **cfg.haproxy_timeouts.appserver.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1674,6 +1675,7 @@ class LandscapeServerCharm(CharmBase):
             paths=["/ping"],
             protocol="http",
             **cfg.haproxy_health_checks.pingserver.route_kwargs(),
+            **cfg.haproxy_timeouts.pingserver.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
@@ -1685,6 +1687,7 @@ class LandscapeServerCharm(CharmBase):
             paths=["/message-system", "/attachment"],
             protocol="http",
             **cfg.haproxy_health_checks.message_server.route_kwargs(),
+            **cfg.haproxy_timeouts.message_server.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1696,6 +1699,7 @@ class LandscapeServerCharm(CharmBase):
             paths=["/api"],
             protocol="http",
             **cfg.haproxy_health_checks.api.route_kwargs(),
+            **cfg.haproxy_timeouts.api.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1707,6 +1711,7 @@ class LandscapeServerCharm(CharmBase):
             paths=["/upload"],
             protocol="http",
             **cfg.haproxy_health_checks.package_upload.route_kwargs(),
+            **cfg.haproxy_timeouts.package_upload.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_default,
             unit_address=unit_ip,
@@ -1722,6 +1727,7 @@ class LandscapeServerCharm(CharmBase):
             paths=["/repository"],
             protocol="http",
             **cfg.haproxy_health_checks.repository.route_kwargs(),
+            **cfg.haproxy_timeouts.repository.route_kwargs(),
             header_rewrite_expressions=forwarded_proto_https,
             allow_http=allow_http_always,
             unit_address=unit_ip,
@@ -2698,7 +2704,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 f"Dpkg::Options::={conffile_option}",
                 *extra,
                 target,
-            ]
+            ],
+            env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
         )
 
     def _build_add_apt_repository_env(self) -> dict:
