@@ -46,8 +46,12 @@ requires:
     interface: haproxy-route-tcp
     limit: 1
   ubuntu-installer-attach-haproxy-route:
-    interface: haproxy-route-tcp
+    interface: haproxy-route
     limit: 1
+  certificates:
+    interface: tls-certificates
+    limit: 1
+    optional: true
   repository-haproxy-route:
     interface: haproxy-route
     limit: 1

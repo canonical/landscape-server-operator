@@ -81,6 +81,11 @@ locals {
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
   } : { website = "website" }
 
+  # The 26.04 charm exposes ubuntu-installer-attach-haproxy-route as a
+  # haproxy-route-tcp endpoint and has no certificates endpoint.
+  has_installer_attach_https = local.has_modern_haproxy_interface && !startswith(var.channel, "26.04")
+  certificates_relations     = local.has_installer_attach_https ? { certificates = "certificates" } : {}
+
 }
 
 output "requires" {
@@ -88,7 +93,7 @@ output "requires" {
   value = merge({
     application_dashboard = "application-dashboard",
     smtp                  = "smtp",
-  }, local.amqp_relations, local.db_relations, local.haproxy_relations)
+  }, local.amqp_relations, local.db_relations, local.haproxy_relations, local.certificates_relations)
 }
 
 output "has_modern_haproxy_interface" {

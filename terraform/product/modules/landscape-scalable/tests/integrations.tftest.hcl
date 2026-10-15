@@ -264,8 +264,13 @@ run "test_haproxy_route_integrations_created" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1
-    error_message = "ubuntu-installer-attach haproxy-route integration should be created"
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 1
+    error_message = "ubuntu-installer-attach haproxy-route-tcp integration should be created before HTTPS support"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 0
+    error_message = "ubuntu-installer-attach haproxy-route integration should not be created before HTTPS support"
   }
 
   assert {
@@ -582,5 +587,61 @@ run "test_other_landscape_charms_skipped" {
   assert {
     condition     = length(juju_integration.landscape_task_handler_certificates) == 0
     error_message = "task-handler certificates integration should not be created when null"
+  }
+}
+
+run "test_installer_attach_https_cross_model" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.10/stable"
+      config = {
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1
+    error_message = "ubuntu-installer-attach haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
+    error_message = "ubuntu-installer-attach haproxy-route-tcp integration should not be created"
+  }
+
+  assert {
+    condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_certificates) == 1
+    error_message = "A certificate provider should be deployed and related to landscape-server"
+  }
+}
+
+run "test_installer_attach_without_certificate_provider_uses_tcp" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.10/stable"
+      config = {
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+    tls_certificates            = null
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 0
+    error_message = "ubuntu-installer-attach HTTPS route needs a certificate provider"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 1
+    error_message = "ubuntu-installer-attach should fall back to haproxy-route-tcp"
   }
 }

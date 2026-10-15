@@ -79,7 +79,7 @@ variable "haproxy_route_offer_url" {
 }
 
 variable "haproxy_route_tcp_offer_url" {
-  description = "Offer URL for the haproxy-route-tcp endpoint from a cross-model haproxy deployment (LBaaS), used for the hostagent-messenger and ubuntu-installer-attach grpc backends. Set to null to skip."
+  description = "Offer URL for the haproxy-route-tcp endpoint from a cross-model haproxy deployment (LBaaS), used for the hostagent-messenger and task-handler grpc backends, and for the ubuntu-installer-attach backend on charm revisions that predate HTTPS support. Set to null to skip."
   type        = string
   default     = null
   nullable    = true

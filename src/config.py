@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from charms.haproxy.v1.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
+from charms.haproxy.v2.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
 from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 

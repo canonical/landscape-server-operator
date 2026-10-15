@@ -5,6 +5,7 @@ description = "Juju charm for deploying and managing Landscape Server"
 requires-python = ">=3.10"
 dependencies = [
     "charmlibs-apt==1.0.0.post0",
+    "charmlibs-interfaces-tls-certificates==1.12.0",
     "charmlibs-passwd==1.0.1",
     "charmlibs-snap~=1.0",
     "charmlibs-systemd==1.0.0",
@@ -25,6 +26,7 @@ dev = [
   "urllib3==2.6.3",
 ]
 integration = [
+  "grpcio==1.84.0",
   "h2==4.3.0",
   "jubilant==1.6.2",
   "requests==2.33.0",
