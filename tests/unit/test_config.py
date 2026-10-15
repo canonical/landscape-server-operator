@@ -401,3 +401,24 @@ def test_health_checks_are_grouped_per_service():
         "check_fall": 3,
     }
     assert config.haproxy_health_checks.repository.route_kwargs() == {}
+
+
+@pytest.mark.parametrize("kind", ["connect", "queue", "server"])
+def test_timeouts_must_be_positive(kind):
+    defaults = get_config_defaults()
+    defaults[f"haproxy_api_{kind}_timeout"] = 0
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+def test_timeouts_are_grouped_per_service():
+    defaults = get_config_defaults()
+    defaults["haproxy_api_server_timeout"] = 9
+    config = LandscapeCharmConfiguration(**defaults)
+
+    assert config.haproxy_timeouts.appserver.server == 300
+    assert config.haproxy_timeouts.api.route_kwargs() == {
+        "connect_timeout": 60,
+        "queue_timeout": 60,
+        "server_timeout": 9,
+    }
