@@ -625,7 +625,7 @@ run "test_installer_attach_https_cross_model" {
   }
 }
 
-run "test_installer_attach_without_certificate_provider" {
+run "test_installer_attach_without_certificate_provider_has_no_route" {
   command = plan
 
   variables {
@@ -647,7 +647,7 @@ run "test_installer_attach_without_certificate_provider" {
 
   assert {
     condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
-    error_message = "ubuntu-installer-attach endpoint uses haproxy-route on 26.10 and can't relate to haproxy-route-tcp"
+    error_message = "ubuntu-installer-attach modern charm must not use haproxy-route-tcp"
   }
 }
 

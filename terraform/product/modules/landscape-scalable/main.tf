@@ -313,7 +313,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer && !local.grpc_routes_https ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.installer_attach_tcp ? 1 : 0
 }
 
 # ubuntu-installer-attach and hostagent-messenger serve TLS themselves, so haproxy
@@ -511,7 +511,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer && !local.grpc_routes_https ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.installer_attach_tcp ? 1 : 0
 }
 
 locals {
@@ -533,6 +533,10 @@ locals {
   # (haproxy-route interface); older ones route them over haproxy-route-tcp
   grpc_routes_https         = try(module.landscape_server.requires.certificates, null) != null
   hostagent_messenger_https = var.tls_certificates != null && local.enable_hostagent_messenger && local.grpc_routes_https
+
+  # Revisions without a certificates endpoint expose the installer-attach endpoint
+  # as haproxy-route-tcp; newer ones expose haproxy-route, which cannot connect to it
+  installer_attach_tcp = local.has_haproxy_route && local.enable_ubuntu_installer && try(module.landscape_server.requires.certificates, null) == null
 
   # deploy the certificates app if haproxy, task-handler or a gRPC HTTPS route is present
   deploy_tls_certificates = var.tls_certificates != null && ((var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route) || local.deploy_task_handler || local.installer_attach_https || local.hostagent_messenger_https)

@@ -1744,7 +1744,7 @@ class LandscapeServerCharm(CharmBase):
             )
         else:
             self._clear_route_relation_data(HOSTAGENT_MESSENGER_ROUTE_RELATION)
-        if self._ubuntu_installer_attach_tls_wanted():
+        if self._ubuntu_installer_attach_tls_ready():
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
                 service=f"landscape-ubuntu-installer-attach-{model_uuid}",
                 ports=[cfg.ubuntu_installer_attach_base_port],
@@ -1815,6 +1815,18 @@ class LandscapeServerCharm(CharmBase):
             self.charm_config.enable_hostagent_messenger
             and self._relation_active(CERTIFICATES_RELATION)
         )
+
+    def _ubuntu_installer_attach_tls_ready(self) -> bool:
+        """Whether a certificate and key have been assigned for the service."""
+        if not self._ubuntu_installer_attach_tls_wanted():
+            return False
+        requests = self._get_certificate_requests()
+        if not requests:
+            return False
+        certificate, private_key = self.certificates.get_assigned_certificate(
+            requests[0]
+        )
+        return bool(certificate and private_key)
 
     def _hostagent_messenger_tls_serving(self) -> bool:
         """

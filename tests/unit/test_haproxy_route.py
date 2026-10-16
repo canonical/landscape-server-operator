@@ -1,7 +1,8 @@
 # Copyright 2026 Canonical Ltd
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+from charmlibs.interfaces.tls_certificates import CertificateRequestAttributes
 from ops.testing import Context, Relation, State
 import pytest
 
@@ -38,6 +39,12 @@ def _calls_for(mock, service_fragment):
         for c in mock.call_args_list
         if service_fragment in c.kwargs.get("service", "")
     ]
+
+
+GET_ASSIGNED_CERTIFICATE = (
+    "charmlibs.interfaces.tls_certificates.TLSCertificatesRequiresV4"
+    ".get_assigned_certificate"
+)
 
 
 def _run_provide(context, state, leader_ip=LEADER_IP):
@@ -435,7 +442,9 @@ class TestUbuntuInstallerAttachRoute:
     """ubuntu-installer-attach serves TLS and is routed with haproxy-route (HTTPS)."""
 
     @staticmethod
-    def _routes(network_state, with_certificates=True, **config):
+    def _routes(
+        network_state, with_certificates=True, certificate_assigned=True, **config
+    ):
         """Route requirements published for ubuntu-installer-attach."""
         relations = list(network_state.get("relations", []))
         if with_certificates:
@@ -443,7 +452,16 @@ class TestUbuntuInstallerAttachRoute:
                 Relation(endpoint="certificates", interface="tls-certificates")
             )
         state = State(config=config, **{**network_state, "relations": relations})
-        mock = _run_provide(Context(LandscapeServerCharm), state)
+        assigned = (MagicMock(), MagicMock()) if certificate_assigned else (None, None)
+        with (
+            patch.object(
+                LandscapeServerCharm,
+                "_get_certificate_requests",
+                return_value=[CertificateRequestAttributes(common_name="landscape")],
+            ),
+            patch(GET_ASSIGNED_CERTIFICATE, return_value=assigned),
+        ):
+            mock = _run_provide(Context(LandscapeServerCharm), state)
         return _calls_for(mock, "ubuntu-installer-attach")
 
     def test_published_when_enabled(self, replicas_network_state):
@@ -481,6 +499,14 @@ class TestUbuntuInstallerAttachRoute:
             root_url="",
         )
         assert calls[-1].kwargs["hostname"] is None
+
+    def test_not_published_until_certificate_assigned(self, replicas_network_state):
+        calls = self._routes(
+            replicas_network_state,
+            certificate_assigned=False,
+            enable_ubuntu_installer_attach=True,
+        )
+        assert calls == []
 
     def test_not_published_without_certificates(self, replicas_network_state):
         """gRPC routing needs an HTTPS backend, so no certificate means no route."""
