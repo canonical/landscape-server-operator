@@ -318,7 +318,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
 # ubuntu-installer-attach and hostagent-messenger serve TLS themselves, so haproxy
 # re-encrypts to them using the certificate issued to the unit through this relation
-resource "juju_integration" "landscape_server_ubuntu_installer_attach_certificates" {
+resource "juju_integration" "landscape_server_grpc_certificates" {
   model_uuid = var.model_uuid
 
   application {
@@ -333,6 +333,11 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_certificat
   depends_on = [module.landscape_server, juju_application.tls_certificates]
 
   count = local.deploy_tls_certificates && (local.installer_attach_https || local.hostagent_messenger_https) ? 1 : 0
+}
+
+moved {
+  from = juju_integration.landscape_server_ubuntu_installer_attach_certificates
+  to   = juju_integration.landscape_server_grpc_certificates
 }
 
 resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
