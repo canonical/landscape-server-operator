@@ -75,11 +75,10 @@ def _state(replicas_network_state, enabled=True, relation=True, **config):
 
 
 def _conf(capture_service_conf) -> dict:
-    return (
-        dict(capture_service_conf.get_config()[SECTION])
-        if (capture_service_conf.get_config().has_section(SECTION))
-        else {}
-    )
+    config = capture_service_conf.get_config()
+    if not config.has_section(SECTION):
+        return {}
+    return {k: v for k, v in config[SECTION].items() if k.startswith("ssl_")}
 
 
 class TestCertificateRequest:

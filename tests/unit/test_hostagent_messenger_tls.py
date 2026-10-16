@@ -117,7 +117,9 @@ def _state(network_state, enabled=True, **relations):
 
 def _conf(capture_service_conf) -> dict:
     config = capture_service_conf.get_config()
-    return dict(config[SECTION]) if config.has_section(SECTION) else {}
+    if not config.has_section(SECTION):
+        return {}
+    return {k: v for k, v in config[SECTION].items() if k.startswith("ssl_")}
 
 
 def _run(state, certificate=(None, None), event=None):

@@ -648,10 +648,10 @@ class LandscapeServerCharm(CharmBase):
         service_conf_updates.setdefault("package-upload", {})["base_port"] = str(
             self.charm_config.package_upload_base_port
         )
-        service_conf_updates["hostagent-message-server"] = {
+        service_conf_updates[HOSTAGENT_SERVER_SECTION] = {
             "base_port": str(self.charm_config.hostagent_server_base_port)
         }
-        service_conf_updates["ubuntu-installer-attach"] = {
+        service_conf_updates[UBUNTU_INSTALLER_ATTACH_SECTION] = {
             "base_port": str(self.charm_config.ubuntu_installer_attach_base_port)
         }
 
