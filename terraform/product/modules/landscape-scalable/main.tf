@@ -313,7 +313,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer && !local.installer_attach_https ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_ubuntu_installer && !local.grpc_routes_https ? 1 : 0
 }
 
 # ubuntu-installer-attach and hostagent-messenger serve TLS themselves, so haproxy
@@ -511,7 +511,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer && !local.installer_attach_https ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_ubuntu_installer && !local.grpc_routes_https ? 1 : 0
 }
 
 locals {

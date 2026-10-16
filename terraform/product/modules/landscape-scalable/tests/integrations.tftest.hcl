@@ -625,7 +625,7 @@ run "test_installer_attach_https_cross_model" {
   }
 }
 
-run "test_installer_attach_without_certificate_provider_uses_tcp" {
+run "test_installer_attach_without_certificate_provider" {
   command = plan
 
   variables {
@@ -646,8 +646,8 @@ run "test_installer_attach_without_certificate_provider_uses_tcp" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 1
-    error_message = "ubuntu-installer-attach should fall back to haproxy-route-tcp"
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
+    error_message = "ubuntu-installer-attach endpoint uses haproxy-route on 26.10 and can't relate to haproxy-route-tcp"
   }
 }
 
