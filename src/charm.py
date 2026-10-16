@@ -493,7 +493,7 @@ class LandscapeServerCharm(CharmBase):
         )
         # The gRPC backends serve TLS with the certificate from `certificates`,
         # so they use HTTPS routes, whose frontends negotiate ALPN h2 (required
-        # by grpc-go >= 1.67 clients such as the Ubuntu Pro for WSL agent).
+        # by grpc-go >= 1.67 clients).
         self.hostagent_messenger_haproxy_route = HaproxyRouteRequirer(
             self, relation_name=HOSTAGENT_MESSENGER_ROUTE_RELATION
         )
@@ -515,12 +515,6 @@ class LandscapeServerCharm(CharmBase):
             self.on[CERTIFICATES_RELATION].relation_broken,
             self._on_certificates_relation_broken,
         )
-        for event in (
-            self.on[HOSTAGENT_MESSENGER_ROUTE_RELATION].relation_joined,
-            self.on[HOSTAGENT_MESSENGER_ROUTE_RELATION].relation_changed,
-            self.on[HOSTAGENT_MESSENGER_ROUTE_RELATION].relation_broken,
-        ):
-            self.framework.observe(event, self._on_hostagent_messenger_route)
 
         for relation_name in (
             "appserver_haproxy_route",
@@ -528,6 +522,7 @@ class LandscapeServerCharm(CharmBase):
             "message_server_haproxy_route",
             "api_haproxy_route",
             "package_upload_haproxy_route",
+            "hostagent_messenger_haproxy_route",
             "ubuntu_installer_attach_haproxy_route",
             "repository_haproxy_route",
         ):
@@ -1795,10 +1790,6 @@ class LandscapeServerCharm(CharmBase):
         self._sync_grpc_tls()
         self._provide_all_haproxy_route_requirements()
 
-    def _on_hostagent_messenger_route(self, _) -> None:
-        self._sync_grpc_tls()
-        self._provide_all_haproxy_route_requirements()
-
     def _relation_active(self, relation_name: str) -> bool:
         return any(
             relation.active for relation in self.model.relations.get(relation_name, [])
@@ -1893,7 +1884,7 @@ class LandscapeServerCharm(CharmBase):
                 self.unit.status = BlockedStatus(f"Failed to configure `{service}` TLS")
                 continue
 
-            if changed and enabled:
+            if changed and enabled and not self._stored.paused:
                 try:
                     service_restart(service)
                 except SystemdError as e:

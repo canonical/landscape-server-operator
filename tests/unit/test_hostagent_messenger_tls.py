@@ -1,9 +1,8 @@
 # Copyright 2026 Canonical Ltd
 
-"""Unit tests for serving and routing hostagent-messenger over TLS."""
+"""Unit tests for routing hostagent-messenger over HTTPS."""
 
 from configparser import ConfigParser
-from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -83,21 +82,20 @@ def _provider_certificate():
     )
 
 
-def _relations(network_state, certificates=True, route=True):
+def _relations(network_state, certificates=True):
     relations = list(network_state["relations"])
     if certificates:
         relations.append(
             Relation(endpoint="certificates", interface="tls-certificates")
         )
-    if route:
-        relations.append(
-            Relation(
-                endpoint=ROUTE,
-                interface="haproxy-route",
-                local_app_data={"service": '"stale"'},
-                local_unit_data={"address": '"10.0.0.1"'},
-            )
+    relations.append(
+        Relation(
+            endpoint=ROUTE,
+            interface="haproxy-route",
+            local_app_data={"service": '"stale"'},
+            local_unit_data={"address": '"10.0.0.1"'},
         )
+    )
     return relations
 
 
@@ -149,101 +147,17 @@ def _local_data(state, endpoint):
 ISSUED = (_provider_certificate(), KEY)
 
 
-class TestCertificateRequest:
-    def test_requested_for_hostagent_messenger_alone(self, replicas_network_state):
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            relations=replicas_network_state["relations"],
-            networks=replicas_network_state["networks"],
-            config={
-                "enable_hostagent_messenger": True,
-                "enable_ubuntu_installer_attach": False,
-                "root_url": "https://landscape.example.com/",
-            },
-        )
-        with ctx(ctx.on.update_status(), state) as mgr:
-            (request,) = mgr.charm._get_certificate_requests()
-            unit_ip = mgr.charm.unit_ip
+def test_publishes_https_route_once_serving_tls(
+    replicas_network_state, tls_dir, capture_service_conf
+):
+    _, route_calls = _run(_state(replicas_network_state), certificate=ISSUED)
 
-        assert request.common_name == "landscape.example.com"
-        assert list(request.sans_ip) == [unit_ip]
-
-    def test_not_requested_when_no_grpc_service_enabled(self, replicas_network_state):
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            relations=replicas_network_state["relations"],
-            networks=replicas_network_state["networks"],
-            config={
-                "enable_hostagent_messenger": False,
-                "enable_ubuntu_installer_attach": False,
-            },
-        )
-        with ctx(ctx.on.update_status(), state) as mgr:
-            assert mgr.charm._get_certificate_requests() == []
-
-
-class TestServeTls:
-    def test_serves_tls_and_publishes_https_route(
-        self, replicas_network_state, tls_dir, capture_service_conf, restart_mock
-    ):
-        _, route_calls = _run(_state(replicas_network_state), certificate=ISSUED)
-
-        assert (tls_dir / "server.crt").read_text() == f"{CERT}\n{CA}"
-        assert (tls_dir / "server.key").read_text() == KEY
-        assert _conf(capture_service_conf) == {
-            "ssl_server_cert": str(tls_dir / "server.crt"),
-            "ssl_server_private_key": str(tls_dir / "server.key"),
-        }
-        restart_mock.assert_any_call(SERVICE)
-
-        kwargs = route_calls[-1].kwargs
-        assert kwargs["service"].startswith("landscape-hostagent-messenger-")
-        assert kwargs["protocol"] == "https"
-        assert kwargs["external_grpc_port"] == 6554
-        assert kwargs["ports"] == [50052]
-        assert "paths" not in kwargs
-
-    def test_hostname_is_root_url_hostname(self, replicas_network_state):
-        state = replace(
-            _state(replicas_network_state),
-            config={
-                "enable_hostagent_messenger": True,
-                "root_url": "https://my.landscape.example.com/",
-            },
-        )
-        _, route_calls = _run(state, certificate=ISSUED)
-
-        assert route_calls[-1].kwargs["hostname"] == "my.landscape.example.com"
-
-    def test_no_restart_when_unchanged(self, replicas_network_state, restart_mock):
-        _run(_state(replicas_network_state), certificate=ISSUED)
-        restart_mock.reset_mock()
-
-        _run(_state(replicas_network_state), certificate=ISSUED)
-
-        assert SERVICE not in [c.args[0] for c in restart_mock.call_args_list]
-
-    def test_rotation_rewrites_and_restarts(
-        self, replicas_network_state, tls_dir, restart_mock
-    ):
-        _run(_state(replicas_network_state), certificate=ISSUED)
-        restart_mock.reset_mock()
-
-        renewed = _provider_certificate()
-        renewed.certificate = CERT.replace("leaf", "new")
-        renewed.chain = [renewed.certificate, CA]
-        _run(_state(replicas_network_state), certificate=(renewed, KEY))
-
-        assert "new" in (tls_dir / "server.crt").read_text()
-        restart_mock.assert_any_call(SERVICE)
-
-    def test_serves_tls_before_route_is_related(
-        self, replicas_network_state, capture_service_conf
-    ):
-        """The certificate doesn't depend on the route, so TLS is ready for it."""
-        _run(_state(replicas_network_state, route=False), certificate=ISSUED)
-
-        assert _conf(capture_service_conf).get("ssl_server_cert")
+    kwargs = route_calls[-1].kwargs
+    assert kwargs["service"].startswith("landscape-hostagent-messenger-")
+    assert kwargs["protocol"] == "https"
+    assert kwargs["external_grpc_port"] == 6554
+    assert kwargs["ports"] == [50052]
+    assert "paths" not in kwargs
 
 
 class TestRouteWithdrawn:
@@ -317,8 +231,11 @@ class TestRouteWithdrawn:
         assert _local_data(out, ROUTE) == ({}, {})
 
 
-def test_route_joined_publishes_https_route(replicas_network_state):
+def test_route_joined_publishes_https_route(
+    replicas_network_state, tls_dir, capture_service_conf
+):
     state = _state(replicas_network_state)
+    _run(state, certificate=ISSUED)
     relation = next(r for r in state.relations if r.endpoint == ROUTE)
     ctx = Context(LandscapeServerCharm)
     _, route_calls = _run(

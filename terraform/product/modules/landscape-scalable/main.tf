@@ -244,7 +244,7 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_in_model"
   count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_in_model" {
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_https_in_model" {
   model_uuid = var.model_uuid
 
   application {
@@ -262,7 +262,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
   count = var.haproxy != null && var.haproxy_route_offer_url == null && local.hostagent_messenger_https ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_tcp_in_model" {
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_in_model" {
   model_uuid = var.model_uuid
 
   application {
@@ -354,7 +354,7 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
     juju_integration.landscape_server_api_haproxy_route_lbaas,
     juju_integration.landscape_server_package_upload_haproxy_route_lbaas,
     juju_integration.landscape_server_repository_haproxy_route_lbaas,
-    juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas,
+    juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas,
     juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas,
   ]
 
@@ -446,7 +446,7 @@ resource "juju_integration" "landscape_server_repository_haproxy_route_lbaas" {
   count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_lbaas" {
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_https_lbaas" {
   model_uuid = var.model_uuid
 
   application {
@@ -463,7 +463,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
   count = var.haproxy_route_offer_url != null && local.hostagent_messenger_https ? 1 : 0
 }
 
-resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_tcp_lbaas" {
+resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_lbaas" {
   model_uuid = var.model_uuid
 
   application {

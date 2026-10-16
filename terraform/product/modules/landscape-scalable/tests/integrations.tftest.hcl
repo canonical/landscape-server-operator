@@ -259,12 +259,12 @@ run "test_haproxy_route_integrations_created" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_tcp_lbaas) == 1
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
     error_message = "hostagent-messenger haproxy-route-tcp integration should be created before HTTPS support"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
     error_message = "hostagent-messenger haproxy-route integration should not be created before HTTPS support"
   }
 
@@ -666,42 +666,18 @@ run "test_hostagent_messenger_https_cross_model" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 1
     error_message = "hostagent-messenger haproxy-route integration should be created"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_tcp_lbaas) == 0
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
     error_message = "hostagent-messenger haproxy-route-tcp integration should not be created"
   }
 
   assert {
     condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_certificates) == 1
     error_message = "A certificate provider should be deployed and related to landscape-server"
-  }
-}
-
-run "test_hostagent_messenger_https_in_model" {
-  command = plan
-
-  variables {
-    landscape_server = {
-      channel = "26.10/stable"
-      config = {
-        enable_hostagent_messenger = "true"
-      }
-    }
-    haproxy = {}
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_in_model) == 1
-    error_message = "hostagent-messenger haproxy-route integration should be created"
-  }
-
-  assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_tcp_in_model) == 0
-    error_message = "hostagent-messenger haproxy-route-tcp integration should not be created"
   }
 }
 
@@ -721,12 +697,12 @@ run "test_hostagent_messenger_without_certificate_provider" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
     error_message = "hostagent-messenger HTTPS route needs a certificate provider"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_tcp_lbaas) == 0
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
     error_message = "hostagent-messenger-haproxy-route can't be related over haproxy-route-tcp once it uses haproxy-route"
   }
 }
@@ -746,12 +722,12 @@ run "test_hostagent_messenger_on_26_04_uses_tcp" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
     error_message = "26.04 routes hostagent-messenger over haproxy-route-tcp"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_tcp_lbaas) == 1
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
     error_message = "hostagent-messenger should use haproxy-route-tcp on 26.04"
   }
 }
