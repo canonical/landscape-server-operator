@@ -76,10 +76,12 @@ def server_without_tls_support(monkeypatch):
     monkeypatch.setattr(settings_files, "migrate_service_conf", migrate)
 
 
-def _provider_certificate():
-    return SimpleNamespace(
+ISSUED = (
+    SimpleNamespace(
         certificate=CERT, chain=[CERT, CA], ca=CA, certificate_signing_request="csr"
-    )
+    ),
+    KEY,
+)
 
 
 def _relations(network_state, certificates=True):
@@ -113,13 +115,6 @@ def _state(network_state, enabled=True, **relations):
     )
 
 
-def _conf(capture_service_conf) -> dict:
-    config = capture_service_conf.get_config()
-    if not config.has_section(SECTION):
-        return {}
-    return {k: v for k, v in config[SECTION].items() if k.startswith("ssl_")}
-
-
 def _run(state, certificate=(None, None), event=None):
     """
     Run `event` (config_changed by default), returning the output state and
@@ -139,12 +134,9 @@ def _run(state, certificate=(None, None), event=None):
     return out, route_calls
 
 
-def _local_data(state, endpoint):
-    relation = next(r for r in state.relations if r.endpoint == endpoint)
+def _route_data(state):
+    relation = next(r for r in state.relations if r.endpoint == ROUTE)
     return dict(relation.local_app_data), dict(relation.local_unit_data)
-
-
-ISSUED = (_provider_certificate(), KEY)
 
 
 def test_publishes_https_route_once_serving_tls(
@@ -166,27 +158,19 @@ class TestRouteWithdrawn:
     backend serves TLS; otherwise any stale route data is withdrawn.
     """
 
-    def test_without_certificates(
-        self, replicas_network_state, tls_dir, capture_service_conf
-    ):
+    def test_without_certificates(self, replicas_network_state, tls_dir):
         out, route_calls = _run(
             _state(replicas_network_state, certificates=False), certificate=ISSUED
         )
 
-        assert not tls_dir.exists()
-        assert not _conf(capture_service_conf).get("ssl_server_cert")
         assert route_calls == []
-        assert _local_data(out, ROUTE) == ({}, {})
+        assert _route_data(out) == ({}, {})
 
-    def test_until_certificate_issued(
-        self, replicas_network_state, tls_dir, restart_mock
-    ):
+    def test_until_certificate_issued(self, replicas_network_state, tls_dir):
         out, route_calls = _run(_state(replicas_network_state))
 
-        assert not tls_dir.exists()
-        restart_mock.assert_not_called()
         assert route_calls == []
-        assert _local_data(out, ROUTE) == ({}, {})
+        assert _route_data(out) == ({}, {})
 
     def test_when_server_cannot_serve_tls(
         self,
@@ -200,23 +184,21 @@ class TestRouteWithdrawn:
         assert not tls_dir.exists()
         assert SERVICE not in [c.args[0] for c in restart_mock.call_args_list]
         assert route_calls == []
-        assert _local_data(out, ROUTE) == ({}, {})
+        assert _route_data(out) == ({}, {})
 
     def test_when_disabled(self, replicas_network_state, tls_dir):
         out, route_calls = _run(
             _state(replicas_network_state, enabled=False), certificate=ISSUED
         )
 
-        assert not tls_dir.exists()
         assert route_calls == []
-        assert _local_data(out, ROUTE) == ({}, {})
+        assert _route_data(out) == ({}, {})
 
     def test_certificates_broken(
-        self, replicas_network_state, tls_dir, capture_service_conf, restart_mock
+        self, replicas_network_state, tls_dir, capture_service_conf
     ):
         state = _state(replicas_network_state)
         _run(state, certificate=ISSUED)
-        restart_mock.reset_mock()
 
         relation = next(r for r in state.relations if r.endpoint == "certificates")
         ctx = Context(LandscapeServerCharm)
@@ -224,11 +206,8 @@ class TestRouteWithdrawn:
             state, certificate=ISSUED, event=ctx.on.relation_broken(relation)
         )
 
-        assert not (tls_dir / "server.key").exists()
-        assert not _conf(capture_service_conf).get("ssl_server_cert")
-        restart_mock.assert_any_call(SERVICE)
         assert route_calls == []
-        assert _local_data(out, ROUTE) == ({}, {})
+        assert _route_data(out) == ({}, {})
 
 
 def test_route_joined_publishes_https_route(

@@ -703,7 +703,7 @@ run "test_hostagent_messenger_without_certificate_provider" {
 
   assert {
     condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
-    error_message = "hostagent-messenger-haproxy-route can't be related over haproxy-route-tcp once it uses haproxy-route"
+    error_message = "hostagent-messenger must not use haproxy-route-tcp on charms with HTTPS support"
   }
 }
 

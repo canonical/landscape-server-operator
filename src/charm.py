@@ -1821,10 +1821,9 @@ class LandscapeServerCharm(CharmBase):
 
     def _hostagent_messenger_tls_serving(self) -> bool:
         """
-        Whether hostagent-messenger is configured to serve TLS, so haproxy can
-        re-encrypt to it. This stays False until a certificate is issued, and
-        when the installed Landscape Server can't serve TLS (its service.conf
-        migration then drops the settings).
+        Whether hostagent-messenger serves TLS, so haproxy can re-encrypt to it.
+        False until a certificate is issued, or if the installed Landscape
+        Server can't serve TLS (its service.conf migration drops the settings).
         """
         return bool(
             self._hostagent_messenger_tls_wanted()
