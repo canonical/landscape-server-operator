@@ -260,7 +260,12 @@ run "test_haproxy_route_integrations_created" {
 
   assert {
     condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
-    error_message = "hostagent-messenger haproxy-route integration should be created"
+    error_message = "hostagent-messenger haproxy-route-tcp integration should be created before HTTPS support"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
+    error_message = "hostagent-messenger haproxy-route integration should not be created before HTTPS support"
   }
 
   assert {
@@ -615,7 +620,7 @@ run "test_installer_attach_https_cross_model" {
   }
 
   assert {
-    condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_certificates) == 1
+    condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_grpc_certificates) == 1
     error_message = "A certificate provider should be deployed and related to landscape-server"
   }
 }
@@ -643,5 +648,86 @@ run "test_installer_attach_without_certificate_provider_has_no_route" {
   assert {
     condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
     error_message = "ubuntu-installer-attach modern charm must not use haproxy-route-tcp"
+  }
+}
+
+run "test_hostagent_messenger_https_cross_model" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.10/stable"
+      config = {
+        enable_hostagent_messenger = "true"
+      }
+    }
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 1
+    error_message = "hostagent-messenger haproxy-route integration should be created"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
+    error_message = "hostagent-messenger haproxy-route-tcp integration should not be created"
+  }
+
+  assert {
+    condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_grpc_certificates) == 1
+    error_message = "A certificate provider should be deployed and related to landscape-server"
+  }
+}
+
+run "test_hostagent_messenger_without_certificate_provider" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.10/stable"
+      config = {
+        enable_hostagent_messenger = "true"
+      }
+    }
+    tls_certificates            = null
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
+    error_message = "hostagent-messenger HTTPS route needs a certificate provider"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
+    error_message = "hostagent-messenger must not use haproxy-route-tcp on charms with HTTPS support"
+  }
+}
+
+run "test_hostagent_messenger_on_26_04_uses_tcp" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.04/stable"
+      config = {
+        enable_hostagent_messenger = "true"
+      }
+    }
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
+    error_message = "26.04 routes hostagent-messenger over haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
+    error_message = "hostagent-messenger should use haproxy-route-tcp on 26.04"
   }
 }
