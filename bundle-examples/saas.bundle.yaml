@@ -63,8 +63,6 @@ relations:
   - [landscape-server:package-upload-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:repository-haproxy-route, haproxy:haproxy-route]
   - [landscape-server:hostagent-messenger-haproxy-route, haproxy:haproxy-route-tcp]
-  - [
-      landscape-server:ubuntu-installer-attach-haproxy-route,
-      haproxy:haproxy-route-tcp,
-    ]
+  - [landscape-server:ubuntu-installer-attach-haproxy-route, haproxy:haproxy-route]
+  - [landscape-server:certificates, self-signed-certificates:certificates]
   - [landscape-server:appserver-haproxy-route, haproxy:haproxy-route]
