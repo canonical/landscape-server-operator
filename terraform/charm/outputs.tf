@@ -81,10 +81,13 @@ locals {
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
   } : { website = "website" }
 
-  # The 26.04 charm exposes ubuntu-installer-attach-haproxy-route as a
-  # haproxy-route-tcp endpoint and has no certificates endpoint.
-  has_installer_attach_https = local.has_modern_haproxy_interface && !startswith(var.channel, "26.04")
-  certificates_relations     = local.has_installer_attach_https ? { certificates = "certificates" } : {}
+  # Earlier revisions expose these gRPC endpoints as haproxy-route-tcp, and
+  # revisions before 595 have no certificates endpoint.
+  installer_attach_https_rev    = 595
+  hostagent_messenger_https_rev = 599
+  has_installer_attach_https    = local.has_modern_haproxy_interface && (var.revision != null ? var.revision >= local.installer_attach_https_rev : true)
+  has_hostagent_messenger_https = local.has_modern_haproxy_interface && (var.revision != null ? var.revision >= local.hostagent_messenger_https_rev : true)
+  certificates_relations        = local.has_installer_attach_https ? { certificates = "certificates" } : {}
 
 }
 
@@ -94,6 +97,11 @@ output "requires" {
     application_dashboard = "application-dashboard",
     smtp                  = "smtp",
   }, local.amqp_relations, local.db_relations, local.haproxy_relations, local.certificates_relations)
+}
+
+output "has_hostagent_messenger_https" {
+  description = "Indicates whether the deployed revision exposes hostagent-messenger-haproxy-route as haproxy-route (HTTPS) rather than haproxy-route-tcp (changed in rev 599)."
+  value       = local.has_hostagent_messenger_https
 }
 
 output "has_modern_haproxy_interface" {
