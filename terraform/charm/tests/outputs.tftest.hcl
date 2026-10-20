@@ -564,3 +564,67 @@ run "has_modern_haproxy_interface_false_for_legacy_stable" {
     error_message = "has_modern_haproxy_interface should be false for legacy stable channels"
   }
 }
+
+run "grpc_https_before_rev_595" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 594
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = try(output.requires.certificates, null) == null && !output.has_hostagent_messenger_https
+    error_message = "Revisions before 595 have no certificates relation or hostagent HTTPS route"
+  }
+}
+
+run "installer_https_only_from_rev_595" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 598
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.certificates == "certificates" && !output.has_hostagent_messenger_https
+    error_message = "Revisions 595 to 598 have the certificates relation but route hostagent-messenger over haproxy-route-tcp"
+  }
+}
+
+run "grpc_https_from_rev_599" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = 599
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.certificates == "certificates" && output.has_hostagent_messenger_https
+    error_message = "Revisions from 599 have the certificates relation and the hostagent HTTPS route, including on 26.04"
+  }
+}
+
+run "grpc_https_with_null_revision" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+    revision   = null
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.certificates == "certificates" && output.has_hostagent_messenger_https
+    error_message = "A null revision should assume the latest charm"
+  }
+}
