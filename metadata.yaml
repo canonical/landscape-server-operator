@@ -79,19 +79,3 @@ provides:
 peers:
   replicas:
     interface: landscape-replica
-
-resources:
-  landscape-server-deb:
-    type: file
-    filename: landscape-server.deb
-    description: |
-      Optional local .deb for landscape-server. When provided the charm installs
-      this file directly instead of pulling from the PPA. The PPA is still added
-      first so all dependencies are available.
-  ubuntu-installer-attach-deb:
-    type: file
-    filename: landscape-ubuntu-installer-attach.deb
-    description: |
-      Optional local .deb for landscape-ubuntu-installer-attach. When provided
-      the charm installs this file directly instead of pulling from the PPA when
-      the Ubuntu installer attach service is enabled, and on upgrade.
