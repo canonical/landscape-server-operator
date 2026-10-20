@@ -2773,7 +2773,7 @@ class TestCharm(unittest.TestCase):
 
 
 class TestMultiplePPAs:
-    def test_install_adds_each_ppa(self, empty_deb_resource):
+    def test_install_adds_each_ppa(self):
         ppas = [
             "ppa:landscape/self-hosted-beta",
             "ppa:canonical-python-maintainers/python-backports",
@@ -2782,7 +2782,6 @@ class TestMultiplePPAs:
         state = State(
             config={"landscape_ppa": ",".join(ppas)},
             unit_status=MaintenanceStatus(),
-            resources=[empty_deb_resource],
         )
 
         with (
@@ -2797,7 +2796,7 @@ class TestMultiplePPAs:
         for ppa in ppas:
             check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
-    def test_upgrade_adds_each_ppa(self, empty_deb_resource):
+    def test_upgrade_adds_each_ppa(self):
         ppas = [
             "ppa:landscape/self-hosted-beta",
             "ppa:canonical-python-maintainers/python-backports",
@@ -2806,7 +2805,6 @@ class TestMultiplePPAs:
         state = State(
             config={"landscape_ppa": ",".join(ppas)},
             unit_status=MaintenanceStatus(),
-            resources=[empty_deb_resource],
             stored_states=[
                 StoredState(
                     owner_path="LandscapeServerCharm",
@@ -2825,13 +2823,12 @@ class TestMultiplePPAs:
         for ppa in ppas:
             check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
 
-    def test_install_single_ppa(self, empty_deb_resource):
+    def test_install_single_ppa(self):
         ppa = "ppa:landscape/self-hosted-beta"
         ctx = Context(LandscapeServerCharm)
         state = State(
             config={"landscape_ppa": ppa},
             unit_status=MaintenanceStatus(),
-            resources=[empty_deb_resource],
         )
 
         with (
@@ -2844,109 +2841,6 @@ class TestMultiplePPAs:
             ctx.run(ctx.on.install(), state)
 
         check_call_mock.assert_any_call(["add-apt-repository", "-y", ppa], env=ANY)
-
-
-class TestDebResourceInstall:
-    def test_ppa_path_used_when_empty_resource(self, empty_deb_resource):
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
-            unit_status=MaintenanceStatus(),
-            resources=[empty_deb_resource],
-        )
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call"),
-            patch("charm.prepend_default_settings"),
-            patch("charm.update_service_conf"),
-        ):
-            apt_mock.add_package.return_value = None
-            ctx.run(ctx.on.install(), state)
-        apt_mock.add_package.assert_called_once_with(
-            ["landscape-server", "landscape-hashids"], update_cache=True
-        )
-
-    def test_local_deb_used_when_resource_attached(self, tmp_path):
-        from ops.testing import Resource
-
-        deb = tmp_path / "landscape-server.deb"
-        deb.write_bytes(b"\x00" * 100)
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
-            unit_status=MaintenanceStatus(),
-            resources=[Resource(name="landscape-server-deb", path=deb)],
-        )
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_call_mock,
-            patch("charm.prepend_default_settings"),
-            patch("charm.update_service_conf"),
-        ):
-            apt_mock.add_package.return_value = None
-            ctx.run(ctx.on.install(), state)
-        check_call_mock.assert_any_call(
-            ["apt-get", "install", "-y", str(deb), LANDSCAPE_HASH_IDS]
-        )
-        apt_mock.add_package.assert_not_called()
-
-    def test_local_deb_min_install_uses_no_install_recommends(self, tmp_path):
-        from ops.testing import Resource
-
-        deb = tmp_path / "landscape-server.deb"
-        deb.write_bytes(b"\x00" * 100)
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            config={
-                "landscape_ppa": "ppa:landscape/self-hosted-beta",
-                "min_install": True,
-            },
-            unit_status=MaintenanceStatus(),
-            resources=[Resource(name="landscape-server-deb", path=deb)],
-        )
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_call_mock,
-            patch("charm.prepend_default_settings"),
-            patch("charm.update_service_conf"),
-        ):
-            apt_mock.add_package.return_value = None
-            ctx.run(ctx.on.install(), state)
-        check_call_mock.assert_any_call(
-            ["apt-get", "install", "--no-install-recommends", "-y", str(deb)]
-        )
-        apt_mock.add_package.assert_not_called()
-
-    def test_upgrade_uses_local_deb_when_resource_attached(self, tmp_path):
-        from ops.testing import Resource
-
-        deb = tmp_path / "landscape-server.deb"
-        deb.write_bytes(b"\x00" * 100)
-        ctx = Context(LandscapeServerCharm)
-        state = State(
-            config={"landscape_ppa": "ppa:landscape/self-hosted-beta"},
-            unit_status=MaintenanceStatus(),
-            resources=[Resource(name="landscape-server-deb", path=deb)],
-            stored_states=[
-                StoredState(
-                    owner_path="LandscapeServerCharm",
-                    content={"running": False},
-                )
-            ],
-        )
-        with (
-            patch("charm.apt", spec_set=apt) as apt_mock,
-            patch("charm.check_call") as check_call_mock,
-        ):
-            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
-            apt_mock.DebianPackage.from_installed_package.return_value = Mock(
-                version="1.0"
-            )
-            ctx.run(ctx.on.action("upgrade"), state)
-        check_call_mock.assert_any_call(["apt-get", "install", "-y", str(deb)])
-        # landscape-server skipped in loop; other packages still upgraded via apt
-        for call_args in apt_mock.DebianPackage.from_apt_cache.call_args_list:
-            assert call_args.args[0] != LANDSCAPE_SERVER
 
 
 class TestBootstrapAccount(unittest.TestCase):
@@ -3687,14 +3581,13 @@ class TestSchemaFlags:
 
 
 class TestPackageInstall:
-    def test_install_only_landscape_server(self, empty_deb_resource):
+    def test_install_only_landscape_server(self):
         """
         When passing `min_install=true` and running in standalone mode,
         only the landscape-server package is installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
-            resources=[empty_deb_resource],
             unit_status=MaintenanceStatus(),
             config={
                 "min_install": True,
@@ -3722,14 +3615,13 @@ class TestPackageInstall:
         assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] not in check_mock_call_args
 
-    def test_install_landscape_server_hashids(self, empty_deb_resource):
+    def test_install_landscape_server_hashids(self):
         """
         When passing `min_install=false` and running in standalone mode,
         the landscape-server and landscape-hashids packages are installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
-            resources=[empty_deb_resource],
             unit_status=MaintenanceStatus(),
             config={
                 "min_install": False,
@@ -3755,14 +3647,13 @@ class TestPackageInstall:
         assert ["apt-mark", "hold", LANDSCAPE_HOSTED] not in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
 
-    def test_install_landscape_server_hashids_hosted(self, empty_deb_resource):
+    def test_install_landscape_server_hashids_hosted(self):
         """
         When passing `min_install=false` and running in SaaS mode,
         all three packages are installed.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
-            resources=[empty_deb_resource],
             unit_status=MaintenanceStatus(),
             config={
                 "min_install": False,
@@ -3789,16 +3680,13 @@ class TestPackageInstall:
         assert ["apt-mark", "hold", LANDSCAPE_HOSTED] in check_mock_call_args
         assert ["apt-mark", "hold", LANDSCAPE_HASH_IDS] in check_mock_call_args
 
-    def test_install_landscape_server_hosted_min_install_blocked(
-        self, empty_deb_resource
-    ):
+    def test_install_landscape_server_hosted_min_install_blocked(self):
         """
         min_install=True with a non-standalone deployment_mode is a config error
         since landscape-hosted depends on landscape-hashids.
         """
         ctx = Context(LandscapeServerCharm)
         state = State(
-            resources=[empty_deb_resource],
             unit_status=MaintenanceStatus(),
             config={
                 "min_install": True,
