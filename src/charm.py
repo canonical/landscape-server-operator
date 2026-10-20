@@ -600,7 +600,7 @@ class LandscapeServerCharm(CharmBase):
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
-        except (PackageError, CalledProcessError) as e:
+        except PackageError as e:
             # TODO Should be "blocked" eventually, but this causes the charm to be
             # stuck in the "blocked" state permanently.
             self.unit.status = MaintenanceStatus(
@@ -2678,37 +2678,15 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status()
 
-    def _get_deb_resource(self, name: str) -> Path | None:
-        """Return path to the attached .deb resource `name`, or None."""
+    def _get_landscape_server_deb_resource(self) -> Path | None:
+        """Return path to an attached landscape-server .deb resource, or None."""
         try:
-            path = self.model.resources.fetch(name)
+            path = self.model.resources.fetch("landscape-server-deb")
         except ModelError:
             return None
         if path.stat().st_size == 0:
             return None
         return path
-
-    def _get_landscape_server_deb_resource(self) -> Path | None:
-        """Return path to an attached landscape-server .deb resource, or None."""
-        return self._get_deb_resource("landscape-server-deb")
-
-    def _get_ubuntu_installer_attach_deb_resource(self) -> Path | None:
-        """Return path to an attached ubuntu installer attach .deb, or None."""
-        return self._get_deb_resource("ubuntu-installer-attach-deb")
-
-    def _apt_install(self, target: str, conffile_option: str, *extra: str) -> None:
-        check_call(
-            [
-                "apt-get",
-                "install",
-                "-y",
-                "-o",
-                f"Dpkg::Options::={conffile_option}",
-                *extra,
-                target,
-            ],
-            env={**os.environ, "DEBIAN_FRONTEND": "noninteractive"},
-        )
 
     def _build_add_apt_repository_env(self) -> dict:
         env = os.environ.copy()
@@ -2771,13 +2749,6 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         apt.update()
 
         local_deb = self._get_landscape_server_deb_resource()
-        # dpkg cannot prompt inside an action. `keep` preserves files the charm
-        # manages (service.conf, postfix main.cf); `replace` takes the package's.
-        conffile_option = (
-            "--force-confnew"
-            if event.params.get("conffile-policy") == "replace"
-            else "--force-confold"
-        )
 
         for package in LANDSCAPE_PACKAGES:
             try:
@@ -2788,25 +2759,20 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     )
                 if package == LANDSCAPE_SERVER and local_deb:
                     event.log(f"Installing {package} from local deb: {local_deb}")
-                    install_target = str(local_deb)
+                    cmd = ["apt-get", "install", "-y"]
+                    if self.charm_config.min_install:
+                        cmd.append("--no-install-recommends")
+                    check_call([*cmd, str(local_deb)])
                 else:
-                    # Raises PackageNotFoundError if the package is unknown to APT.
-                    apt.DebianPackage.from_apt_cache(package)
-                    install_target = package
-                no_recommends = (
-                    ["--no-install-recommends"]
-                    if package == LANDSCAPE_SERVER
-                    and local_deb
-                    and self.charm_config.min_install
-                    else []
-                )
-                self._apt_install(install_target, conffile_option, *no_recommends)
+                    pkg = apt.DebianPackage.from_apt_cache(package)
+                    pkg.ensure(state=apt.PackageState.Latest)
                 installed = apt.DebianPackage.from_installed_package(package)
                 event.log(f"Upgraded to {installed.version}...")
-            except (PackageNotFoundError, PackageError, CalledProcessError) as e:
-                reason = getattr(e, "message", None) or str(e)
-                logger.error(f"Could not upgrade package {package}. Reason: {reason}")
-                event.fail(f"Could not upgrade package {package}. Reason: {reason}")
+            except PackageNotFoundError as e:
+                logger.error(
+                    f"Could not upgrade package {package}. Reason: {e.message}"
+                )
+                event.fail(f"Could not upgrade package {package}. Reason: {e.message}")
                 self.unit.status = BlockedStatus("Failed to upgrade packages")
                 return
             finally:
@@ -2814,22 +2780,6 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                     check_call(
                         ["apt-mark", "hold", LANDSCAPE_SERVER, LANDSCAPE_HASH_IDS]
                     )
-
-        installer_attach_deb = self._get_ubuntu_installer_attach_deb_resource()
-        if self._stored.enable_ubuntu_installer_attach and installer_attach_deb:
-            event.log(
-                f"Installing {LANDSCAPE_UBUNTU_INSTALLER_ATTACH} from local deb: "
-                f"{installer_attach_deb}"
-            )
-            try:
-                self._apt_install(str(installer_attach_deb), conffile_option)
-            except CalledProcessError as e:
-                logger.error(
-                    f"Could not install {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}: {e}"
-                )
-                event.fail(f"Could not install {LANDSCAPE_UBUNTU_INSTALLER_ATTACH}")
-                self.unit.status = BlockedStatus("Failed to upgrade packages")
-                return
 
         self.unit.status = prev_status
 
@@ -2897,20 +2847,9 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
                 "Installing `landscape-ubuntu-installer-attach`"
             )
             try:
-                local_deb = self._get_ubuntu_installer_attach_deb_resource()
-                if local_deb:
-                    logger.info(
-                        f"Installing {LANDSCAPE_UBUNTU_INSTALLER_ATTACH} from "
-                        f"local deb: {local_deb}"
-                    )
-                    apt.update()
-                    self._apt_install(str(local_deb), "--force-confold")
-                else:
-                    apt.add_package(
-                        LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True
-                    )
+                apt.add_package(LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True)
                 self._stored.enable_ubuntu_installer_attach = True
-            except (PackageError, CalledProcessError) as e:
+            except PackageError as e:
                 logger.error(
                     f"Failed to install ubuntu installer attach with error: {e}"
                 )
