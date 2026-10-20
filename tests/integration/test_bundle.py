@@ -26,7 +26,6 @@ from charm import (
 from tests.integration.conftest import USE_HOST_JUJU_MODEL
 from tests.integration.helpers import (
     all_landscape_active,
-    assert_grpc_reachable,
     assert_grpc_secure_channel_ready,
     get_cos_agent_config,
     get_session,
@@ -36,7 +35,6 @@ from tests.integration.helpers import (
     has_pgbouncer,
     leader_unit_name,
     relation_app_data,
-    remote_relation_app_data,
     supports_legacy_pg,
     wait_for_http_status,
     wait_for_service,
@@ -659,6 +657,8 @@ def test_hostagent_messenger_grpc_haproxy_route(juju: jubilant.Juju):
     app_status = juju.status().apps["landscape-server"]
     if "hostagent-messenger-haproxy-route" not in app_status.relations:
         pytest.skip("hostagent-messenger-haproxy-route not integrated, skipping...")
+    if "certificates" not in app_status.relations:
+        pytest.skip("landscape-server certificates not integrated, skipping...")
 
     if not juju.config("landscape-server").get("enable_hostagent_messenger"):
         pytest.skip("enable_hostagent_messenger is disabled, skipping...")
@@ -667,12 +667,9 @@ def test_hostagent_messenger_grpc_haproxy_route(juju: jubilant.Juju):
     unit = leader_unit_name(juju, "landscape-server")
     data = relation_app_data(juju, unit, "hostagent-messenger-haproxy-route")
 
-    assert data.get("port") == "6554", f"Expected port 6554, got {data.get('port')}"
-    # The TCP haproxy-route schema has no "service" field to identify the backend,
-    # so verify the unit's own address is published as a backend host instead.
-    hosts = json.loads(data.get("hosts", "[]"))
-    unit_address = juju.status().apps["landscape-server"].units[unit].public_address
-    assert unit_address in hosts, f"Expected {unit_address} in hosts, got {hosts}"
+    assert data.get("service", "").startswith("landscape-hostagent-messenger-")
+    assert data.get("protocol") == "https"
+    assert str(data.get("external_grpc_port")) == "6554"
 
 
 def test_ubuntu_installer_attach_grpc_haproxy_route(juju: jubilant.Juju):
@@ -1138,16 +1135,23 @@ def test_legacy_haproxy_services_up_over_https(juju: jubilant.Juju, route: str):
     )
 
 
+def _certificates_ca(juju: jubilant.Juju, app_status) -> str:
+    """The CA certificate of landscape-server's `certificates` provider."""
+    provider = app_status.relations["certificates"][0].related_app
+    try:
+        return juju.run(f"{provider}/leader", "get-ca-certificate").results[
+            "ca-certificate"
+        ]
+    except (jubilant.TaskError, KeyError):
+        pytest.skip(f"Cannot get the CA certificate from {provider}")
+
+
 def test_grpc_hostagent_messenger(juju: jubilant.Juju):
-    # NOTE: grpc-python's own channel machinery can't validate this
-    # frontend: HAProxy's haproxy-route-tcp terminates TLS without
-    # negotiating ALPN, which grpc.secure_channel hard-requires and
-    # grpc.insecure_channel can't speak to at all. assert_grpc_reachable
-    # does a raw TLS + HTTP/2 handshake instead. See helpers.py.
-    #
-    # The published endpoint is read from the relation databag (rather
-    # than looking up a local "haproxy" app in juju status) so this also
-    # works when haproxy is offered cross-model via SAAS.
+    """
+    The hostagent-messenger gRPC service is reachable through HAProxy over
+    HTTPS: the frontend negotiates ALPN h2, which grpc-go >= 1.67 clients such
+    as the Ubuntu Pro for WSL agent require, and the gRPC channel becomes ready.
+    """
     config = juju.config("landscape-server")
     root_url = config.get("root_url", "https://landscape.local/")
     hostname = urlparse(root_url).hostname
@@ -1157,23 +1161,16 @@ def test_grpc_hostagent_messenger(juju: jubilant.Juju):
     app_status = juju.status().apps["landscape-server"]
     if "hostagent-messenger-haproxy-route" not in app_status.relations:
         pytest.skip("hostagent-messenger-haproxy-route not configured")
+    if "certificates" not in app_status.relations:
+        pytest.skip("landscape-server certificates not integrated")
 
     hostagent = config.get("enable_hostagent_messenger", False)
     if not hostagent:
         pytest.skip("Hostagent Messenger not configured....")
 
-    unit = leader_unit_name(juju, "landscape-server")
-    remote_data = remote_relation_app_data(
-        juju, unit, "hostagent-messenger-haproxy-route"
-    )
-    endpoints = json.loads(remote_data.get("endpoints", "[]"))
-    if not endpoints:
-        pytest.skip("No endpoints published by the haproxy-route-tcp provider")
-    _, _, port_str = endpoints[0].rpartition(":")
-
-    # Connect to the real HAProxy unit IP, but keep the published hostname
-    # as SNI so we still exercise the routed TLS frontend correctly.
-    assert_grpc_reachable(_haproxy_ip(juju), int(port_str), hostname)
+    juju.wait(all_landscape_active, timeout=300)
+    ca_pem = _certificates_ca(juju, app_status)
+    assert_grpc_secure_channel_ready(_haproxy_ip(juju), 6554, hostname, ca_pem)
 
 
 def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
@@ -1198,13 +1195,5 @@ def test_grpc_ubuntu_installer_attach(juju: jubilant.Juju):
         pytest.skip("Ubuntu Installer Attach not configured....")
 
     juju.wait(all_landscape_active, timeout=300)
-    haproxy_ip = _haproxy_ip(juju)
-
-    provider = app_status.relations["certificates"][0].related_app
-    try:
-        ca_pem = juju.run(f"{provider}/leader", "get-ca-certificate").results[
-            "ca-certificate"
-        ]
-    except (jubilant.TaskError, KeyError):
-        pytest.skip(f"Cannot get the CA certificate from {provider}")
-    assert_grpc_secure_channel_ready(haproxy_ip, 50051, hostname, ca_pem)
+    ca_pem = _certificates_ca(juju, app_status)
+    assert_grpc_secure_channel_ready(_haproxy_ip(juju), 50051, hostname, ca_pem)

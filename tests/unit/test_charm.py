@@ -647,10 +647,10 @@ base_port = 4444
 [package-upload]
 base_port = 5555
 
-[hostagent-message-server]
+[hostagent_server]
 base_port = 6666
 
-[ubuntu-installer-attach]
+[ubuntu_installer_attach]
 base_port = 7777
 """
         context = Context(LandscapeServerCharm)
@@ -675,8 +675,28 @@ base_port = 7777
         assert config["message-server"]["base_port"] == "3333"
         assert config["pingserver"]["base_port"] == "4444"
         assert config["package-upload"]["base_port"] == "5555"
-        assert config["hostagent-message-server"]["base_port"] == "6666"
-        assert config["ubuntu-installer-attach"]["base_port"] == "7777"
+        assert config["hostagent_server"]["base_port"] == "6666"
+        assert config["ubuntu_installer_attach"]["base_port"] == "7777"
+
+    def test_grpc_base_ports_use_server_section_names(self, capture_service_conf):
+        """
+        gRPC base ports are written to the sections Landscape Server reads.
+        """
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "hostagent_server_base_port": 50099,
+                "ubuntu_installer_attach_base_port": 53399,
+            }
+        )
+        context.run(context.on.config_changed(), state)
+
+        config = capture_service_conf.get_config()
+
+        assert config["hostagent_server"]["base_port"] == "50099"
+        assert config["ubuntu_installer_attach"]["base_port"] == "53399"
+        assert not config.has_section("hostagent-message-server")
+        assert not config.has_section("ubuntu-installer-attach")
 
     def test_additional_service_config_overrides_root_url(self, capture_service_conf):
         """
