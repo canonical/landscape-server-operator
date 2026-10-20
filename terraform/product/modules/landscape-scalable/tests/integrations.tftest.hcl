@@ -759,6 +759,31 @@ run "test_grpc_routes_on_26_04_from_rev_599_use_https" {
     condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
     error_message = "Revisions from 595 route ubuntu-installer-attach over HTTPS, including on 26.04"
   }
+}
+
+run "test_grpc_routes_on_26_04_from_rev_599_use_https_in_model" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel  = "26.04/stable"
+      revision = 599
+      config = {
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_in_model) == 1 && length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_in_model) == 0
+    error_message = "Revisions from 599 route hostagent-messenger over HTTPS to the in-model HAProxy"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_in_model) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_in_model) == 0
+    error_message = "Revisions from 595 route ubuntu-installer-attach over HTTPS to the in-model HAProxy"
+  }
 
   assert {
     condition     = length(juju_integration.landscape_server_grpc_certificates) == 1

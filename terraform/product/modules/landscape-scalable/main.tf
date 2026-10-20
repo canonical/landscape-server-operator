@@ -253,7 +253,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
@@ -289,7 +289,7 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 
   application {
     name     = module.haproxy[0].app_name
-    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
+    endpoint = module.haproxy[0].provides.haproxy_route
   }
 
   depends_on = [module.landscape_server, module.haproxy]
