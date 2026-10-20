@@ -2729,7 +2729,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         apt.update()
 
-        for package in LANDSCAPE_PACKAGES:
+        packages = LANDSCAPE_PACKAGES
+        if self._stored.enable_ubuntu_installer_attach:
+            packages += (LANDSCAPE_UBUNTU_INSTALLER_ATTACH,)
+
+        for package in packages:
             try:
                 event.log(f"Upgrading {package}...")
                 if package == LANDSCAPE_SERVER:

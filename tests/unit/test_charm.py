@@ -2470,6 +2470,41 @@ class TestCharm(unittest.TestCase):
         self.assertEqual(pkg_mock.ensure.call_count, len(LANDSCAPE_PACKAGES))
         self.assertEqual(self.harness.charm.unit.status, prev_status)
 
+    def test_action_upgrade_ubuntu_installer_attach_enabled(self):
+        event = Mock(spec_set=ActionEvent)
+        self.harness.charm._stored.running = False
+        self.harness.charm._stored.enable_ubuntu_installer_attach = True
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+        ):
+            pkg_mock = Mock()
+            apt_mock.DebianPackage.from_apt_cache.return_value = pkg_mock
+            self.harness.charm._upgrade(event)
+
+        apt_mock.DebianPackage.from_apt_cache.assert_any_call(
+            LANDSCAPE_UBUNTU_INSTALLER_ATTACH
+        )
+        self.assertEqual(pkg_mock.ensure.call_count, len(LANDSCAPE_PACKAGES) + 1)
+
+    def test_action_upgrade_ubuntu_installer_attach_disabled(self):
+        event = Mock(spec_set=ActionEvent)
+        self.harness.charm._stored.running = False
+        self.harness.charm._stored.enable_ubuntu_installer_attach = False
+
+        with (
+            patch("charm.apt", spec_set=apt) as apt_mock,
+            patch("charm.check_call"),
+        ):
+            apt_mock.DebianPackage.from_apt_cache.return_value = Mock()
+            self.harness.charm._upgrade(event)
+
+        self.assertNotIn(
+            call(LANDSCAPE_UBUNTU_INSTALLER_ATTACH),
+            apt_mock.DebianPackage.from_apt_cache.call_args_list,
+        )
+
     def test_action_upgrade_passes_proxy_to_add_apt_repository(self):
         event = Mock(spec_set=ActionEvent)
         self.harness.charm._stored.running = False
