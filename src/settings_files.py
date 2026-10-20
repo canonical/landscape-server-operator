@@ -41,6 +41,9 @@ SSL_CERT_PATH = "/etc/ssl/certs/landscape_server_ca.crt"
 UBUNTU_INSTALLER_ATTACH_SECTION = "ubuntu_installer_attach"
 UBUNTU_INSTALLER_ATTACH_TLS_DIR = "/etc/landscape/ubuntu-installer-attach"
 
+HOSTAGENT_SERVER_SECTION = "hostagent_server"
+HOSTAGENT_MESSENGER_TLS_DIR = "/etc/landscape/hostagent-messenger"
+
 DEFAULT_POSTGRES_PORT = "5432"
 
 AMQP_USERNAME = "landscape"
@@ -274,55 +277,105 @@ def _write_file(path: str, content: str, mode: int, uid: int, gid: int) -> bool:
     return changed
 
 
-def write_ubuntu_installer_attach_tls(
-    certificate: str, private_key: str, uid: int, gid: int
+def _write_grpc_server_tls(
+    section: str, tls_dir: str, certificate: str, private_key: str, uid: int, gid: int
 ) -> bool:
     """
-    Writes the Ubuntu installer attach server certificate (leaf followed by any
-    chain) and private key, and points `service.conf` at them.
+    Writes a gRPC server certificate (leaf followed by any chain) and private
+    key to `tls_dir`, and points `section` of `service.conf` at them.
 
     The key is readable by group `gid` only, so the service user can load it.
 
+    If the installed Landscape Server drops the settings when migrating
+    `service.conf`, it can't serve TLS, so the files are removed again.
+
     Returns True if any file or setting changed.
     """
-    os.makedirs(UBUNTU_INSTALLER_ATTACH_TLS_DIR, mode=0o750, exist_ok=True)
-    os.chmod(UBUNTU_INSTALLER_ATTACH_TLS_DIR, 0o750)
-    os.chown(UBUNTU_INSTALLER_ATTACH_TLS_DIR, uid, gid)
+    os.makedirs(tls_dir, mode=0o750, exist_ok=True)
+    os.chmod(tls_dir, 0o750)
+    os.chown(tls_dir, uid, gid)
 
-    cert_path = os.path.join(UBUNTU_INSTALLER_ATTACH_TLS_DIR, "server.crt")
-    key_path = os.path.join(UBUNTU_INSTALLER_ATTACH_TLS_DIR, "server.key")
+    cert_path = os.path.join(tls_dir, "server.crt")
+    key_path = os.path.join(tls_dir, "server.key")
     changed = _write_file(cert_path, certificate, 0o644, uid, gid)
     changed |= _write_file(key_path, private_key, 0o640, uid, gid)
 
-    section = read_service_conf().get(UBUNTU_INSTALLER_ATTACH_SECTION, {})
     desired = {"ssl_server_cert": cert_path, "ssl_server_private_key": key_path}
-    if any(section.get(key) != value for key, value in desired.items()):
-        update_service_conf({UBUNTU_INSTALLER_ATTACH_SECTION: desired})
-        changed = True
+    if grpc_server_tls_settings(section) == desired:
+        return changed
 
-    return changed
+    update_service_conf({section: desired})
+    if grpc_server_tls_settings(section) != desired:
+        shutil.rmtree(tls_dir, ignore_errors=True)
+        return False
+    return True
 
 
-def remove_ubuntu_installer_attach_tls() -> bool:
+def _remove_grpc_server_tls(section: str, tls_dir: str) -> bool:
     """
-    Points `service.conf` away from the TLS files and removes them.
+    Points `section` of `service.conf` away from the TLS files and removes them.
 
     Returns True if anything changed.
     """
-    section = read_service_conf().get(UBUNTU_INSTALLER_ATTACH_SECTION, {})
     changed = False
-    if section.get("ssl_server_cert") or section.get("ssl_server_private_key"):
+    if grpc_server_tls_settings(section):
         update_service_conf(
-            {
-                UBUNTU_INSTALLER_ATTACH_SECTION: {
-                    "ssl_server_cert": "",
-                    "ssl_server_private_key": "",
-                }
-            }
+            {section: {"ssl_server_cert": "", "ssl_server_private_key": ""}}
         )
         changed = True
-    shutil.rmtree(UBUNTU_INSTALLER_ATTACH_TLS_DIR, ignore_errors=True)
+    shutil.rmtree(tls_dir, ignore_errors=True)
     return changed
+
+
+def grpc_server_tls_settings(section: str) -> dict:
+    """
+    Returns the non-empty `ssl_server_cert` and `ssl_server_private_key`
+    settings of `section` in `service.conf`.
+    """
+    settings = read_service_conf().get(section, {})
+    return {
+        key: settings[key]
+        for key in ("ssl_server_cert", "ssl_server_private_key")
+        if settings.get(key)
+    }
+
+
+def write_ubuntu_installer_attach_tls(
+    certificate: str, private_key: str, uid: int, gid: int
+) -> bool:
+    return _write_grpc_server_tls(
+        UBUNTU_INSTALLER_ATTACH_SECTION,
+        UBUNTU_INSTALLER_ATTACH_TLS_DIR,
+        certificate,
+        private_key,
+        uid,
+        gid,
+    )
+
+
+def remove_ubuntu_installer_attach_tls() -> bool:
+    return _remove_grpc_server_tls(
+        UBUNTU_INSTALLER_ATTACH_SECTION, UBUNTU_INSTALLER_ATTACH_TLS_DIR
+    )
+
+
+def write_hostagent_messenger_tls(
+    certificate: str, private_key: str, uid: int, gid: int
+) -> bool:
+    return _write_grpc_server_tls(
+        HOSTAGENT_SERVER_SECTION,
+        HOSTAGENT_MESSENGER_TLS_DIR,
+        certificate,
+        private_key,
+        uid,
+        gid,
+    )
+
+
+def remove_hostagent_messenger_tls() -> bool:
+    return _remove_grpc_server_tls(
+        HOSTAGENT_SERVER_SECTION, HOSTAGENT_MESSENGER_TLS_DIR
+    )
 
 
 def generate_secret_token():

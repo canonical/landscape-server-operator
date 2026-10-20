@@ -43,7 +43,7 @@ requires:
     interface: haproxy-route
     limit: 1
   hostagent-messenger-haproxy-route:
-    interface: haproxy-route-tcp
+    interface: haproxy-route
     limit: 1
   ubuntu-installer-attach-haproxy-route:
     interface: haproxy-route

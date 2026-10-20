@@ -45,7 +45,6 @@ from charms.data_platform_libs.v0.data_interfaces import (
     DatabaseRequires,
 )
 from charms.grafana_agent.v0.cos_agent import COSAgentProvider
-from charms.haproxy.v1.haproxy_route_tcp import HaproxyRouteTcpRequirer
 from charms.haproxy.v2.haproxy_route import HaproxyRouteRequirer
 from charms.smtp_integrator.v0.smtp import (
     SmtpDataAvailableEvent,
@@ -109,18 +108,23 @@ from settings_files import (
     generate_cookie_encryption_key,
     generate_secret_token,
     get_postgres_roles,
+    grpc_server_tls_settings,
+    HOSTAGENT_SERVER_SECTION,
     merge_service_conf,
     prepend_default_settings,
     read_service_conf,
+    remove_hostagent_messenger_tls,
     remove_ubuntu_installer_attach_tls,
     ServiceConfMissing,
     SSLCertReadException,
+    UBUNTU_INSTALLER_ATTACH_SECTION,
     update_db_conf,
     update_default_settings,
     update_service_conf,
     VHOSTS,
     write_analytics_id_systemd_override,
     write_deployment_mode_systemd_override,
+    write_hostagent_messenger_tls,
     write_license_file,
     write_ssl_cert,
     write_ubuntu_installer_attach_tls,
@@ -157,6 +161,9 @@ LANDSCAPE_OUTBOX_SNAP = "landscape-outbox"
 DEFAULT_OUTBOX_SNAP_CHANNEL = "latest/stable"
 LANDSCAPE_UBUNTU_INSTALLER_ATTACH = "landscape-ubuntu-installer-attach"
 UBUNTU_INSTALLER_ATTACH_EXTERNAL_PORT = 50051
+LANDSCAPE_HOSTAGENT_MESSENGER = "landscape-hostagent-messenger"
+HOSTAGENT_MESSENGER_EXTERNAL_PORT = 6554
+HOSTAGENT_MESSENGER_ROUTE_RELATION = "hostagent-messenger-haproxy-route"
 
 TASK_HANDLER_RELATION = "task-handler"
 CERTIFICATES_RELATION = "certificates"
@@ -484,12 +491,11 @@ class LandscapeServerCharm(CharmBase):
         self.repository_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="repository-haproxy-route"
         )
-        # The hostagent-messenger gRPC backend only supports plaintext (no
-        # add_secure_port), so TLS must terminate at haproxy itself rather than being
-        # re-encrypted to the backend. Ubuntu installer attach can serve TLS itself
-        # (see `certificates`), so it uses a regular HTTPS route with ALPN h2.
-        self.hostagent_messenger_haproxy_route = HaproxyRouteTcpRequirer(
-            self, relation_name="hostagent-messenger-haproxy-route"
+        # The gRPC backends serve TLS with the certificate from `certificates`,
+        # so they use HTTPS routes, whose frontends negotiate ALPN h2 (required
+        # by grpc-go >= 1.67 clients).
+        self.hostagent_messenger_haproxy_route = HaproxyRouteRequirer(
+            self, relation_name=HOSTAGENT_MESSENGER_ROUTE_RELATION
         )
         self.ubuntu_installer_attach_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="ubuntu-installer-attach-haproxy-route"
@@ -637,10 +643,10 @@ class LandscapeServerCharm(CharmBase):
         service_conf_updates.setdefault("package-upload", {})["base_port"] = str(
             self.charm_config.package_upload_base_port
         )
-        service_conf_updates["hostagent-message-server"] = {
+        service_conf_updates[HOSTAGENT_SERVER_SECTION] = {
             "base_port": str(self.charm_config.hostagent_server_base_port)
         }
-        service_conf_updates["ubuntu-installer-attach"] = {
+        service_conf_updates[UBUNTU_INSTALLER_ATTACH_SECTION] = {
             "base_port": str(self.charm_config.ubuntu_installer_attach_base_port)
         }
 
@@ -649,7 +655,7 @@ class LandscapeServerCharm(CharmBase):
         if self.charm_config.additional_service_config:
             merge_service_conf(self.charm_config.additional_service_config)
 
-        self._sync_ubuntu_installer_attach_tls()
+        self._sync_grpc_tls()
 
         if self.charm_config.license_file:
             self.unit.status = MaintenanceStatus("Writing Landscape license file")
@@ -1721,15 +1727,17 @@ class LandscapeServerCharm(CharmBase):
             unit_address=unit_ip,
             hostname=sni,
         )
-        if cfg.enable_hostagent_messenger:
-            self.hostagent_messenger_haproxy_route.provide_haproxy_route_tcp_requirements(
-                port=6554,
-                backend_port=cfg.hostagent_server_base_port,
-                hosts=[unit_ip],
-                tls_terminate=True,
+        if self._hostagent_messenger_tls_serving():
+            self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(
+                service=f"landscape-hostagent-messenger-{model_uuid}",
+                ports=[cfg.hostagent_server_base_port],
+                protocol="https",
+                external_grpc_port=HOSTAGENT_MESSENGER_EXTERNAL_PORT,
                 unit_address=unit_ip,
-                sni=sni,
+                hostname=sni,
             )
+        else:
+            self._clear_route_relation_data(HOSTAGENT_MESSENGER_ROUTE_RELATION)
         if self._ubuntu_installer_attach_tls_ready():
             self.ubuntu_installer_attach_haproxy_route.provide_haproxy_route_requirements(
                 service=f"landscape-ubuntu-installer-attach-{model_uuid}",
@@ -1740,19 +1748,28 @@ class LandscapeServerCharm(CharmBase):
                 hostname=sni,
             )
         else:
-            for relation in self.model.relations.get(
-                "ubuntu-installer-attach-haproxy-route", []
-            ):
-                relation.data[self.unit].clear()
-                if self.unit.is_leader():
-                    relation.data[self.app].clear()
+            self._clear_route_relation_data("ubuntu-installer-attach-haproxy-route")
+
+    def _clear_route_relation_data(self, relation_name: str) -> None:
+        """Withdraw the route this unit (and app, if leader) published."""
+        for relation in self.model.relations.get(relation_name, []):
+            relation.data[self.unit].clear()
+            if self.unit.is_leader():
+                relation.data[self.app].clear()
 
     def _get_certificate_requests(
         self, _capabilities=None
     ) -> list[CertificateRequestAttributes]:
-        """Return the certificate request for ubuntu-installer-attach, if wanted."""
+        """
+        Return the certificate request shared by the gRPC services that serve
+        TLS, if any of them is enabled.
+        """
         unit_ip = self.unit_ip
-        if not self._stored.enable_ubuntu_installer_attach or not unit_ip:
+        grpc_service_enabled = (
+            self._stored.enable_ubuntu_installer_attach
+            or self.charm_config.enable_hostagent_messenger
+        )
+        if not grpc_service_enabled or not unit_ip:
             return []
 
         hostname = urlparse(self.charm_config.root_url or "").hostname
@@ -1765,20 +1782,28 @@ class LandscapeServerCharm(CharmBase):
         return [CertificateRequestAttributes(common_name=unit_ip, sans_ip=[unit_ip])]
 
     def _on_certificate_available(self, _) -> None:
-        self._sync_ubuntu_installer_attach_tls()
+        self._sync_grpc_tls()
         self._provide_all_haproxy_route_requirements()
 
     def _on_certificates_relation_broken(self, _) -> None:
-        self._sync_ubuntu_installer_attach_tls()
+        self._sync_grpc_tls()
         self._provide_all_haproxy_route_requirements()
+
+    def _relation_active(self, relation_name: str) -> bool:
+        return any(
+            relation.active for relation in self.model.relations.get(relation_name, [])
+        )
 
     def _ubuntu_installer_attach_tls_wanted(self) -> bool:
         return bool(
             self.charm_config.enable_ubuntu_installer_attach
-            and any(
-                relation.active
-                for relation in self.model.relations.get(CERTIFICATES_RELATION, [])
-            )
+            and self._relation_active(CERTIFICATES_RELATION)
+        )
+
+    def _hostagent_messenger_tls_wanted(self) -> bool:
+        return bool(
+            self.charm_config.enable_hostagent_messenger
+            and self._relation_active(CERTIFICATES_RELATION)
         )
 
     def _ubuntu_installer_attach_tls_ready(self) -> bool:
@@ -1793,52 +1818,94 @@ class LandscapeServerCharm(CharmBase):
         )
         return bool(certificate and private_key)
 
-    def _sync_ubuntu_installer_attach_tls(self) -> None:
+    def _hostagent_messenger_tls_serving(self) -> bool:
         """
-        Make the ubuntu-installer-attach service serve TLS with the certificate
-        issued over the `certificates` relation, or plaintext when there is none.
+        Whether hostagent-messenger serves TLS, so haproxy can re-encrypt to it.
+        False until a certificate is issued, or if the installed Landscape
+        Server can't serve TLS (its service.conf migration drops the settings).
+        """
+        return bool(
+            self._hostagent_messenger_tls_wanted()
+            and grpc_server_tls_settings(HOSTAGENT_SERVER_SECTION)
+        )
 
-        Until the first certificate is issued the service stays plaintext. A
+    def _sync_grpc_tls(self) -> None:
+        """
+        Make the gRPC services serve TLS with the certificate issued over the
+        `certificates` relation, or plaintext when there is none.
+
+        Until the first certificate is issued the services stay plaintext. A
         certificate being renewed keeps being served until its replacement arrives.
         """
-        try:
-            if not self._ubuntu_installer_attach_tls_wanted():
-                changed = remove_ubuntu_installer_attach_tls()
-            else:
-                requests = self._get_certificate_requests()
-                if not requests:
-                    return
-                certificate, private_key = self.certificates.get_assigned_certificate(
-                    requests[0]
-                )
-                if not certificate or not private_key:
-                    logger.info(
-                        "Waiting for a TLS certificate for "
-                        "`landscape-ubuntu-installer-attach`"
-                    )
-                    return
-                leaf = str(certificate.certificate)
-                chain = "\n".join(
-                    [leaf] + [str(c) for c in certificate.chain if str(c) != leaf]
-                )
-                changed = write_ubuntu_installer_attach_tls(
-                    chain,
-                    str(private_key),
-                    user_exists("landscape").pw_uid,
-                    self.root_gid,
-                )
-        except (OSError, ServiceConfMissing) as e:
-            logger.error("Failed to configure ubuntu-installer-attach TLS: %s", e)
-            self.unit.status = BlockedStatus(
-                "Failed to configure `landscape-ubuntu-installer-attach` TLS"
-            )
-            return
+        services = (
+            (
+                LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
+                UBUNTU_INSTALLER_ATTACH_SECTION,
+                self._ubuntu_installer_attach_tls_wanted(),
+                self._stored.enable_ubuntu_installer_attach,
+                write_ubuntu_installer_attach_tls,
+                remove_ubuntu_installer_attach_tls,
+            ),
+            (
+                LANDSCAPE_HOSTAGENT_MESSENGER,
+                HOSTAGENT_SERVER_SECTION,
+                self._hostagent_messenger_tls_wanted(),
+                self.charm_config.enable_hostagent_messenger,
+                write_hostagent_messenger_tls,
+                remove_hostagent_messenger_tls,
+            ),
+        )
+        tls_material = None
+        if any(wanted for _, _, wanted, *_ in services):
+            tls_material = self._grpc_tls_material()
 
-        if changed and self._stored.enable_ubuntu_installer_attach:
+        for service, section, wanted, enabled, write_tls, remove_tls in services:
             try:
-                service_restart(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
-            except SystemdError as e:
-                logger.error("Failed to restart ubuntu-installer-attach: %s", e)
+                if not wanted:
+                    changed = remove_tls()
+                elif tls_material is None:
+                    logger.info("Waiting for a TLS certificate for `%s`", service)
+                    continue
+                else:
+                    changed = write_tls(
+                        *tls_material,
+                        user_exists("landscape").pw_uid,
+                        self.root_gid,
+                    )
+                    if not grpc_server_tls_settings(section):
+                        logger.warning(
+                            "The installed Landscape Server can't serve `%s` over TLS",
+                            service,
+                        )
+            except (OSError, ServiceConfMissing) as e:
+                logger.error("Failed to configure %s TLS: %s", service, e)
+                self.unit.status = BlockedStatus(f"Failed to configure `{service}` TLS")
+                continue
+
+            if changed and enabled and not self._stored.paused:
+                try:
+                    service_restart(service)
+                except SystemdError as e:
+                    logger.error("Failed to restart %s: %s", service, e)
+
+    def _grpc_tls_material(self) -> tuple[str, str] | None:
+        """
+        Return the issued certificate (leaf followed by its chain) and private
+        key, or None if no certificate has been issued yet.
+        """
+        requests = self._get_certificate_requests()
+        if not requests:
+            return None
+        certificate, private_key = self.certificates.get_assigned_certificate(
+            requests[0]
+        )
+        if not certificate or not private_key:
+            return None
+        leaf = str(certificate.certificate)
+        chain = "\n".join(
+            [leaf] + [str(c) for c in certificate.chain if str(c) != leaf]
+        )
+        return chain, str(private_key)
 
     def _on_get_service_conf_action(self, event: ActionEvent) -> None:
         event.set_results({"config": json.dumps(read_service_conf())})
