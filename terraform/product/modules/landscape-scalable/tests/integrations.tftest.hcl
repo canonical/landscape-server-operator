@@ -707,14 +707,16 @@ run "test_hostagent_messenger_without_certificate_provider" {
   }
 }
 
-run "test_hostagent_messenger_on_26_04_uses_tcp" {
+run "test_hostagent_messenger_before_rev_599_uses_tcp" {
   command = plan
 
   variables {
     landscape_server = {
-      channel = "26.04/stable"
+      channel  = "26.04/stable"
+      revision = 598
       config = {
-        enable_hostagent_messenger = "true"
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
       }
     }
     haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
@@ -722,12 +724,44 @@ run "test_hostagent_messenger_on_26_04_uses_tcp" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0
-    error_message = "26.04 routes hostagent-messenger over haproxy-route-tcp"
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0 && length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
+    error_message = "Revisions before 599 route hostagent-messenger over haproxy-route-tcp"
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
-    error_message = "hostagent-messenger should use haproxy-route-tcp on 26.04"
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
+    error_message = "Revisions from 595 route ubuntu-installer-attach over HTTPS"
+  }
+}
+
+run "test_grpc_routes_on_26_04_from_rev_599_use_https" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel  = "26.04/stable"
+      revision = 599
+      config = {
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 1 && length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
+    error_message = "Revisions from 599 route hostagent-messenger over HTTPS, including on 26.04"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 1 && length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
+    error_message = "Revisions from 595 route ubuntu-installer-attach over HTTPS, including on 26.04"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_grpc_certificates) == 1
+    error_message = "landscape-server should relate to the certificate provider"
   }
 }

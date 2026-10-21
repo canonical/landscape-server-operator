@@ -277,7 +277,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   depends_on = [module.landscape_server, module.haproxy]
 
-  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger && !local.grpc_routes_https ? 1 : 0
+  count = var.haproxy != null && var.haproxy_route_tcp_offer_url == null && local.has_haproxy_route && local.enable_hostagent_messenger && !local.hostagent_messenger_route_https ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_in_model" {
@@ -482,7 +482,7 @@ resource "juju_integration" "landscape_server_hostagent_messenger_haproxy_route_
 
   depends_on = [module.landscape_server]
 
-  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger && !local.grpc_routes_https ? 1 : 0
+  count = var.haproxy_route_tcp_offer_url != null && local.has_haproxy_route && local.enable_hostagent_messenger && !local.hostagent_messenger_route_https ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_route_lbaas" {
@@ -534,10 +534,10 @@ locals {
   # provider to issue its certificate and the deployed revision supports it
   installer_attach_https = var.tls_certificates != null && local.enable_ubuntu_installer && try(module.landscape_server.requires.certificates, null) != null
 
-  # Revisions with a certificates endpoint route the gRPC services over HTTPS
-  # (haproxy-route interface); older ones route them over haproxy-route-tcp
-  grpc_routes_https         = try(module.landscape_server.requires.certificates, null) != null
-  hostagent_messenger_https = var.tls_certificates != null && local.enable_hostagent_messenger && local.grpc_routes_https
+  # Newer revisions route hostagent-messenger over HTTPS (haproxy-route
+  # interface); older ones route it over haproxy-route-tcp
+  hostagent_messenger_route_https = module.landscape_server.has_hostagent_messenger_https
+  hostagent_messenger_https       = var.tls_certificates != null && local.enable_hostagent_messenger && local.hostagent_messenger_route_https
 
   # Revisions without a certificates endpoint expose the installer-attach endpoint
   # as haproxy-route-tcp; newer ones expose haproxy-route, which cannot connect to it
