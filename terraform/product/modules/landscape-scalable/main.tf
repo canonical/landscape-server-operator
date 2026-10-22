@@ -339,6 +339,16 @@ moved {
   to   = juju_integration.landscape_server_grpc_certificates
 }
 
+# A cross-model haproxy can't verify the gRPC backends' certificates unless it
+# trusts the CA that issued them, so offer that CA for its receive-ca-certs endpoint
+resource "juju_offer" "tls_certificates_send_ca_cert" {
+  model_uuid       = var.model_uuid
+  application_name = juju_application.tls_certificates[0].name
+  endpoints        = ["send-ca-cert"]
+
+  count = length(juju_integration.landscape_server_grpc_certificates) > 0 && var.haproxy_route_offer_url != null ? 1 : 0
+}
+
 resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
   model_uuid = var.model_uuid
 

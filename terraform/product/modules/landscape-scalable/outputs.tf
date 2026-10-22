@@ -34,6 +34,11 @@ output "applications" {
   }
 }
 
+output "tls_certificates_ca_offer_url" {
+  description = "Offer URL for the CA that issues the gRPC backends' certificates. Integrate it with the receive-ca-certs endpoint of the cross-model haproxy (LBaaS) so it can verify those backends. Null when not needed."
+  value       = length(juju_offer.tls_certificates_send_ca_cert) > 0 ? juju_offer.tls_certificates_send_ca_cert[0].url : null
+}
+
 output "has_modern_amqp_relations" {
   description = "Indicates whether the deployment uses the modern inbound/outbound AMQP endpoints."
   value       = local.has_modern_amqp_relations
