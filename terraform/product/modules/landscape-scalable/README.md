@@ -117,6 +117,8 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 | [juju_integration.landscape_server_repository_haproxy_route_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_in_model](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
+| [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_in_model](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
+| [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_task_handler_certificates](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_task_handler_grpc_haproxy_route_in_model](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_task_handler_grpc_haproxy_route_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
