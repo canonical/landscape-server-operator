@@ -623,6 +623,11 @@ run "test_installer_attach_https_cross_model" {
     condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_grpc_certificates) == 1
     error_message = "A certificate provider should be deployed and related to landscape-server"
   }
+
+  assert {
+    condition     = length(juju_offer.tls_certificates_send_ca_cert) == 1
+    error_message = "The CA should be offered so the cross-model haproxy can trust the gRPC backends"
+  }
 }
 
 run "test_installer_attach_without_certificate_provider_has_no_route" {
@@ -648,6 +653,11 @@ run "test_installer_attach_without_certificate_provider_has_no_route" {
   assert {
     condition     = length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 0
     error_message = "ubuntu-installer-attach modern charm must not use haproxy-route-tcp"
+  }
+
+  assert {
+    condition     = length(juju_offer.tls_certificates_send_ca_cert) == 0
+    error_message = "The CA should not be offered without a certificate provider"
   }
 }
 
@@ -679,6 +689,11 @@ run "test_hostagent_messenger_https_cross_model" {
     condition     = length(juju_application.tls_certificates) == 1 && length(juju_integration.landscape_server_grpc_certificates) == 1
     error_message = "A certificate provider should be deployed and related to landscape-server"
   }
+
+  assert {
+    condition     = length(juju_offer.tls_certificates_send_ca_cert) == 1
+    error_message = "The CA should be offered so the cross-model haproxy can trust the gRPC backends"
+  }
 }
 
 run "test_hostagent_messenger_without_certificate_provider" {
@@ -704,6 +719,11 @@ run "test_hostagent_messenger_without_certificate_provider" {
   assert {
     condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 0
     error_message = "hostagent-messenger must not use haproxy-route-tcp on charms with HTTPS support"
+  }
+
+  assert {
+    condition     = length(juju_offer.tls_certificates_send_ca_cert) == 0
+    error_message = "The CA should not be offered without a certificate provider"
   }
 }
 
@@ -788,5 +808,29 @@ run "test_grpc_routes_on_26_04_from_rev_599_use_https_in_model" {
   assert {
     condition     = length(juju_integration.landscape_server_grpc_certificates) == 1
     error_message = "landscape-server should relate to the certificate provider"
+  }
+}
+
+run "test_grpc_routes_in_model_do_not_offer_ca" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.10/stable"
+      config = {
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_grpc_certificates) == 1 && length(juju_integration.haproxy_receive_ca_certs) == 1
+    error_message = "The in-model haproxy should receive the CA that issues the gRPC backends' certificates"
+  }
+
+  assert {
+    condition     = length(juju_offer.tls_certificates_send_ca_cert) == 0
+    error_message = "The CA should not be offered when haproxy is in the same model"
   }
 }
