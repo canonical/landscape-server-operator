@@ -1,6 +1,12 @@
 # © 2025 Canonical Ltd.
 
-mock_provider "juju" {}
+mock_provider "juju" {
+  mock_data "juju_charm" {
+    defaults = {
+      revision = 529
+    }
+  }
+}
 
 run "modern_amqp_relations" {
   command = plan
@@ -595,6 +601,11 @@ run "installer_https_only_from_rev_595" {
     condition     = output.requires.certificates == "certificates" && !output.has_hostagent_messenger_https
     error_message = "Revisions 595 to 598 have the certificates relation but route hostagent-messenger over haproxy-route-tcp"
   }
+
+  assert {
+    condition     = length(data.juju_charm.landscape_server) == 0 && juju_application.landscape_server.charm[0].revision == 598
+    error_message = "An explicit revision must be honored without resolving the channel"
+  }
 }
 
 run "grpc_https_from_rev_599" {
@@ -613,7 +624,7 @@ run "grpc_https_from_rev_599" {
   }
 }
 
-run "grpc_https_with_null_revision" {
+run "grpc_https_on_unpinned_26_04_stable" {
   command = plan
 
   variables {
@@ -624,7 +635,112 @@ run "grpc_https_with_null_revision" {
   }
 
   assert {
+    condition     = try(output.requires.certificates, null) == null && !output.has_hostagent_messenger_https
+    error_message = "An unpinned channel resolving to revision 529 must not assume gRPC HTTPS support"
+  }
+
+  assert {
+    condition     = juju_application.landscape_server.charm[0].revision == 529
+    error_message = "The application must deploy the same revision used for capability checks"
+  }
+
+  assert {
+    condition = (
+      data.juju_charm.landscape_server[0].charm == "landscape-server" &&
+      data.juju_charm.landscape_server[0].channel == "26.04/stable" &&
+      data.juju_charm.landscape_server[0].base == "ubuntu@24.04" &&
+      data.juju_charm.landscape_server[0].architecture == "amd64"
+    )
+    error_message = "The lookup must use the selected charm, channel, base, and architecture"
+  }
+}
+
+run "grpc_https_on_unpinned_modern_channel" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.10/candidate"
+  }
+
+  override_data {
+    target = data.juju_charm.landscape_server[0]
+    values = {
+      revision = 625
+    }
+  }
+
+  assert {
     condition     = output.requires.certificates == "certificates" && output.has_hostagent_messenger_https
-    error_message = "A null revision should assume the latest charm"
+    error_message = "An unpinned channel resolving to revision 625 must support both gRPC HTTPS routes"
+  }
+
+  assert {
+    condition     = juju_application.landscape_server.charm[0].revision == 625
+    error_message = "The application must use the resolved modern revision"
+  }
+}
+
+run "unpinned_channel_respects_all_revision_gates" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/stable"
+  }
+
+  override_data {
+    target = data.juju_charm.landscape_server[0]
+    values = {
+      revision = 141
+    }
+  }
+
+  assert {
+    condition = (
+      !output.has_debarchive_relation &&
+      !output.has_task_handler_relation &&
+      !output.has_modern_haproxy_interface &&
+      !output.has_hostagent_messenger_https &&
+      output.requires.amqp == "amqp" &&
+      !can(output.requires.database) &&
+      !can(output.requires.certificates)
+    )
+    error_message = "Every capability check must use the resolved revision, not assume all features for a null revision"
+  }
+}
+
+run "channel_lookup_uses_selected_platform" {
+  command = plan
+
+  variables {
+    model_uuid  = uuid()
+    charm_name  = "landscape-server-alternative"
+    channel     = "26.04/stable"
+    base        = "ubuntu@22.04"
+    constraints = "cores=2 arch=arm64 mem=4G"
+  }
+
+  assert {
+    condition = (
+      data.juju_charm.landscape_server[0].charm == "landscape-server-alternative" &&
+      data.juju_charm.landscape_server[0].base == "ubuntu@22.04" &&
+      data.juju_charm.landscape_server[0].architecture == "arm64"
+    )
+    error_message = "The channel lookup must respect a non-default charm, base, and architecture"
+  }
+}
+
+run "channel_lookup_defaults_to_amd64_without_arch_constraint" {
+  command = plan
+
+  variables {
+    model_uuid  = uuid()
+    constraints = "cores=2 mem=4G"
+  }
+
+  assert {
+    condition     = data.juju_charm.landscape_server[0].architecture == "amd64"
+    error_message = "The channel lookup must default to amd64 when constraints do not specify an architecture"
   }
 }
