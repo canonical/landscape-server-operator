@@ -1,6 +1,12 @@
 # © 2025 Canonical Ltd.
 
-mock_provider "juju" {}
+mock_provider "juju" {
+  mock_data "juju_charm" {
+    defaults = {
+      revision = 529
+    }
+  }
+}
 
 variables {
   model_uuid       = uuid()

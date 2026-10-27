@@ -50,6 +50,13 @@ After deploying the module to the model, use the `juju status` command to monito
 juju status -m landscape --relations --watch 2s
 ```
 
+When `landscape_server.revision` is omitted, the module resolves the selected
+channel's revision for the configured base and architecture during planning. It
+uses that revision for the deployment and its relation support, so an older
+stable channel retains its TCP gRPC routes rather than assuming HTTPS support.
+Later plans can propose charm upgrades as the channel changes. Set
+`landscape_server.revision` explicitly to keep a fixed revision.
+
 This module uses the [Landscape Server charm module](https://github.com/canonical/landscape-charm/tree/main/terraform).
 
 <!-- BEGIN_TF_DOCS -->
@@ -58,13 +65,13 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.10 |
-| <a name="requirement_juju"></a> [juju](#requirement\_juju) | ~> 1.0 |
+| <a name="requirement_juju"></a> [juju](#requirement\_juju) | >= 1.5.6, < 2.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_juju"></a> [juju](#provider\_juju) | ~> 1.0 |
+| <a name="provider_juju"></a> [juju](#provider\_juju) | >= 1.5.6, < 2.0 |
 
 ## Modules
 
@@ -117,6 +124,8 @@ This module uses the [Landscape Server charm module](https://github.com/canonica
 | [juju_integration.landscape_server_repository_haproxy_route_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_in_model](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
+| [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_in_model](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
+| [juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_task_handler_certificates](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_task_handler_grpc_haproxy_route_in_model](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |
 | [juju_integration.landscape_task_handler_grpc_haproxy_route_lbaas](https://registry.terraform.io/providers/juju/juju/latest/docs/resources/integration) | resource |

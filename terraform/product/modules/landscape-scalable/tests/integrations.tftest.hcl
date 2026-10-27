@@ -1,6 +1,12 @@
 # © 2025 Canonical Ltd.
 
-mock_provider "juju" {}
+mock_provider "juju" {
+  mock_data "juju_charm" {
+    defaults = {
+      revision = 625
+    }
+  }
+}
 
 variables {
   model_uuid = uuid()
@@ -808,6 +814,87 @@ run "test_grpc_routes_on_26_04_from_rev_599_use_https_in_model" {
   assert {
     condition     = length(juju_integration.landscape_server_grpc_certificates) == 1
     error_message = "landscape-server should relate to the certificate provider"
+  }
+}
+
+run "test_unpinned_26_04_grpc_routes_in_model_use_tcp" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.04/stable"
+      config = {
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+  }
+
+  override_data {
+    target = module.landscape_server.data.juju_charm.landscape_server[0]
+    values = {
+      revision = 529
+    }
+  }
+
+  assert {
+    condition = (
+      length(juju_integration.landscape_server_grpc_certificates) == 0 &&
+      length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_in_model) == 0 &&
+      length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_in_model) == 0
+    )
+    error_message = "Unpinned 26.04/stable at revision 529 must not create Landscape certificates or gRPC HTTPS integrations"
+  }
+
+  assert {
+    condition = (
+      length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_in_model) == 1 &&
+      length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_in_model) == 1 &&
+      length(juju_integration.landscape_server_appserver_haproxy_route_in_model) == 1
+    )
+    error_message = "Unpinned 26.04/stable must retain TCP gRPC routes and the existing appserver HTTP route"
+  }
+}
+
+run "test_unpinned_26_04_grpc_routes_cross_model_use_tcp" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel = "26.04/stable"
+      config = {
+        enable_hostagent_messenger     = "true"
+        enable_ubuntu_installer_attach = "true"
+      }
+    }
+    haproxy_route_offer_url     = "admin/lbaas.haproxy-route"
+    haproxy_route_tcp_offer_url = "admin/lbaas.haproxy-route-tcp"
+  }
+
+  override_data {
+    target = module.landscape_server.data.juju_charm.landscape_server[0]
+    values = {
+      revision = 529
+    }
+  }
+
+  assert {
+    condition = (
+      length(juju_integration.landscape_server_grpc_certificates) == 0 &&
+      length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas) == 0 &&
+      length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas) == 0 &&
+      length(juju_offer.tls_certificates_send_ca_cert) == 0
+    )
+    error_message = "Unpinned 26.04/stable must not create gRPC HTTPS integrations or offer a gRPC CA"
+  }
+
+  assert {
+    condition = (
+      length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1 &&
+      length(juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_tcp_lbaas) == 1 &&
+      length(juju_integration.landscape_server_appserver_haproxy_route_lbaas) == 1
+    )
+    error_message = "Unpinned 26.04/stable must use the cross-model TCP offer for gRPC and keep the appserver HTTP route"
   }
 }
 
