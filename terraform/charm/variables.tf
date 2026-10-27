@@ -42,11 +42,10 @@ variable "model_uuid" {
 }
 
 variable "revision" {
-  description = "Revision number of the charm."
+  description = "Revision number of the charm. When null, resolve the latest revision for the selected channel, base, and architecture during planning."
   type        = number
-  # i.e., latest revision available for the channel
-  default  = null
-  nullable = true
+  default     = null
+  nullable    = true
 }
 
 variable "units" {
