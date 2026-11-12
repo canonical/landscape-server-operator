@@ -21,15 +21,14 @@ permissions:
 # The default checkout is shallow (fetch-depth 1) with no tags, which makes the
 # agent see only the latest commit. Fetch full history so it can scan the
 # commit window and read the commit log. A second checkout
-# fetches the documentation repo (all branches) for the shared release-notes PR.
+# fetches the documentation repo (all branches) for the shared release-notes
+# PR; that repo is public, so the checkout sets no token (gh-aw would
+# otherwise apply it to the primary repo checkout in safe-output jobs too).
 checkout:
   - fetch-depth: 0
   - repository: canonical/landscape-documentation
     path: ./landscape-documentation
     fetch: ["*"]
-    # Contents-read on the docs repo is enough: this token only fetches refs
-    # at setup time.
-    github-token: ${{ secrets.LANDSCAPE_DOCS_TOKEN }}
 
 engine:
   id: copilot
@@ -55,6 +54,9 @@ safe-outputs:
     team-reviewers: [canonical/landscape]
     draft: false
     if-no-changes: ignore
+    # Exactly one own-repo changelog PR per run; docs edits never go through
+    # this handler, only through push-to-pull-request-branch below.
+    max: 1
     preserve-branch-name: true
     recreate-ref: true
     # The bot only ever edits CHANGELOG.md in this repository; the handler
