@@ -1,5 +1,5 @@
 ---
-# Biweekly changelog PR bot (GitHub Agentic Workflow).
+# Weekly changelog PR bot (GitHub Agentic Workflow).
 #
 # This is the gh-aw SOURCE file. After editing, regenerate the compiled
 # GitHub Actions workflow with:
@@ -9,10 +9,9 @@
 # and commit the generated `.github/workflows/changelog-bot.lock.yml` alongside it.
 
 on:
-  # Cron cannot express "every other Saturday", so we fire every Saturday at
-  # around 12:00 UTC and the prompt gates on ISO-week parity (see the body below).
+  # Fires every Saturday around 12:00 UTC.
   schedule: weekly on saturday around 12:00 UTC
-  # Allow maintainers to trigger a run on demand (ignores the biweekly gate).
+  # Allow maintainers to trigger a run on demand.
   workflow_dispatch:
 
 permissions:
@@ -88,7 +87,7 @@ safe-outputs:
     max: 1
 ---
 
-# Biweekly changelog update
+# Weekly changelog update
 
 You maintain the changelog for the Landscape Server charm (the Juju charm that deploys and manages Landscape Server). The changelog is `CHANGELOG.md` at the repository root: a newest-first list of dated sections that this bot creates and maintains — no other automation or convention touches it. Your job is to draft a new dated changelog section summarizing recent user-facing changes and open a pull request with it.
 
@@ -99,19 +98,10 @@ You maintain the changelog for the Landscape Server charm (the Juju charm that d
 - NEVER touch release machinery: `charmcraft.yaml`, `metadata.yaml`, workflows, or any version file. Charm revisions are assigned by the Charmhub release automation at publish time; there is nothing to bump in this repository.
 - These prohibitions apply to this repository (landscape-server-operator) only; editing the release-notes page in the separate docs checkout is expected and allowed.
 
-## Biweekly gate
-
-This workflow is scheduled every Saturday but should only act every **other** Saturday. Releases publish on **odd** ISO weeks.
-
-This run was triggered by the `${{ github.event_name }}` event. Use that value literally to decide whether the gate applies:
-
-1. If the triggering event is `workflow_dispatch`, always proceed regardless of the week number (manual runs bypass the biweekly gate entirely).
-2. Otherwise (a `schedule` run), run `date +%V` to get the current ISO week number. If that week number is **even**, stop immediately and make no changes — do not open a pull request. Only proceed on **odd** weeks.
-
 ## Gather the commits
 
 1. The changelog lives at `CHANGELOG.md` in the repository root. It may not exist yet; this bot creates it on the first run.
-2. The scan window is time-based: list the commits from the last four weeks with `git log --since="4 weeks ago" --no-merges --pretty=%H%x09%s`. `main` is squash-merged, so each merged PR is a single commit on this list. NEVER anchor on tags: every push to `main` is published to Charmhub as a new charm revision and CI tags the commit `rev<N>`, so the newest tag sits at or near `HEAD` and a tag anchor would scan almost nothing — the tags mark publish points, not changelog coverage. Four weeks against a biweekly schedule gives two weeks of overlap with the previous run, so omissions leapfrogged by later merges are still caught; the deduplication rules below prevent double-filing.
+2. The scan window is time-based: list the commits from the last four weeks with `git log --since="4 weeks ago" --no-merges --pretty=%H%x09%s`. `main` is squash-merged, so each merged PR is a single commit on this list. NEVER anchor on tags: every push to `main` is published to Charmhub as a new charm revision and CI tags the commit `rev<N>`, so the newest tag sits at or near `HEAD` and a tag anchor would scan almost nothing — the tags mark publish points, not changelog coverage. Four weeks against a weekly schedule gives three weeks of overlap with the previous run, so omissions leapfrogged by later merges are still caught; the deduplication rules below prevent double-filing.
 3. Skip any commit whose subject has no trailing pull request reference ` (#1234)`. Such commits cannot carry the ` (#<N>)` marker the deduplication relies on, so they can never be filed safely; if one looks user-facing, mention it in the PR body under `Changelog entries to review` instead of filing it.
 4. Deduplicate the rest by pull request number. For each commit, extract its PR number `<N>` from the trailing ` (#1234)` reference in the subject. Skip the commit if EITHER of the following holds:
    a. Its own commit added a NON-EMPTY changelog entry: run `git show --name-status --format= <commit>` and look for `M CHANGELOG.md`, then check `git show <commit> -- CHANGELOG.md` for at least one added bullet (a `+` line whose added text starts with `- `). Only added bullets count as coverage — a commit that modified `CHANGELOG.md` without adding a bullet (e.g. a typo fix) is NOT coverage. If a user-facing commit touched `CHANGELOG.md` but added no bullet, do NOT file an entry for it either: a commit that deliberately touched the changelog made its own changelog choice. Flag it in the review section below instead.
