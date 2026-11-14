@@ -58,6 +58,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
+  detection:
+    pre-steps:
+      - name: Install GitHub Copilot CLI
+        run: |
+          npm install -g @github/copilot@1.0.103
+          copilot --version
 
 # The self-hosted runner image also ships a gh too old for "gh attestation
 # verify" in the agent job's AWF install ("unknown command attestation").
