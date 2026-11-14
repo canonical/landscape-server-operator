@@ -115,6 +115,7 @@ safe-outputs:
   github-token: ${{ secrets.LANDSCAPE_CHANGELOG_TOKEN }}
   runs-on: self-hosted
   threat-detection:
+    engine: copilot
     runs-on: [self-hosted, noble, amd64]
   create-pull-request:
     title-prefix: "build: "
