@@ -17,6 +17,12 @@ on:
 permissions:
   contents: read
 
+# Run on the Canonical self-hosted fleet. The agent and threat-detection
+# jobs need Docker/AWF and target [self-hosted, noble, amd64]; the
+# framework and safe_outputs jobs use the self-hosted label.
+runs-on: [self-hosted, noble, amd64]
+runs-on-slim: self-hosted
+
 # The default checkout is shallow (fetch-depth 1) with no tags, which makes the
 # agent see only the latest commit. Fetch full history so it can scan the
 # commit window and read the commit log. A second checkout
@@ -59,6 +65,9 @@ tools:
 # the release-notes push.
 safe-outputs:
   github-token: ${{ secrets.LANDSCAPE_CHANGELOG_TOKEN }}
+  runs-on: self-hosted
+  threat-detection:
+    runs-on: [self-hosted, noble, amd64]
   create-pull-request:
     title-prefix: "build: "
     labels: [changelog, automation]
