@@ -50,11 +50,15 @@ tools:
   edit:
 
 # The agent never pushes directly; its file edits are turned into pull
-# requests. The own-repo changelog PR uses the default GITHUB_TOKEN (like
-# landscape-server's merged bot). The docs push handler uses
-# LANDSCAPE_DOCS_TOKEN, a PAT with contents+pull-requests write on
-# canonical/landscape-documentation.
+# requests. gh-aw binds the whole safe_outputs job to a single credential for
+# its git checkouts and pushes (github/gh-aw#77580), so one token must cover
+# both targets: the default GITHUB_TOKEN cannot write to
+# canonical/landscape-documentation. Use LANDSCAPE_CHANGELOG_TOKEN, a
+# fine-grained PAT with contents+pull-requests read/write on this repo and
+# canonical/landscape-documentation, for both the own-repo changelog PR and
+# the release-notes push.
 safe-outputs:
+  github-token: ${{ secrets.LANDSCAPE_CHANGELOG_TOKEN }}
   create-pull-request:
     title-prefix: "build: "
     labels: [changelog, automation]
@@ -80,7 +84,7 @@ safe-outputs:
   push-to-pull-request-branch:
     target: "*"
     target-repo: canonical/landscape-documentation
-    github-token: ${{ secrets.LANDSCAPE_DOCS_TOKEN }}
+    github-token: ${{ secrets.LANDSCAPE_CHANGELOG_TOKEN }}
     required-labels: [changelog, automation]
     # Docs PR updates may only touch release-notes pages (including index.md).
     allowed-files: ["docs/reference/release-notes/*.md"]
