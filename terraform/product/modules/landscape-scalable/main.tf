@@ -208,6 +208,24 @@ resource "juju_integration" "landscape_server_api_haproxy_route_in_model" {
   count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route ? 1 : 0
 }
 
+resource "juju_integration" "landscape_server_package_upload_haproxy_route_in_model" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.package_upload_haproxy_route
+  }
+
+  application {
+    name     = module.haproxy[0].app_name
+    endpoint = module.haproxy[0].provides.haproxy_route.endpoint
+  }
+
+  depends_on = [module.landscape_server, module.haproxy]
+
+  count = var.haproxy != null && var.haproxy_route_offer_url == null && local.has_haproxy_route && local.has_package_upload_route ? 1 : 0
+}
+
 resource "juju_integration" "landscape_server_repository_haproxy_route_in_model" {
   model_uuid = var.model_uuid
 
@@ -349,6 +367,7 @@ resource "juju_integration" "landscape_server_appserver_haproxy_route_lbaas" {
     juju_integration.landscape_server_pingserver_haproxy_route_lbaas,
     juju_integration.landscape_server_message_server_haproxy_route_lbaas,
     juju_integration.landscape_server_api_haproxy_route_lbaas,
+    juju_integration.landscape_server_package_upload_haproxy_route_lbaas,
     juju_integration.landscape_server_repository_haproxy_route_lbaas,
     juju_integration.landscape_server_hostagent_messenger_haproxy_route_https_lbaas,
     juju_integration.landscape_server_ubuntu_installer_attach_haproxy_route_lbaas,
@@ -406,6 +425,23 @@ resource "juju_integration" "landscape_server_api_haproxy_route_lbaas" {
   depends_on = [module.landscape_server]
 
   count = var.haproxy_route_offer_url != null && local.has_haproxy_route ? 1 : 0
+}
+
+resource "juju_integration" "landscape_server_package_upload_haproxy_route_lbaas" {
+  model_uuid = var.model_uuid
+
+  application {
+    name     = module.landscape_server.app_name
+    endpoint = module.landscape_server.requires.package_upload_haproxy_route
+  }
+
+  application {
+    offer_url = var.haproxy_route_offer_url
+  }
+
+  depends_on = [module.landscape_server]
+
+  count = var.haproxy_route_offer_url != null && local.has_haproxy_route && local.has_package_upload_route ? 1 : 0
 }
 
 resource "juju_integration" "landscape_server_repository_haproxy_route_lbaas" {
@@ -494,8 +530,9 @@ resource "juju_integration" "landscape_server_ubuntu_installer_attach_haproxy_ro
 }
 
 locals {
-  has_modern_pg_interface = can(module.landscape_server.requires.database)
-  has_haproxy_route       = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
+  has_modern_pg_interface  = can(module.landscape_server.requires.database)
+  has_haproxy_route        = coalesce(module.landscape_server.has_modern_haproxy_interface, false)
+  has_package_upload_route = try(module.landscape_server.requires.package_upload_haproxy_route, null) != null
   # The debarchive and task-handler relations were added to landscape-server
   # at different times (rev 357 and rev 447 respectively); skip the companion
   # charms when the deployed revision/channel predates its relation

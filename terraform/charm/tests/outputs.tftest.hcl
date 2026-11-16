@@ -290,6 +290,11 @@ run "in_model_haproxy_relations" {
   }
 
   assert {
+    condition     = output.requires.package_upload_haproxy_route == "package-upload-haproxy-route"
+    error_message = "Rev 216+ should have package-upload-haproxy-route relation"
+  }
+
+  assert {
     condition     = output.requires.hostagent_messenger_haproxy_route == "hostagent-messenger-haproxy-route"
     error_message = "Rev 216+ should have hostagent-messenger-haproxy-route relation"
   }
@@ -302,6 +307,43 @@ run "in_model_haproxy_relations" {
   assert {
     condition     = try(output.requires.website, null) == null
     error_message = "Rev 216+ should not have legacy website relation"
+  }
+}
+
+run "package_upload_relation_removed_at_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/edge"
+    revision   = 653
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = !contains(keys(output.requires), "package_upload_haproxy_route")
+    error_message = "Rev 653+ should not expose package-upload-haproxy-route"
+  }
+
+  assert {
+    condition     = output.requires.api_haproxy_route == "api-haproxy-route"
+    error_message = "Rev 653+ should still expose the other haproxy-route relations"
+  }
+}
+
+run "package_upload_relation_present_below_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/edge"
+    revision   = 652
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.package_upload_haproxy_route == "package-upload-haproxy-route"
+    error_message = "Rev 652 and earlier should expose package-upload-haproxy-route"
   }
 }
 

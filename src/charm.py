@@ -891,15 +891,20 @@ class LandscapeServerCharm(CharmBase):
                 self._update_ready_status(restart_services=True)
 
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
-        self._disable_package_upload_service()
+        for relation in self.model.relations.get("nrpe-external-master", []):
+            self._update_nrpe_checks(relation)
         self._provide_all_haproxy_route_requirements()
+        # Last, so a failure still lets the other upgrade steps complete before the
+        # hook fails and is retried.
+        self._disable_package_upload_service()
 
     def _disable_package_upload_service(self) -> None:
         """
         Stop and disable the removed package-upload service if it is installed.
 
-        The unit may no longer be shipped, so its absence is expected and silent. A
-        failure to stop an installed service is an error, since it would keep running.
+        The unit may no longer be shipped, so its absence is expected and silent. Both
+        steps are attempted and any failure is re-raised, because nothing else manages
+        this service and only a failed hook gets retried.
         """
         listing = subprocess.run(
             [
@@ -914,11 +919,16 @@ class LandscapeServerCharm(CharmBase):
         if not listing.stdout.strip():
             return
 
-        try:
-            service_stop(PACKAGE_UPLOAD_SERVICE)
-            service_disable(PACKAGE_UPLOAD_SERVICE)
-        except SystemdError as e:
-            logger.error("Failed to disable %s: %s", PACKAGE_UPLOAD_SERVICE, e)
+        errors = []
+        for verb, action in (("stop", service_stop), ("disable", service_disable)):
+            try:
+                action(PACKAGE_UPLOAD_SERVICE)
+            except SystemdError as e:
+                logger.error("Failed to %s %s: %s", verb, PACKAGE_UPLOAD_SERVICE, e)
+                errors.append(e)
+
+        if errors:
+            raise errors[0]
 
     def _install_debian_packages_with_recommends(
         self, package_names: list[str]
@@ -1906,12 +1916,14 @@ class LandscapeServerCharm(CharmBase):
     def _update_nrpe_checks(self, relation: Relation):
         logger.debug("Configuring NRPE checks")
 
+        # The removed package-upload check is always cleaned up, since it is no longer
+        # in `LEADER_SERVICES` and would otherwise be left behind on upgraded units.
         if self.unit.is_leader():
             services_to_add = DEFAULT_SERVICES + LEADER_SERVICES
-            services_to_remove = ()
+            services_to_remove = (PACKAGE_UPLOAD_SERVICE,)
         else:
             services_to_add = DEFAULT_SERVICES
-            services_to_remove = LEADER_SERVICES
+            services_to_remove = LEADER_SERVICES + (PACKAGE_UPLOAD_SERVICE,)
 
         monitors = {
             "monitors": {

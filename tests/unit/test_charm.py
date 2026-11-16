@@ -41,9 +41,11 @@ from ops.testing import (
     Secret,
     State,
     StoredState,
+    SubordinateRelation,
     TCPPort,
 )
 import pytest
+from scenario.errors import UncaughtCharmError
 
 from charm import (
     BOOTSTRAP_ACCOUNT_SCRIPT,
@@ -2639,6 +2641,30 @@ class TestCharm(unittest.TestCase):
         cfg_files = os.listdir(mock_nrpe_d_dir)
         self.assertEqual(len(DEFAULT_SERVICES + LEADER_SERVICES), len(cfg_files))
 
+    def test_update_nrpe_checks_removes_package_upload_check(self):
+        mock_event = Mock()
+        mock_event.relation.data = {self.harness.charm.unit: {}}
+        mock_nrpe_d_dir = os.path.join(self.tempdir.name, "nrpe.d")
+        os.mkdir(mock_nrpe_d_dir)
+        obsolete = os.path.join(mock_nrpe_d_dir, "check_landscape_package_upload.cfg")
+        Path(obsolete).write_text("# check landscape-package-upload\n")
+
+        self.harness.add_relation("replicas", "landscape-server")
+        self.harness.model.get_binding = Mock(
+            return_value=Mock(bind_address="123.123.123.123")
+        )
+        self.harness.charm._update_service_conf = Mock()
+        self.harness.set_leader()
+
+        with patch("charm.NRPE_D_DIR", new=mock_nrpe_d_dir):
+            self.harness.charm._nrpe_external_master_relation_joined(mock_event)
+
+        self.assertFalse(os.path.exists(obsolete))
+        self.assertNotIn(
+            "landscape-package-upload",
+            mock_event.relation.data[self.harness.charm.unit]["monitors"],
+        )
+
     def test_nrpe_external_master_relation_joined_not_leader(self):
         mock_event = Mock()
         unit = self.harness.charm.unit
@@ -2666,13 +2692,19 @@ class TestCharm(unittest.TestCase):
         self.harness.charm._update_service_conf = Mock()
         self.harness.set_leader()
 
-        with patch("os.path.exists") as os_path_exists_mock:
+        with (
+            patch("os.path.exists") as os_path_exists_mock,
+            patch("os.remove") as os_remove_mock,
+        ):
             os_path_exists_mock.return_value = True
             self.harness.charm._nrpe_external_master_relation_joined(mock_event)
 
+        self.assertEqual(os_remove_mock.call_count, 1)
+
+        # One call for the NRPE directory and one for the obsolete package-upload check.
         self.assertEqual(
             len(os_path_exists_mock.mock_calls),
-            len(DEFAULT_SERVICES + LEADER_SERVICES) + 1,
+            len(DEFAULT_SERVICES + LEADER_SERVICES) + 2,
         )
 
     def test_nrpe_external_master_relation_joined_cfgs_exist_not_leader(self):
@@ -2687,11 +2719,12 @@ class TestCharm(unittest.TestCase):
             os_path_exists_mock.return_value = True
             self.harness.charm._nrpe_external_master_relation_joined(mock_event)
 
+        # One call for the NRPE directory and one for the obsolete package-upload check.
         self.assertEqual(
             len(os_path_exists_mock.mock_calls),
-            len(DEFAULT_SERVICES + LEADER_SERVICES) + 1,
+            len(DEFAULT_SERVICES + LEADER_SERVICES) + 2,
         )
-        self.assertEqual(len(os_remove_mock.mock_calls), len(LEADER_SERVICES))
+        self.assertEqual(len(os_remove_mock.mock_calls), len(LEADER_SERVICES) + 1)
 
     def test_nrpe_external_master_relation_joined_cfgs_not_exist_not_leader(self):
         mock_event = Mock()
@@ -2717,9 +2750,10 @@ class TestCharm(unittest.TestCase):
             os_path_exists_mock.side_effect = path_exists
             self.harness.charm._nrpe_external_master_relation_joined(mock_event)
 
+        # One call for the NRPE directory and one for the obsolete package-upload check.
         self.assertEqual(
             len(os_path_exists_mock.mock_calls),
-            len(DEFAULT_SERVICES + LEADER_SERVICES) + 1,
+            len(DEFAULT_SERVICES + LEADER_SERVICES) + 2,
         )
         self.assertEqual(len(os_remove_mock.mock_calls), 0)
 
@@ -3093,6 +3127,19 @@ class TestOnUpgradeCharm:
 
         assert mock_provide.call_count >= 1
 
+    def test_upgrade_charm_refreshes_nrpe_checks(self, haproxy_route_state):
+        context = Context(LandscapeServerCharm)
+        nrpe = SubordinateRelation("nrpe-external-master")
+        state = State(
+            relations=[*haproxy_route_state["relations"], nrpe],
+            networks=haproxy_route_state["networks"],
+        )
+
+        with patch.object(LandscapeServerCharm, "_update_nrpe_checks") as mock_update:
+            context.run(context.on.upgrade_charm(), state)
+
+        mock_update.assert_called_once()
+
     @pytest.mark.parametrize(
         "unit_files, expect_disabled",
         [
@@ -3118,7 +3165,7 @@ class TestOnUpgradeCharm:
         assert mock_stop.call_args_list == expected
         assert mock_disable.call_args_list == expected
 
-    def test_upgrade_charm_logs_error_if_package_upload_wont_stop(
+    def test_upgrade_charm_disables_even_if_stop_fails_then_fails_hook(
         self, haproxy_route_state, caplog
     ):
         context = Context(LandscapeServerCharm)
@@ -3128,13 +3175,34 @@ class TestOnUpgradeCharm:
         with (
             patch("charm.subprocess.run", return_value=listing),
             patch("charm.service_stop", side_effect=SystemdError("stop failed")),
+            patch("charm.service_disable") as mock_disable,
+            pytest.raises(UncaughtCharmError),
         ):
             context.run(context.on.upgrade_charm(), state)
 
+        mock_disable.assert_called_once_with("landscape-package-upload")
         assert any(
             r.levelname == "ERROR" and "landscape-package-upload" in r.getMessage()
             for r in caplog.records
         )
+
+    def test_upgrade_charm_runs_other_steps_before_failing(self, haproxy_route_state):
+        context = Context(LandscapeServerCharm)
+        state = State(**haproxy_route_state)
+        listing = Mock(stdout="landscape-package-upload.service enabled enabled\n")
+
+        with (
+            patch("charm.subprocess.run", return_value=listing),
+            patch("charm.service_stop", side_effect=SystemdError("stop failed")),
+            patch("charm.service_disable"),
+            patch.object(
+                LandscapeServerCharm, "_provide_all_haproxy_route_requirements"
+            ) as mock_provide,
+            pytest.raises(UncaughtCharmError),
+        ):
+            context.run(context.on.upgrade_charm(), state)
+
+        mock_provide.assert_called()
 
 
 def test_action_get_service_conf(monkeypatch):
