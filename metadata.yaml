@@ -39,9 +39,6 @@ requires:
   api-haproxy-route:
     interface: haproxy-route
     limit: 1
-  package-upload-haproxy-route:
-    interface: haproxy-route
-    limit: 1
   hostagent-messenger-haproxy-route:
     interface: haproxy-route
     limit: 1

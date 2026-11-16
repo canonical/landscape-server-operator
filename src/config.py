@@ -75,7 +75,6 @@ class HAProxyHealthChecks(BaseModel):
     pingserver: HealthCheck
     message_server: HealthCheck
     api: HealthCheck
-    package_upload: HealthCheck
     repository: HealthCheck
 
 
@@ -105,7 +104,6 @@ class HAProxyTimeouts(BaseModel):
     pingserver: Timeouts
     message_server: Timeouts
     api: Timeouts
-    package_upload: Timeouts
     repository: Timeouts
 
 
@@ -167,7 +165,6 @@ class LandscapeCharmConfiguration(BaseModel):
     pingserver_base_port: int
     message_server_base_port: int
     api_base_port: int
-    package_upload_base_port: int
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
     outbox_snap_channel: str
@@ -308,7 +305,6 @@ class LandscapeCharmConfiguration(BaseModel):
             "api_base_port",
         )
         base_ports_without_workers = (
-            "package_upload_base_port",
             "hostagent_server_base_port",
             "ubuntu_installer_attach_base_port",
         )

@@ -76,7 +76,6 @@ _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE = [
     "landscape-job-handler.service",
     "landscape-msgserver.service",
     "landscape-package-search.service",
-    "landscape-package-upload.service",
     "landscape-pingserver.service",
 ]
 

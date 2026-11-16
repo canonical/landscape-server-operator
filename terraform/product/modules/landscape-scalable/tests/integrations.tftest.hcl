@@ -260,11 +260,6 @@ run "test_haproxy_route_integrations_created" {
   }
 
   assert {
-    condition     = length(juju_integration.landscape_server_package_upload_haproxy_route_lbaas) == 1
-    error_message = "package-upload haproxy-route integration should be created"
-  }
-
-  assert {
     condition     = length(juju_integration.landscape_server_hostagent_messenger_haproxy_route_lbaas) == 1
     error_message = "hostagent-messenger haproxy-route-tcp integration should be created before HTTPS support"
   }

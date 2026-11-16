@@ -351,27 +351,6 @@ options:
     default: 3
     description: |
       Number of failed checks before an api backend is considered down.
-  haproxy_package_upload_health_check_path:
-    type: string
-    default: /upload
-    description: |
-      Path HAProxy requests when health checking the package-upload backend.
-      Leave empty to disable the health check for this route.
-  haproxy_package_upload_health_check_interval:
-    type: int
-    default: 2
-    description: |
-      Seconds between package-upload backend health checks.
-  haproxy_package_upload_health_check_rise:
-    type: int
-    default: 2
-    description: |
-      Number of successful checks before the package-upload backend is considered up.
-  haproxy_package_upload_health_check_fall:
-    type: int
-    default: 3
-    description: |
-      Number of failed checks before the package-upload backend is considered down.
   haproxy_repository_health_check_path:
     type: string
     default:
@@ -454,21 +433,6 @@ options:
     default: 60
     description: |
       Seconds HAProxy can wait for an api backend to respond.
-  haproxy_package_upload_connect_timeout:
-    type: int
-    default: 60
-    description: |
-      Seconds HAProxy can wait to connect to the package-upload backend.
-  haproxy_package_upload_queue_timeout:
-    type: int
-    default: 60
-    description: |
-      Seconds a request can wait in the HAProxy queue for the package-upload backend.
-  haproxy_package_upload_server_timeout:
-    type: int
-    default: 60
-    description: |
-      Seconds HAProxy can wait for the package-upload backend to respond.
   haproxy_repository_connect_timeout:
     type: int
     default: 60
@@ -504,11 +468,6 @@ options:
     default: 9080
     description: |
       Base port for api service workers to use on each unit.
-  package_upload_base_port:
-    type: int
-    default: 9100
-    description: |
-      Base port for package-upload service workers to use on the leader unit.
   hostagent_server_base_port:
     type: int
     default: 50052

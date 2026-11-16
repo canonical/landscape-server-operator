@@ -20,7 +20,6 @@ class ACL(str, Enum):
     ATTACHMENT = "attachment"
     HASHIDS = "hashids"
     MESSAGE = "message"
-    PACKAGE_UPLOAD = "package-upload"
     PING = "ping"
     REPOSITORY = "repository"
 
@@ -32,7 +31,6 @@ class HTTPBackend(str, Enum):
     API = "landscape-http-api"
     HASHIDS = "landscape-http-hashid-databases"
     MESSAGE = "landscape-http-message"
-    PACKAGE_UPLOAD = "landscape-http-package-upload"
     PING = "landscape-http-ping"
     REPOSITORY = "landscape-http-repository"
 
@@ -44,7 +42,6 @@ class HTTPSBackend(str, Enum):
     API = "landscape-https-api"
     HASHIDS = "landscape-https-hashid-databases"
     MESSAGE = "landscape-https-message"
-    PACKAGE_UPLOAD = "landscape-https-package-upload"
     PING = "landscape-https-ping"
     REPOSITORY = "landscape-https-repository"
 
@@ -85,18 +82,14 @@ HTTP_SERVICE = Service(
         f"acl {ACL.ATTACHMENT} path_beg -i /attachment",
         f"acl {ACL.API} path_beg -i /api",
         f"acl {ACL.HASHIDS} path_beg -i /hash-id-databases",
-        f"acl {ACL.PACKAGE_UPLOAD} path_beg -i /upload",
         # A default for the HTTPS redirect, which is configurable.
         DEFAULT_REDIRECT_SCHEME,
-        # Rewrite rules:
-        "http-request replace-path ^([^\\ ]*)\\ /upload/(.*) /\\1",
         # Backends
         f"use_backend {HTTPBackend.MESSAGE} if {ACL.MESSAGE}",
         f"use_backend {HTTPBackend.MESSAGE} if {ACL.ATTACHMENT}",
         f"use_backend {HTTPBackend.API} if {ACL.API}",
         f"use_backend {HTTPBackend.PING} if {ACL.PING}",
         f"use_backend {HTTPBackend.HASHIDS} if {ACL.HASHIDS}",
-        f"use_backend {HTTPBackend.PACKAGE_UPLOAD} if {ACL.PACKAGE_UPLOAD}",
         # Metrics
         "acl metrics path_end /metrics",
         "http-request deny if metrics",
@@ -124,16 +117,12 @@ HTTPS_SERVICE = Service(
         f"acl {ACL.ATTACHMENT} path_beg -i /attachment",
         f"acl {ACL.API} path_beg -i /api",
         f"acl {ACL.HASHIDS} path_beg -i /hash-id-databases",
-        f"acl {ACL.PACKAGE_UPLOAD} path_beg -i /upload",
-        # Rewrite rules:
-        "http-request replace-path ^([^\\ ]*)\\ /upload/(.*) /\\1",
         # Backends
         f"use_backend {HTTPSBackend.MESSAGE} if {ACL.MESSAGE}",
         f"use_backend {HTTPSBackend.MESSAGE} if {ACL.ATTACHMENT}",
         f"use_backend {HTTPSBackend.API} if {ACL.API}",
         f"use_backend {HTTPSBackend.PING} if {ACL.PING}",
         f"use_backend {HTTPSBackend.HASHIDS} if {ACL.HASHIDS}",
-        f"use_backend {HTTPSBackend.PACKAGE_UPLOAD} if {ACL.PACKAGE_UPLOAD}",
         # Metrics
         "acl metrics path_end /metrics",
         "http-request deny if metrics",
@@ -182,7 +171,6 @@ PORTS = {
     "pingserver": 8070,
     "message-server": 8090,
     "api": 9080,
-    "package-upload": 9100,
     "hostagent-messenger": 50052,
     "ubuntu-installer-attach": 53354,
 }
@@ -218,7 +206,6 @@ Expects the following keys:
 - pingserver
 - message-server
 - api
-- package-upload
 - hostagent-messenger
 - ubuntu-installer-attach
 
@@ -248,8 +235,8 @@ def create_http_service(
     """
     Create the Landscape HTTP `services` configurations for HAProxy.
 
-    NOTE: Only the leader should have servers for the package-upload and
-    hashid-databases backends. However, when the leader is lost, haproxy will fail as
+    NOTE: Only the leader should have servers for the
+    hashid-databases backend. However, when the leader is lost, haproxy will fail as
     the service options will reference a (no longer) existing backend. To prevent that,
     all units should declare all backends, even if a unit should not have any servers on
     a specific backend.
@@ -267,15 +254,6 @@ def create_http_service(
         for name in ("appserver", "pingserver", "message-server", "api")
     ]
 
-    package_upload_servers = [
-        (
-            f"landscape-package-upload-{unit_name}-0",
-            server_ip,
-            service_ports["package-upload"],
-            server_options,
-        )
-    ]
-
     http_service["servers"] = appservers
     http_service["backends"] = [
         {
@@ -289,10 +267,6 @@ def create_http_service(
         {
             "backend_name": "landscape-http-api",
             "servers": api_servers,
-        },
-        {
-            "backend_name": "landscape-http-package-upload",
-            "servers": package_upload_servers if is_leader else [],
         },
         {
             "backend_name": "landscape-http-hashid-databases",
@@ -353,8 +327,8 @@ def create_https_service(
     """
     Create the Landscape HTTPS `services` configurations for HAProxy.
 
-    NOTE: Only the leader should have servers for the package-upload and
-    hashid-databases backends. However, when the leader is lost, haproxy will fail as
+    NOTE: Only the leader should have servers for the
+    hashid-databases backend. However, when the leader is lost, haproxy will fail as
     the service options will reference a (no longer) existing backend. To prevent that,
     all units should declare all backends, even if a unit should not have any servers on
     a specific backend.
@@ -372,15 +346,6 @@ def create_https_service(
         for name in ("appserver", "pingserver", "message-server", "api")
     ]
 
-    package_upload_servers = [
-        (
-            f"landscape-package-upload-{unit_name}-0",
-            server_ip,
-            service_ports["package-upload"],
-            server_options,
-        )
-    ]
-
     https_service["servers"] = appservers
     https_service["backends"] = [
         {
@@ -394,10 +359,6 @@ def create_https_service(
         {
             "backend_name": "landscape-https-api",
             "servers": api_servers,
-        },
-        {
-            "backend_name": "landscape-https-package-upload",
-            "servers": package_upload_servers if is_leader else [],
         },
         {
             "backend_name": "landscape-https-hashid-databases",

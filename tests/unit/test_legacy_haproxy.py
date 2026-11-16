@@ -145,7 +145,6 @@ class TestWebsiteRelationJoined:
         config = capture_service_conf.get_config()
         assert config["global"].get("root-url") == expected_root_url
         assert config["api"].get("root-url") == expected_root_url
-        assert config["package-upload"].get("root-url") == expected_root_url
 
     def test_excludes_ubuntu_installer_attach_if_disabled(self):
         """
@@ -227,13 +226,11 @@ class TestCreateHTTPService(unittest.TestCase):
         self.pingserver_port = 10000
         self.message_server_port = 11000
         self.api_port = 12000
-        self.package_upload_port = 13000
         self.service_ports = {
             "appserver": self.appserver_port,
             "pingserver": self.pingserver_port,
             "message-server": self.message_server_port,
             "api": self.api_port,
-            "package-upload": self.package_upload_port,
         }
         self.server_options = ["check", "inter 5000", "rise 2", "fall 5", "maxconn 50"]
         self.http_service = {
@@ -502,61 +499,6 @@ class TestCreateHTTPService(unittest.TestCase):
 
         self.assertIn(expected, service["backends"])
 
-    def test_package_upload_backend(self):
-        """
-        Creates a landscape-package-upload backend if the unit is the leader.
-        """
-        server_ip = "10.194.61.5"
-        unitname = "unitname"
-
-        service = create_http_service(
-            http_service=self.http_service,
-            server_ip=server_ip,
-            unit_name=unitname,
-            worker_counts=1,
-            is_leader=True,
-            error_files=(),
-            service_ports=self.service_ports,
-            server_options=self.server_options,
-        )
-
-        expected = {
-            "backend_name": f"{HTTPBackend.PACKAGE_UPLOAD}",
-            "servers": [
-                (
-                    f"landscape-package-upload-{unitname}-0",
-                    server_ip,
-                    self.package_upload_port,
-                    self.server_options,
-                )
-            ],
-        }
-
-        self.assertIn(expected, service["backends"])
-
-    def test_no_package_upload_on_nonleader(self):
-        """
-        Does not create a landscape-package-upload backend if the unit is not the
-        leader.
-        """
-        service = create_http_service(
-            http_service=self.http_service,
-            server_ip="",
-            unit_name="",
-            worker_counts=1,
-            is_leader=False,
-            error_files=(),
-            service_ports=self.service_ports,
-            server_options=self.server_options,
-        )
-
-        expected = {
-            "backend_name": f"{HTTPBackend.PACKAGE_UPLOAD}",
-            "servers": [],
-        }
-
-        self.assertIn(expected, service["backends"])
-
     def test_hashid_databases_backend(self):
         """
         Creates a landscape-hashid-databases backend if the unit is the leader.
@@ -655,13 +597,11 @@ class TestCreateHTTPSService(unittest.TestCase):
         self.pingserver_port = 10000
         self.message_server_port = 11000
         self.api_port = 12000
-        self.package_upload_port = 13000
         self.service_ports = {
             "appserver": self.appserver_port,
             "pingserver": self.pingserver_port,
             "message-server": self.message_server_port,
             "api": self.api_port,
-            "package-upload": self.package_upload_port,
         }
         self.server_options = ["check", "inter 5000", "rise 2", "fall 5", "maxconn 50"]
         self.https_service = {
@@ -989,63 +929,6 @@ class TestCreateHTTPSService(unittest.TestCase):
                 )
                 for i in range(workers)
             ],
-        }
-
-        self.assertIn(expected, service["backends"])
-
-    def test_package_upload_backend(self):
-        """
-        Creates a landscape-package-upload backend if the unit is the leader.
-        """
-        server_ip = "10.194.61.5"
-        unitname = "unitname"
-
-        service = create_https_service(
-            https_service=self.https_service,
-            ssl_cert="",
-            server_ip=server_ip,
-            unit_name=unitname,
-            worker_counts=1,
-            is_leader=True,
-            error_files=(),
-            service_ports=self.service_ports,
-            server_options=self.server_options,
-        )
-
-        expected = {
-            "backend_name": f"{HTTPSBackend.PACKAGE_UPLOAD}",
-            "servers": [
-                (
-                    f"landscape-package-upload-{unitname}-0",
-                    server_ip,
-                    self.package_upload_port,
-                    self.server_options,
-                )
-            ],
-        }
-
-        self.assertIn(expected, service["backends"])
-
-    def test_no_package_upload_on_nonleader(self):
-        """
-        Does not create a landscape-package-upload backend if the unit is not
-        the leader.
-        """
-        service = create_https_service(
-            https_service=self.https_service,
-            ssl_cert="",
-            server_ip="",
-            unit_name="",
-            worker_counts=1,
-            is_leader=False,
-            error_files=(),
-            service_ports=self.service_ports,
-            server_options=self.server_options,
-        )
-
-        expected = {
-            "backend_name": f"{HTTPSBackend.PACKAGE_UPLOAD}",
-            "servers": [],
         }
 
         self.assertIn(expected, service["backends"])

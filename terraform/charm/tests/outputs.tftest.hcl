@@ -290,11 +290,6 @@ run "in_model_haproxy_relations" {
   }
 
   assert {
-    condition     = output.requires.package_upload_haproxy_route == "package-upload-haproxy-route"
-    error_message = "Rev 216+ should have package-upload-haproxy-route relation"
-  }
-
-  assert {
     condition     = output.requires.hostagent_messenger_haproxy_route == "hostagent-messenger-haproxy-route"
     error_message = "Rev 216+ should have hostagent-messenger-haproxy-route relation"
   }

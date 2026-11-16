@@ -27,6 +27,7 @@ from unittest.mock import (
 from charmlibs import apt
 from charmlibs.apt import PackageError, PackageNotFoundError
 from charmlibs.snap import SnapError
+from charmlibs.systemd import SystemdError
 from charms.smtp_integrator.v0.smtp import TransportSecurity
 from ops.charm import ActionEvent
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
@@ -559,8 +560,7 @@ class TestOnConfigChanged:
 
     def test_root_url(self, capture_service_conf, replicas_network_state):
         """
-        If the `root_url` is provided, update the global, api, and package-upload
-        sections.
+        If the `root_url` is provided, update the global and api sections.
         """
         root_url = "https://landscape.example.com"
         context = Context(LandscapeServerCharm)
@@ -574,7 +574,6 @@ class TestOnConfigChanged:
 
         assert config["global"]["root-url"] == root_url
         assert config["api"]["root-url"] == root_url
-        assert config["package-upload"]["root-url"] == root_url
 
     def test_worker_counts(self, capture_service_conf):
         """
@@ -644,9 +643,6 @@ base_port = 3333
 [pingserver]
 base_port = 4444
 
-[package-upload]
-base_port = 5555
-
 [hostagent_server]
 base_port = 6666
 
@@ -660,7 +656,6 @@ base_port = 7777
                 "api_base_port": 9080,
                 "message_server_base_port": 8090,
                 "pingserver_base_port": 8070,
-                "package_upload_base_port": 9100,
                 "hostagent_server_base_port": 50052,
                 "ubuntu_installer_attach_base_port": 53354,
                 "additional_service_config": additional_config,
@@ -674,7 +669,6 @@ base_port = 7777
         assert config["api"]["base_port"] == "2222"
         assert config["message-server"]["base_port"] == "3333"
         assert config["pingserver"]["base_port"] == "4444"
-        assert config["package-upload"]["base_port"] == "5555"
         assert config["hostagent_server"]["base_port"] == "6666"
         assert config["ubuntu_installer_attach"]["base_port"] == "7777"
 
@@ -708,9 +702,6 @@ root-url = https://overridden.example.com
 
 [api]
 root-url = https://overridden.example.com
-
-[package-upload]
-root-url = https://overridden.example.com
 """
         context = Context(LandscapeServerCharm)
         state = State(
@@ -725,7 +716,6 @@ root-url = https://overridden.example.com
 
         assert config["global"]["root-url"] == "https://overridden.example.com"
         assert config["api"]["root-url"] == "https://overridden.example.com"
-        assert config["package-upload"]["root-url"] == "https://overridden.example.com"
 
     def test_demo_data_enabled_is_forwarded_to_schema_migration(
         self,
@@ -970,7 +960,6 @@ root-url = https://overridden.example.com
             TCPPort(port=8091, protocol="tcp"),
             TCPPort(port=9080, protocol="tcp"),
             TCPPort(port=9081, protocol="tcp"),
-            TCPPort(port=9100, protocol="tcp"),  # package upload
         }
 
         state_out = ctx.run(ctx.on.config_changed(), state_in)
@@ -1002,27 +991,6 @@ root-url = https://overridden.example.com
         state_out = ctx.run(ctx.on.config_changed(), state_in)
 
         assert state_out.opened_ports == expected_ports
-
-    def test_port_on_leader_change(self):
-        ctx = Context(LandscapeServerCharm)
-        relation = PeerRelation("replicas", peers_data={})
-        expected_port = TCPPort(port=9100, protocol="tcp")
-        leader_state = State(relations=[relation], config={}, leader=True)
-
-        state_out = ctx.run(ctx.on.leader_elected(), leader_state)
-
-        assert expected_port in state_out.opened_ports
-
-        non_leader_state = State(relations=[relation], leader=False)
-
-        event = ctx.on.relation_changed(relation)
-        state_out = ctx.run(event, non_leader_state)
-
-        assert expected_port not in state_out.opened_ports
-
-        state_out = ctx.run(event, leader_state)
-
-        assert expected_port in state_out.opened_ports
 
     def test_outbox_snap_ensure_called(self, snap_fixture):
         """Config-changed calls snap.ensure for landscape-outbox."""
@@ -3124,6 +3092,49 @@ class TestOnUpgradeCharm:
             context.run(context.on.upgrade_charm(), state)
 
         assert mock_provide.call_count >= 1
+
+    @pytest.mark.parametrize(
+        "unit_files, expect_disabled",
+        [
+            ("landscape-package-upload.service enabled enabled\n", True),
+            ("", False),
+        ],
+    )
+    def test_upgrade_charm_disables_package_upload_service_if_installed(
+        self, haproxy_route_state, unit_files, expect_disabled
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(**haproxy_route_state)
+        listing = Mock(stdout=unit_files)
+
+        with (
+            patch("charm.subprocess.run", return_value=listing),
+            patch("charm.service_stop") as mock_stop,
+            patch("charm.service_disable") as mock_disable,
+        ):
+            context.run(context.on.upgrade_charm(), state)
+
+        expected = [call("landscape-package-upload")] if expect_disabled else []
+        assert mock_stop.call_args_list == expected
+        assert mock_disable.call_args_list == expected
+
+    def test_upgrade_charm_logs_error_if_package_upload_wont_stop(
+        self, haproxy_route_state, caplog
+    ):
+        context = Context(LandscapeServerCharm)
+        state = State(**haproxy_route_state)
+        listing = Mock(stdout="landscape-package-upload.service enabled enabled\n")
+
+        with (
+            patch("charm.subprocess.run", return_value=listing),
+            patch("charm.service_stop", side_effect=SystemdError("stop failed")),
+        ):
+            context.run(context.on.upgrade_charm(), state)
+
+        assert any(
+            r.levelname == "ERROR" and "landscape-package-upload" in r.getMessage()
+            for r in caplog.records
+        )
 
 
 def test_action_get_service_conf(monkeypatch):
