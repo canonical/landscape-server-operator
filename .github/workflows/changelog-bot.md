@@ -21,6 +21,10 @@ on:
 
 permissions:
   contents: read
+  # The agent must list open pull requests to enforce "never open a second
+  # changelog PR". Without this the token is Contents:read only and every
+  # list_pull_requests call returns 403 "Resource not accessible by integration".
+  pull-requests: read
 
 # Run on the Canonical self-hosted fleet. The agent and threat-detection
 # jobs need Docker/AWF and target [self-hosted, noble, amd64]; the
@@ -169,7 +173,7 @@ Before making any edit, create your working branch from the default branch, not 
 
 First check for an existing open changelog pull request in this repository (label `changelog`). Exactly one should ever be open at a time.
 
-- If one is already open, do NOT open a second. Check whether its dated section already covers the entries you selected (the date and the listed subjects with their ` (#<N>)` markers). If it does, make no changes and note that the existing PR is already current. If it is missing any of your selected entries, update that PR's branch with the corrected section rather than opening a new PR.
+- If one is already open, do NOT open a second. Check whether its dated section already covers the entries you selected (the date and the listed subjects with their ` (#<N>)` markers). If it does, make no changes and note that the existing PR is already current. If it is missing any of your selected entries, post the missing entries as a comment on that PR with `add_comment` and stop; there is no handler that pushes to an existing own-repo pull request branch, so do not claim you updated it and do not open a second PR.
 - Only if no changelog PR is open, open one with the change. Use the title `changelog update for <date>` (the `build: ` prefix is added automatically) and a body that lists the new entries in the sorted order from above, notes the merged PR each entry covers, explains that only user-facing changes were selected, and includes the `Changelog entries to review` heading when any entries were flagged.
 
 Never open a second changelog PR while one is open. If no entries were needed, do nothing — do not open an empty pull request.
