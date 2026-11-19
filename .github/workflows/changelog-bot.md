@@ -248,7 +248,7 @@ myst:
 
 ```{note}
 This page is a draft maintained automatically until release.
-````
+```
 
 ## Highlights
 
@@ -265,4 +265,4 @@ This page is a draft maintained automatically until release.
 ## Bug fixes
 
 (pending - written at release time)
-```
+````
