@@ -139,6 +139,7 @@ POSTFIX_SASL_PASSWD = "/etc/postfix/sasl_passwd"
 SCHEMA_SCRIPT = "/usr/bin/landscape-schema"
 BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
+LANDSCAPE_VENV_PYTHON = "/opt/venvs/landscape/bin/python3"
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
 
@@ -697,7 +698,8 @@ class LandscapeServerCharm(CharmBase):
                 return
 
         self._bootstrap_account()
-        self._set_autoregistration()
+        if not self._set_autoregistration():
+            return
 
         secret_token = self._get_secret_token()
         cookie_encryption_key = self._get_cookie_encryption_key()
@@ -1366,7 +1368,8 @@ class LandscapeServerCharm(CharmBase):
             return False
 
         self._bootstrap_account()
-        self._set_autoregistration()
+        if not self._set_autoregistration():
+            return False
         return True
 
     def _demo_schema_args(self) -> list[str]:
@@ -2591,33 +2594,55 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             logger.info("Admin account successfully bootstrapped!")
             self._stored.account_bootstrapped = True
 
-    def _set_autoregistration(self) -> None:
+    def _set_autoregistration(self) -> bool:
         """Turns autoregistration on or off.
 
         Only the leader does this to prevent unnecessary DB writes.
         We can only do this after the initial account is bootstrapped.
+
+        Returns False and sets a blocked status if the script fails, True
+        otherwise (including when it is skipped).
         """
         on = "on" if self.charm_config.autoregistration else "off"
 
         if not self.unit.is_leader():
-            return
+            return True
 
         if not self._stored.account_bootstrapped:
             logger.error("Cannot modify autoregistration because no account exists.")
-            return
+            return True
+
+        # Landscape Server packages from 26.04 ship their Python dependencies in
+        # a dedicated venv, so the system interpreter cannot import them.
+        python = "python3"
+        if os.path.exists(LANDSCAPE_VENV_PYTHON):
+            python = LANDSCAPE_VENV_PYTHON
 
         logger.info("Setting autoregistration...")
-        result = subprocess.run(
-            ["python3", AUTOREGISTRATION_SCRIPT, on],
-            capture_output=True,
-            text=True,
-            env=get_modified_env_vars(),
-        )
+        try:
+            result = subprocess.run(
+                [python, AUTOREGISTRATION_SCRIPT, on],
+                capture_output=True,
+                text=True,
+                env=get_modified_env_vars(),
+            )
+        except OSError as e:
+            logger.error("Failed to run autoregistration script: %s", e)
+            self.unit.status = BlockedStatus("Failed to set autoregistration")
+            return False
 
         logger.info(result.stdout)
 
         if result.returncode:
-            logger.error(result.stderr)
+            logger.error(
+                "Autoregistration script failed with return code %d: %s",
+                result.returncode,
+                result.stderr,
+            )
+            self.unit.status = BlockedStatus("Failed to set autoregistration")
+            return False
+
+        return True
 
     def _pause(self, event: ActionEvent) -> None:
         self.unit.status = MaintenanceStatus("Stopping services")

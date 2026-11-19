@@ -45,6 +45,7 @@ from ops.testing import (
 import pytest
 
 from charm import (
+    AUTOREGISTRATION_SCRIPT,
     BOOTSTRAP_ACCOUNT_SCRIPT,
     DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
@@ -55,6 +56,7 @@ from charm import (
     LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
+    LANDSCAPE_VENV_PYTHON,
     LandscapeServerCharm,
     LEADER_SERVICES,
     LSCTL,
@@ -3024,6 +3026,91 @@ class TestBootstrapAccount(unittest.TestCase):
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
         self.assertEqual(len(self._bootstrap_calls()), 1)
+
+    def _autoregistration_calls(self):
+        return [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and AUTOREGISTRATION_SCRIPT in c.args[0]
+        ]
+
+    @patch("charm.os.path.exists", return_value=True)
+    def test_set_autoregistration_uses_landscape_venv_python(self, _):
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.return_value.returncode = 0
+
+        self.assertTrue(self.harness.charm._set_autoregistration())
+
+        self.process_mock.assert_called_once_with(
+            [LANDSCAPE_VENV_PYTHON, AUTOREGISTRATION_SCRIPT, "off"],
+            capture_output=True,
+            text=True,
+            env=ANY,
+        )
+
+    @patch("charm.os.path.exists", return_value=False)
+    def test_set_autoregistration_falls_back_to_system_python(self, _):
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.return_value.returncode = 0
+
+        self.assertTrue(self.harness.charm._set_autoregistration())
+
+        self.assertEqual(
+            self.process_mock.call_args.args[0],
+            ["python3", AUTOREGISTRATION_SCRIPT, "off"],
+        )
+
+    def test_set_autoregistration_failure_blocks(self):
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.return_value.returncode = 1
+        self.process_mock.return_value.stderr = (
+            "ModuleNotFoundError: No module named 'transaction'"
+        )
+
+        self.assertFalse(self.harness.charm._set_autoregistration())
+
+        self.assertEqual(
+            self.harness.charm.unit.status,
+            BlockedStatus("Failed to set autoregistration"),
+        )
+        self.assertIn(
+            "ModuleNotFoundError: No module named 'transaction'",
+            str(self.log_mock.call_args),
+        )
+
+    def test_set_autoregistration_script_not_runnable_blocks(self):
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.side_effect = FileNotFoundError("python3")
+
+        self.assertFalse(self.harness.charm._set_autoregistration())
+
+        self.assertEqual(
+            self.harness.charm.unit.status,
+            BlockedStatus("Failed to set autoregistration"),
+        )
+
+    @patch("charm.update_service_conf")
+    def test_config_changed_autoregistration_failure_not_active(self, _):
+        def run(args, **kwargs):
+            failed = AUTOREGISTRATION_SCRIPT in args
+            return Mock(returncode=int(failed), stdout="", stderr="ImportError")
+
+        self.process_mock.side_effect = run
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+                "root_url": "https://www.landscape.com",
+                "autoregistration": True,
+            }
+        )
+
+        self.assertEqual(len(self._autoregistration_calls()), 1)
+        self.assertEqual(
+            self.harness.charm.unit.status,
+            BlockedStatus("Failed to set autoregistration"),
+        )
 
     @patch("subprocess.run")
     def test_hash_id_databases(self, run_mock):
