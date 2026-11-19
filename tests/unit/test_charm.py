@@ -3103,6 +3103,23 @@ class TestBootstrapAccount(unittest.TestCase):
 
         self.assertEqual(self._check_account_calls(), [])
 
+    def test_check_account_exists_short_circuits_when_bootstrapped(self):
+        """The stored flag is trusted without running the check script."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+
+        self.assertTrue(self.harness.charm._check_account_exists())
+        self.assertEqual(self._check_account_calls(), [])
+
+    def test_check_account_exists_sets_bootstrapped_flag(self):
+        """The stored flag is set when the check finds the account."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = "true\n"
+
+        self.assertTrue(self.harness.charm._check_account_exists())
+        self.assertTrue(self.harness.charm._stored.account_bootstrapped)
+
     def test_set_autoregistration_sets_bootstrapped_when_account_exists(self):
         """A False stored flag is corrected when the account exists."""
         self.harness.set_leader(True)

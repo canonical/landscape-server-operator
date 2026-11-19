@@ -2522,13 +2522,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = WaitingStatus("Waiting on relations")
 
     def _check_account_exists(self) -> bool:
-        """Checks whether the initial account exists in the database.
+        """Checks whether the initial account exists in the database."""
+        if self._stored.account_bootstrapped:
+            return True
 
-        `account_bootstrapped` is per-unit stored state, so it is False on a
-        unit that did not run the bootstrap itself (for example a new leader)
-        even when the account exists. Ask the database instead of relying on
-        the stored state alone.
-        """
         logger.info("Checking whether the account has been bootstrapped...")
         try:
             result = subprocess.run(
@@ -2543,13 +2540,17 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if result.returncode:
             logger.error("Account check script failed: %s", result.stderr)
             return False
-        return result.stdout.strip() == "true"
+        exists = result.stdout.strip() == "true"
+        if exists:
+            self._stored.account_bootstrapped = True
+
+        return exists
 
     def _bootstrap_account(self):
         """If admin account details are provided, create admin"""
         if not self.unit.is_leader():
             return
-        if self._stored.account_bootstrapped:  # Admin already created
+        if self._check_account_exists():  # Admin already created
             return
         karg = {}  # Keyword args for command line
         karg["admin_email"] = self.charm_config.admin_email
@@ -2571,11 +2572,6 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return
         karg["registration_key"] = self.charm_config.registration_key
         karg["system_email"] = self.charm_config.system_email
-
-        if self._check_account_exists():
-            logger.info("Account already exists, skipping bootstrap.")
-            self._stored.account_bootstrapped = True
-            return
 
         # Collect command line arguments
         args = [BOOTSTRAP_ACCOUNT_SCRIPT]
@@ -2624,9 +2620,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if not self.unit.is_leader():
             return
 
-        if not self._stored.account_bootstrapped:
-            self._stored.account_bootstrapped = self._check_account_exists()
-        if not self._stored.account_bootstrapped:
+        if not self._check_account_exists():
             logger.error("Cannot modify autoregistration because no account exists.")
             return
 
