@@ -55,6 +55,7 @@ from charm import (
     GPG_SERVICE_CONF_SECTIONS,
     HASH_ID_DATABASES,
     LANDSCAPE_OUTBOX_SNAP,
+    LANDSCAPE_SCRIPT_TIMEOUT,
     LANDSCAPE_PACKAGES,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LandscapeServerCharm,
@@ -2996,7 +2997,13 @@ class TestBootstrapAccount(unittest.TestCase):
     @patch("charm.update_service_conf")
     def test_bootstrap_account_runs_once_and_not_again_on_success(self, _):
         """bootstrap-account runs once on success and does not run again."""
-        self.process_mock.return_value.returncode = 0
+
+        def run(args, **kwargs):
+            if CHECK_ACCOUNT_SCRIPT in args:
+                return Mock(returncode=1, stdout="", stderr="")
+            return Mock(returncode=0, stdout="", stderr="")
+
+        self.process_mock.side_effect = run
         admin_email = "hello@ubuntu.com"
         admin_name = "Hello Ubuntu"
         admin_password = "password"
@@ -3030,8 +3037,18 @@ class TestBootstrapAccount(unittest.TestCase):
     @patch("charm.update_service_conf")
     def test_bootstrap_account_retries_after_generic_error(self, _):
         """After a generic error, bootstrap runs again on the next config-changed."""
-        self.process_mock.return_value.returncode = 1
-        self.process_mock.return_value.stderr = "some transient error"
+        bootstrap_rc = [1]
+
+        def run(args, **kwargs):
+            if CHECK_ACCOUNT_SCRIPT in args:
+                return Mock(returncode=1, stdout="", stderr="")
+            return Mock(
+                returncode=bootstrap_rc[0],
+                stdout="",
+                stderr="some transient error",
+            )
+
+        self.process_mock.side_effect = run
         config = {
             "admin_email": "hello@ubuntu.com",
             "admin_name": "Hello Ubuntu",
@@ -3039,7 +3056,7 @@ class TestBootstrapAccount(unittest.TestCase):
             "root_url": "https://www.landscape.com",
         }
         self.harness.update_config(config)
-        self.process_mock.return_value.returncode = 0
+        bootstrap_rc[0] = 0
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
         self.assertEqual(len(self._bootstrap_calls()), 2)
@@ -3144,8 +3161,7 @@ class TestBootstrapAccount(unittest.TestCase):
     def test_set_autoregistration_skipped_when_account_missing(self):
         """Autoregistration is not touched when no account exists."""
         self.harness.set_leader(True)
-        self.process_mock.return_value.returncode = 0
-        self.process_mock.return_value.stdout = "false\n"
+        self.process_mock.return_value.returncode = 1
 
         self.harness.charm._set_autoregistration()
 
@@ -3176,6 +3192,7 @@ class TestBootstrapAccount(unittest.TestCase):
             capture_output=True,
             text=True,
             env=ANY,
+            timeout=LANDSCAPE_SCRIPT_TIMEOUT,
         )
 
     @patch(
@@ -3199,16 +3216,39 @@ class TestBootstrapAccount(unittest.TestCase):
             capture_output=True,
             text=True,
             env=ANY,
+            timeout=LANDSCAPE_SCRIPT_TIMEOUT,
         )
 
     def test_check_account_exists_returns_false_on_script_failure(self):
         """A failing check script is treated as the account not existing."""
         self.harness.set_leader(True)
-        self.process_mock.return_value.returncode = 1
+        self.process_mock.return_value.returncode = 2
         self.process_mock.return_value.stderr = "traceback"
 
         self.assertFalse(self.harness.charm._check_account_exists())
         self.assertFalse(self.harness.charm._stored.account_bootstrapped)
+        self.log_mock.assert_any_call("Account check script failed: %s", "traceback")
+
+    def test_check_account_exists_returns_false_when_account_missing(self):
+        """Exit code 1 means the account does not exist, with no error logged."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 1
+
+        self.assertFalse(self.harness.charm._check_account_exists())
+        self.assertFalse(self.harness.charm._stored.account_bootstrapped)
+        self.assertNotIn(
+            "Account check script failed",
+            [str(c) for c in self.log_mock.call_args_list],
+        )
+
+    def test_check_account_exists_returns_false_on_timeout(self):
+        """A timed-out check script is treated as the account not existing."""
+        self.harness.set_leader(True)
+        self.process_mock.side_effect = subprocess.TimeoutExpired(
+            cmd="check_account.py", timeout=LANDSCAPE_SCRIPT_TIMEOUT
+        )
+
+        self.assertFalse(self.harness.charm._check_account_exists())
 
     def test_check_account_exists_returns_false_on_oserror(self):
         """A check script that cannot run is treated as the account not existing."""
