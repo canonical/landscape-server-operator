@@ -9,17 +9,22 @@ output "app_name" {
 }
 
 locals {
+  # The track component of the charm channel (e.g. "26.04" for "26.04/stable").
+  # Legacy detection must match the track exactly: prefix matching wrongly
+  # classifies tracks like "latest-stable" as the legacy "latest" track.
+  channel_track = split("/", var.channel)[0]
+
   # The debarchive relation was added in rev 357 (first release after PR #150,
   # merged 2026-06-09), well before the task-handler relation below
   legacy_debarchive_channel_tracks = ["latest", "24.04"]
-  legacy_debarchive_channel        = anytrue([for l in local.legacy_debarchive_channel_tracks : startswith(var.channel, l)])
+  legacy_debarchive_channel        = contains(local.legacy_debarchive_channel_tracks, local.channel_track)
   debarchive_updated_rev           = 357
   has_debarchive_relation          = !local.legacy_debarchive_channel && local.charm_revision >= local.debarchive_updated_rev
 
   # The task-handler relation was added later, in rev 447 (first release
   # after PR #168, merged 2026-07-17)
   legacy_task_handler_channel_tracks = ["latest", "24.04"]
-  legacy_task_handler_channel        = anytrue([for l in local.legacy_task_handler_channel_tracks : startswith(var.channel, l)])
+  legacy_task_handler_channel        = contains(local.legacy_task_handler_channel_tracks, local.channel_track)
   task_handler_updated_rev           = 447
   has_task_handler_relation          = !local.legacy_task_handler_channel && local.charm_revision >= local.task_handler_updated_rev
 
@@ -53,7 +58,7 @@ output "has_task_handler_relation" {
 locals {
   # Needed since the relations changed to support the hostagent services
   legacy_amqp_channel_tracks = ["latest", "24.04"]
-  legacy_amqp_channel        = anytrue([for l in local.legacy_amqp_channel_tracks : startswith(var.channel, l)])
+  legacy_amqp_channel        = contains(local.legacy_amqp_channel_tracks, local.channel_track)
   amqp_rels_updated_rev      = 142
   has_modern_amqp_rels       = !local.legacy_amqp_channel && local.charm_revision >= local.amqp_rels_updated_rev
   amqp_relations             = local.has_modern_amqp_rels ? { inbound_amqp = "inbound-amqp", outbound_amqp = "outbound-amqp" } : { amqp = "amqp" }
@@ -61,14 +66,14 @@ locals {
   # Add support for the modern Postgres charm interface and keep backwards compatibility
   postgres_rels_updated_rev      = 213
   legacy_postgres_channel_tracks = ["latest", "24.04"]
-  legacy_postgres_channel        = anytrue([for l in local.legacy_postgres_channel_tracks : startswith(var.channel, l)])
+  legacy_postgres_channel        = contains(local.legacy_postgres_channel_tracks, local.channel_track)
   has_modern_postgres_interface  = !local.legacy_postgres_channel && local.charm_revision >= local.postgres_rels_updated_rev
   db_relations                   = local.has_modern_postgres_interface ? { database = "database", db = "db" } : { db = "db" }
 
   # Legacy HAProxy (pre-26.04): if revision is old enough, expose website endpoint
   haproxy_updated_rev           = 278
   legacy_haproxy_channel_tracks = ["latest", "24.04"]
-  legacy_haproxy_channel        = anytrue([for l in local.legacy_haproxy_channel_tracks : startswith(var.channel, l)])
+  legacy_haproxy_channel        = contains(local.legacy_haproxy_channel_tracks, local.channel_track)
   has_modern_haproxy_interface  = !local.legacy_haproxy_channel && local.charm_revision >= local.haproxy_updated_rev
   haproxy_relations = local.has_modern_haproxy_interface ? {
     appserver_haproxy_route               = "appserver-haproxy-route"
