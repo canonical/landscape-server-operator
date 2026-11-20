@@ -32,11 +32,13 @@ from charmlibs.interfaces.tls_certificates import (
 )
 from charmlibs.passwd import group_exists, user_exists
 from charmlibs.systemd import (
+    service_disable,
     service_pause,
     service_reload,
     service_restart,
     service_resume,
     service_running,
+    service_stop,
     SystemdError,
 )
 from charms.data_platform_libs.v0.data_interfaces import (
@@ -184,10 +186,8 @@ DEFAULT_SERVICES = (
     "landscape-hostagent-messenger",
     "landscape-hostagent-consumer",
 )
-LEADER_SERVICES = (
-    "landscape-package-search",
-    "landscape-package-upload",
-)
+PACKAGE_UPLOAD_SERVICE = "landscape-package-upload"
+LEADER_SERVICES = ("landscape-package-search",)
 
 OPENID_CONFIG_VALS = (
     "openid_provider_url",
@@ -233,7 +233,6 @@ METRIC_INSTRUMENTED_SERVICE_PORTS = [
     ("pingserver", 8070),
     ("message-server", 8090),
     ("api", 9080),
-    ("package-upload", 9100),
     ("package-search", 9099),
 ]
 """
@@ -485,9 +484,6 @@ class LandscapeServerCharm(CharmBase):
         self.api_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="api-haproxy-route"
         )
-        self.package_upload_haproxy_route = HaproxyRouteRequirer(
-            self, relation_name="package-upload-haproxy-route"
-        )
         self.repository_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="repository-haproxy-route"
         )
@@ -521,7 +517,6 @@ class LandscapeServerCharm(CharmBase):
             "pingserver_haproxy_route",
             "message_server_haproxy_route",
             "api_haproxy_route",
-            "package_upload_haproxy_route",
             "hostagent_messenger_haproxy_route",
             "ubuntu_installer_attach_haproxy_route",
             "repository_haproxy_route",
@@ -628,7 +623,6 @@ class LandscapeServerCharm(CharmBase):
         if root_url := self.charm_config.root_url:
             service_conf_updates["global"] = {"root-url": root_url}
             service_conf_updates["api"]["root-url"] = root_url
-            service_conf_updates["package-upload"] = {"root-url": root_url}
 
         service_conf_updates["landscape"]["base_port"] = str(
             self.charm_config.appserver_base_port
@@ -640,9 +634,6 @@ class LandscapeServerCharm(CharmBase):
             self.charm_config.message_server_base_port
         )
         service_conf_updates["api"]["base_port"] = str(self.charm_config.api_base_port)
-        service_conf_updates.setdefault("package-upload", {})["base_port"] = str(
-            self.charm_config.package_upload_base_port
-        )
         service_conf_updates[HOSTAGENT_SERVER_SECTION] = {
             "base_port": str(self.charm_config.hostagent_server_base_port)
         }
@@ -752,9 +743,6 @@ class LandscapeServerCharm(CharmBase):
                 Port("tcp", self.charm_config.message_server_base_port + i),
                 Port("tcp", self.charm_config.api_base_port + i),
             ]
-
-        if self.unit.is_leader():
-            ports.append(Port("tcp", self.charm_config.package_upload_base_port))
 
         if self.charm_config.enable_hostagent_messenger:
             ports.append(Port("tcp", self.charm_config.hostagent_server_base_port))
@@ -903,7 +891,44 @@ class LandscapeServerCharm(CharmBase):
                 self._update_ready_status(restart_services=True)
 
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
+        for relation in self.model.relations.get("nrpe-external-master", []):
+            self._update_nrpe_checks(relation)
         self._provide_all_haproxy_route_requirements()
+        # Last, so a failure still lets the other upgrade steps complete before the
+        # hook fails and is retried.
+        self._disable_package_upload_service()
+
+    def _disable_package_upload_service(self) -> None:
+        """
+        Stop and disable the removed package-upload service if it is installed.
+
+        The unit may no longer be shipped, so its absence is expected and silent. Both
+        steps are attempted and any failure is re-raised, because nothing else manages
+        this service and only a failed hook gets retried.
+        """
+        listing = subprocess.run(
+            [
+                "systemctl",
+                "list-unit-files",
+                "--no-legend",
+                f"{PACKAGE_UPLOAD_SERVICE}.service",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if not listing.stdout.strip():
+            return
+
+        errors = []
+        for verb, action in (("stop", service_stop), ("disable", service_disable)):
+            try:
+                action(PACKAGE_UPLOAD_SERVICE)
+            except SystemdError as e:
+                logger.error("Failed to %s %s: %s", verb, PACKAGE_UPLOAD_SERVICE, e)
+                errors.append(e)
+
+        if errors:
+            raise errors[0]
 
     def _install_debian_packages_with_recommends(
         self, package_names: list[str]
@@ -1056,8 +1081,6 @@ class LandscapeServerCharm(CharmBase):
         """
         self.unit.status = MaintenanceStatus("Starting services")
         is_leader = self.unit.is_leader()
-        deployment_mode = self.charm_config.deployment_mode
-        is_standalone = deployment_mode == "standalone"
 
         update_default_settings(
             {
@@ -1070,9 +1093,7 @@ class LandscapeServerCharm(CharmBase):
                 "RUN_PINGSERVER": str(self.charm_config.worker_counts),
                 "RUN_CRON": "yes" if is_leader else "no",
                 "RUN_PACKAGESEARCH": "yes" if is_leader else "no",
-                "RUN_PACKAGEUPLOADSERVER": (
-                    "yes" if is_leader and is_standalone else "no"
-                ),
+                "RUN_PACKAGEUPLOADSERVER": "no",
                 "RUN_PPPA_PROXY": "no",
             }
         )
@@ -1464,7 +1485,6 @@ class LandscapeServerCharm(CharmBase):
                 {
                     "global": {"root-url": url},
                     "api": {"root-url": url},
-                    "package-upload": {"root-url": url},
                 }
             )
 
@@ -1691,18 +1711,6 @@ class LandscapeServerCharm(CharmBase):
             unit_address=unit_ip,
             hostname=sni,
         )
-        self.package_upload_haproxy_route.provide_haproxy_route_requirements(
-            service=f"landscape-package-upload-{model_uuid}",
-            ports=[cfg.package_upload_base_port],
-            paths=["/upload"],
-            protocol="http",
-            **cfg.haproxy_health_checks.package_upload.route_kwargs(),
-            **cfg.haproxy_timeouts.package_upload.route_kwargs(),
-            header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_default,
-            unit_address=unit_ip,
-            hostname=sni,
-        )
         # Repository uses appserver ports and allow_http=True because clients
         # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
         # It has its own route rather than being merged with appserver because
@@ -1908,12 +1916,14 @@ class LandscapeServerCharm(CharmBase):
     def _update_nrpe_checks(self, relation: Relation):
         logger.debug("Configuring NRPE checks")
 
+        # The removed package-upload check is always cleaned up, since it is no longer
+        # in `LEADER_SERVICES` and would otherwise be left behind on upgraded units.
         if self.unit.is_leader():
             services_to_add = DEFAULT_SERVICES + LEADER_SERVICES
-            services_to_remove = ()
+            services_to_remove = (PACKAGE_UPLOAD_SERVICE,)
         else:
             services_to_add = DEFAULT_SERVICES
-            services_to_remove = LEADER_SERVICES
+            services_to_remove = LEADER_SERVICES + (PACKAGE_UPLOAD_SERVICE,)
 
         monitors = {
             "monitors": {

@@ -64,11 +64,19 @@ class CapturingStringIO(StringIO):
 
 @pytest.fixture()
 def redirect_systemd_paths(monkeypatch, tmp_path):
+    """
+    Redirect `/etc/systemd/system` file operations into `tmp_path`.
+
+    Paths go through `os.fspath` because the patched functions can receive `Path`
+    objects (for example, `Path.exists` calls `os.path.exists` on Python 3.14), and
+    `Path.replace` is not `str.replace`.
+    """
     real_makedirs = os.makedirs
 
     def fake_makedirs(path, exist_ok=False):
         real_makedirs(
-            path.replace("/etc/systemd/system", str(tmp_path)), exist_ok=exist_ok
+            os.fspath(path).replace("/etc/systemd/system", str(tmp_path)),
+            exist_ok=exist_ok,
         )
 
     monkeypatch.setattr("settings_files.os.makedirs", fake_makedirs)
@@ -76,7 +84,9 @@ def redirect_systemd_paths(monkeypatch, tmp_path):
 
     def fake_open(path, mode="r", **kwargs):
         return real_open(
-            path.replace("/etc/systemd/system", str(tmp_path)), mode, **kwargs
+            os.fspath(path).replace("/etc/systemd/system", str(tmp_path)),
+            mode,
+            **kwargs,
         )
 
     monkeypatch.setattr("builtins.open", fake_open)
@@ -84,13 +94,17 @@ def redirect_systemd_paths(monkeypatch, tmp_path):
     real_exists = os.path.exists
 
     def fake_exists(path):
-        return real_exists(path.replace("/etc/systemd/system", str(tmp_path)))
+        return real_exists(
+            os.fspath(path).replace("/etc/systemd/system", str(tmp_path))
+        )
 
     monkeypatch.setattr("settings_files.os.path.exists", fake_exists)
     real_remove = os.remove
 
     def fake_remove(path):
-        return real_remove(path.replace("/etc/systemd/system", str(tmp_path)))
+        return real_remove(
+            os.fspath(path).replace("/etc/systemd/system", str(tmp_path))
+        )
 
     monkeypatch.setattr("settings_files.os.remove", fake_remove)
 

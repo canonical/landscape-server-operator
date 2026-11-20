@@ -122,7 +122,6 @@ def haproxy_route_state_fixture(
         "pingserver-haproxy-route",
         "message-server-haproxy-route",
         "api-haproxy-route",
-        "package-upload-haproxy-route",
         "repository-haproxy-route",
     ]:
         rels.append(scenario.Relation(endpoint=endpoint))

@@ -290,6 +290,28 @@ run "test_haproxy_route_integrations_created" {
   }
 }
 
+run "test_package_upload_integration_skipped_after_removal" {
+  command = plan
+
+  variables {
+    landscape_server = {
+      channel  = "26.04/edge"
+      revision = 653
+    }
+    haproxy_route_offer_url = "admin/lbaas.haproxy-route"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_package_upload_haproxy_route_lbaas) == 0
+    error_message = "package-upload integration should not be created once the charm drops the service"
+  }
+
+  assert {
+    condition     = length(juju_integration.landscape_server_api_haproxy_route_lbaas) == 1
+    error_message = "other haproxy-route integrations should still be created"
+  }
+}
+
 run "test_haproxy_route_integrations_skipped" {
   command = plan
 

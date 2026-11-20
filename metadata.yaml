@@ -39,6 +39,9 @@ requires:
   api-haproxy-route:
     interface: haproxy-route
     limit: 1
+  # Deprecated and unused. Kept only so `juju refresh` does not fail on models that
+  # still have this relation. Remove the relation, then drop this endpoint in a later
+  # release.
   package-upload-haproxy-route:
     interface: haproxy-route
     limit: 1

@@ -66,7 +66,6 @@ def test_defaults():
     assert config.haproxy_health_checks.pingserver.path == "/ping"
     assert config.haproxy_health_checks.message_server.path == "/message-system"
     assert config.haproxy_health_checks.api.path == "/api/about"
-    assert config.haproxy_health_checks.package_upload.path == "/upload"
     assert config.haproxy_health_checks.repository.path is None
     assert config.haproxy_health_checks.appserver.interval == 2
     assert config.haproxy_health_checks.appserver.rise == 2
@@ -76,7 +75,6 @@ def test_defaults():
     assert config.pingserver_base_port == 8070
     assert config.message_server_base_port == 8090
     assert config.api_base_port == 9080
-    assert config.package_upload_base_port == 9100
     assert config.hostagent_server_base_port == 50052
     assert config.ubuntu_installer_attach_base_port == 53354
     assert config.gpg_secret_id is None
@@ -209,7 +207,6 @@ def test_valid_custom_ports():
     defaults["pingserver_base_port"] = 50_100
     defaults["message_server_base_port"] = 50_200
     defaults["api_base_port"] = 50_300
-    defaults["package_upload_base_port"] = 50_400
     defaults["hostagent_server_base_port"] = 50_500
     defaults["ubuntu_installer_attach_base_port"] = 50_600
     defaults["worker_counts"] = 100

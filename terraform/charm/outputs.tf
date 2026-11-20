@@ -70,16 +70,20 @@ locals {
   legacy_haproxy_channel_tracks = ["latest", "24.04"]
   legacy_haproxy_channel        = anytrue([for l in local.legacy_haproxy_channel_tracks : startswith(var.channel, l)])
   has_modern_haproxy_interface  = !local.legacy_haproxy_channel && local.charm_revision >= local.haproxy_updated_rev
-  haproxy_relations = local.has_modern_haproxy_interface ? {
+
+  # The package-upload service was removed. Older revisions still run it and need its
+  # route, so the endpoint is only exposed below this revision.
+  package_upload_removed_rev = 653
+  has_package_upload_route   = local.has_modern_haproxy_interface && local.charm_revision < local.package_upload_removed_rev
+  haproxy_relations = local.has_modern_haproxy_interface ? merge({
     appserver_haproxy_route               = "appserver-haproxy-route"
     pingserver_haproxy_route              = "pingserver-haproxy-route"
     message_server_haproxy_route          = "message-server-haproxy-route"
     api_haproxy_route                     = "api-haproxy-route"
-    package_upload_haproxy_route          = "package-upload-haproxy-route"
     repository_haproxy_route              = "repository-haproxy-route"
     hostagent_messenger_haproxy_route     = "hostagent-messenger-haproxy-route"
     ubuntu_installer_attach_haproxy_route = "ubuntu-installer-attach-haproxy-route"
-  } : { website = "website" }
+  }, local.has_package_upload_route ? { package_upload_haproxy_route = "package-upload-haproxy-route" } : {}) : { website = "website" }
 
   # Earlier revisions expose these gRPC endpoints as haproxy-route-tcp, and
   # revisions before 595 have no certificates endpoint.

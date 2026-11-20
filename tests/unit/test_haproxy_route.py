@@ -178,26 +178,6 @@ class TestLeaderRoutes:
         mock = _run_provide(context, state)
         assert any("repository" in s for s in _services_called(mock))
 
-    def test_all_units_publish_package_upload_route(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(leader=False, **replicas_network_state)
-        mock = _run_provide(context, state)
-        assert any("package-upload" in s for s in _services_called(mock))
-
-    def test_package_upload_has_health_checks(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(**replicas_network_state)
-        mock = _run_provide(context, state)
-        calls = _calls_for(mock, "package-upload")
-        assert calls
-        assert calls[0].kwargs.get("check_interval") == 2
-        assert calls[0].kwargs.get("check_rise") == 2
-        assert calls[0].kwargs.get("check_fall") == 3
-
-
-class TestHostname:
-    """hostname reflects root_url config or falls back to leader_ip."""
-
     def test_hostname_from_root_url(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(
@@ -297,13 +277,6 @@ class TestHealthChecks:
         calls = _calls_for(mock, "api")
         assert calls[0].kwargs.get("check_path") == "/api/about"
 
-    def test_package_upload_check_path(self, replicas_network_state):
-        context = Context(LandscapeServerCharm)
-        state = State(**replicas_network_state)
-        mock = _run_provide(context, state)
-        calls = _calls_for(mock, "package-upload")
-        assert calls[0].kwargs.get("check_path") == "/upload"
-
     def test_repository_has_no_health_check(self, replicas_network_state):
         context = Context(LandscapeServerCharm)
         state = State(**replicas_network_state)
@@ -354,7 +327,6 @@ HAPROXY_SERVICES = [
     ("pingserver", "pingserver"),
     ("message_server", "message-server"),
     ("api", "api"),
-    ("package_upload", "package-upload"),
     ("repository", "repository"),
 ]
 

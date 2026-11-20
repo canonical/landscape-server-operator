@@ -310,6 +310,43 @@ run "in_model_haproxy_relations" {
   }
 }
 
+run "package_upload_relation_removed_at_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/edge"
+    revision   = 653
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = !contains(keys(output.requires), "package_upload_haproxy_route")
+    error_message = "Rev 653+ should not expose package-upload-haproxy-route"
+  }
+
+  assert {
+    condition     = output.requires.api_haproxy_route == "api-haproxy-route"
+    error_message = "Rev 653+ should still expose the other haproxy-route relations"
+  }
+}
+
+run "package_upload_relation_present_below_threshold" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "26.04/edge"
+    revision   = 652
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.package_upload_haproxy_route == "package-upload-haproxy-route"
+    error_message = "Rev 652 and earlier should expose package-upload-haproxy-route"
+  }
+}
+
 run "external_haproxy_relations" {
   command = plan
 
