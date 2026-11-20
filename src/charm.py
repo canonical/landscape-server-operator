@@ -99,7 +99,12 @@ from haproxy import (
     SERVER_OPTIONS,
     UBUNTU_INSTALLER_ATTACH_SERVICE,
 )
-from helpers import get_modified_env_vars, logger, migrate_service_conf
+from helpers import (
+    get_landscape_python,
+    get_modified_env_vars,
+    logger,
+    migrate_service_conf,
+)
 from settings_files import (
     AMQP_USERNAME,
     configure_for_deployment_mode,
@@ -2529,7 +2534,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         logger.info("Checking whether the account has been bootstrapped...")
         try:
             result = subprocess.run(
-                ["python3", CHECK_ACCOUNT_SCRIPT],
+                [get_landscape_python(), CHECK_ACCOUNT_SCRIPT],
                 capture_output=True,
                 text=True,
                 env=get_modified_env_vars(),
@@ -2626,7 +2631,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         logger.info("Setting autoregistration...")
         result = subprocess.run(
-            ["python3", AUTOREGISTRATION_SCRIPT, on],
+            [get_landscape_python(), AUTOREGISTRATION_SCRIPT, on],
             capture_output=True,
             text=True,
             env=get_modified_env_vars(),

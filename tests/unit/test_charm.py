@@ -3160,6 +3160,47 @@ class TestBootstrapAccount(unittest.TestCase):
         ]
         self.assertEqual(autoregistration_calls, [])
 
+    @patch(
+        "charm.get_landscape_python",
+        return_value="/opt/venvs/landscape/bin/python3",
+    )
+    def test_check_account_uses_landscape_venv_python(self, _):
+        """The check script runs with the venv python when it is available."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = "true\n"
+
+        self.assertTrue(self.harness.charm._check_account_exists())
+        self.process_mock.assert_any_call(
+            ["/opt/venvs/landscape/bin/python3", CHECK_ACCOUNT_SCRIPT],
+            capture_output=True,
+            text=True,
+            env=ANY,
+        )
+
+    @patch(
+        "charm.get_landscape_python",
+        return_value="/opt/venvs/landscape/bin/python3",
+    )
+    def test_set_autoregistration_uses_landscape_venv_python(self, _):
+        """The autoregistration script runs with the venv python when available."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = ""
+
+        self.harness.charm._set_autoregistration()
+        self.process_mock.assert_any_call(
+            [
+                "/opt/venvs/landscape/bin/python3",
+                AUTOREGISTRATION_SCRIPT,
+                "off",
+            ],
+            capture_output=True,
+            text=True,
+            env=ANY,
+        )
+
     def test_check_account_exists_returns_false_on_script_failure(self):
         """A failing check script is treated as the account not existing."""
         self.harness.set_leader(True)
