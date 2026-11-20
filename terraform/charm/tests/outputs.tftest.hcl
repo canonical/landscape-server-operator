@@ -110,6 +110,37 @@ run "legacy_amqp_relations_by_channel" {
   }
 }
 
+run "latest_stable_track_is_not_legacy_latest" {
+  command = plan
+
+  variables {
+    model_uuid = uuid()
+    channel    = "latest-stable/stable"
+    revision   = 643
+    base       = "ubuntu@24.04"
+  }
+
+  assert {
+    condition     = output.requires.inbound_amqp == "inbound-amqp" && output.requires.outbound_amqp == "outbound-amqp"
+    error_message = "The latest-stable track is not the legacy latest track and must use the modern amqp relations"
+  }
+
+  assert {
+    condition     = output.requires.database == "database"
+    error_message = "The latest-stable track must use the modern postgres interface"
+  }
+
+  assert {
+    condition     = output.has_modern_haproxy_interface == true
+    error_message = "The latest-stable track must use the modern haproxy-route interface"
+  }
+
+  assert {
+    condition     = output.has_debarchive_relation == true && output.has_task_handler_relation == true
+    error_message = "The latest-stable track must provide the debarchive and task-handler relations"
+  }
+}
+
 run "provides_relations" {
   command = plan
 
