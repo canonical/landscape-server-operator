@@ -10,8 +10,6 @@ output "app_name" {
 
 locals {
   # The track component of the charm channel (e.g. "26.04" for "26.04/stable").
-  # Legacy detection must match the track exactly: prefix matching wrongly
-  # classifies tracks like "latest-stable" as the legacy "latest" track.
   channel_track = split("/", var.channel)[0]
 
   # The debarchive relation was added in rev 357 (first release after PR #150,
