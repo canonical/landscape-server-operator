@@ -50,7 +50,6 @@ safe-outputs:
     # Exactly one own-repo changelog PR per run; docs edits never go through
     # this handler, only through push-to-pull-request-branch below.
     max: 1
-    preserve-branch-name: true
     recreate-ref: true
     # The bot only ever edits CHANGELOG.md in this repository; the handler
     # rejects any other path outright. Release-notes pages live in the docs
@@ -67,6 +66,8 @@ safe-outputs:
     # path: that path produces commits GitHub does not mark verified for this
     # bot token, and pushSignedCommits then refuses to publish the branch.
     signed-commits: false
+  add-comment:
+    target: "*"
 ---
 
 # Weekly changelog update
