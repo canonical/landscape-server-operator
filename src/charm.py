@@ -1653,6 +1653,8 @@ class LandscapeServerCharm(CharmBase):
                 "/upload",
                 "/repository",
                 "/debarchive",
+                # Served by the landscape-mcp charm through the same HAProxy.
+                "/mcp",
             ],
         )
         self.pingserver_haproxy_route.provide_haproxy_route_requirements(
