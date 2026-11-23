@@ -2899,7 +2899,6 @@ class TestBootstrapAccount(unittest.TestCase):
         grp_mock.return_value = Mock(spec_set=struct_group, gr_gid=1000)
 
         self.process_mock = patch("charm.subprocess.run").start()
-        patch("charm.get_landscape_python", return_value="python3").start()
         self.log_mock = patch("charm.logger.error").start()
         self.log_info_mock = patch("charm.logger.info").start()
 

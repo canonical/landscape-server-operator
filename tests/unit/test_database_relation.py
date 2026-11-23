@@ -785,12 +785,6 @@ class TestBootstrapAccount:
         "root_url": "https://landscape.local",
     }
 
-    @pytest.fixture(autouse=True)
-    def _landscape_python(self):
-        """The test environment has no Landscape venv; stub the interpreter."""
-        with patch("charm.get_landscape_python", return_value="python3"):
-            yield
-
     @staticmethod
     def _state(
         *, account_bootstrapped: bool = False, config: dict | None = None
