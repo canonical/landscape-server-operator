@@ -13,11 +13,14 @@ def get_landscape_python():
     """Returns a Python interpreter that can import Landscape's dependencies.
 
     Landscape Server packages from 26.04 ship their Python dependencies in a
-    dedicated venv, which the system interpreter cannot import.
+    dedicated venv, which the system interpreter cannot import, so there is no
+    usable fallback if the venv is missing.
     """
-    if os.path.exists(LANDSCAPE_VENV_PYTHON):
-        return LANDSCAPE_VENV_PYTHON
-    return "python3"
+    if not os.path.exists(LANDSCAPE_VENV_PYTHON):
+        raise FileNotFoundError(
+            f"Landscape venv python not found at {LANDSCAPE_VENV_PYTHON}"
+        )
+    return LANDSCAPE_VENV_PYTHON
 
 
 def get_modified_env_vars():

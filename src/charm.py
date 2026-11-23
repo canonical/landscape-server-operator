@@ -2537,9 +2537,10 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return True
 
         logger.info("Checking whether the account has been bootstrapped...")
+        python = get_landscape_python()
         try:
             result = subprocess.run(
-                [get_landscape_python(), CHECK_ACCOUNT_SCRIPT],
+                [python, CHECK_ACCOUNT_SCRIPT],
                 capture_output=True,
                 text=True,
                 env=get_modified_env_vars(),

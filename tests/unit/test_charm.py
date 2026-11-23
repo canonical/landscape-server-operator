@@ -66,6 +66,7 @@ from charm import (
     SCHEMA_SCRIPT,
     UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
 )
+from helpers import get_landscape_python, LANDSCAPE_VENV_PYTHON
 from settings_files import AMQP_USERNAME, VHOSTS
 from src.charm import LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED, LANDSCAPE_SERVER
 
@@ -2898,6 +2899,7 @@ class TestBootstrapAccount(unittest.TestCase):
         grp_mock.return_value = Mock(spec_set=struct_group, gr_gid=1000)
 
         self.process_mock = patch("charm.subprocess.run").start()
+        patch("charm.get_landscape_python", return_value="python3").start()
         self.log_mock = patch("charm.logger.error").start()
         self.log_info_mock = patch("charm.logger.info").start()
 
@@ -3256,6 +3258,34 @@ class TestBootstrapAccount(unittest.TestCase):
         self.process_mock.side_effect = FileNotFoundError("python3")
 
         self.assertFalse(self.harness.charm._check_account_exists())
+
+    @patch("helpers.os.path.exists", return_value=True)
+    def test_get_landscape_python_returns_venv_python(self, _):
+        """The venv python is returned when it exists."""
+        self.assertEqual(get_landscape_python(), LANDSCAPE_VENV_PYTHON)
+
+    @patch("helpers.os.path.exists", return_value=False)
+    def test_get_landscape_python_fails_without_venv(self, _):
+        """There is no fallback interpreter when the venv is missing."""
+        with self.assertRaises(FileNotFoundError):
+            get_landscape_python()
+
+    @patch("charm.get_landscape_python", side_effect=FileNotFoundError("no venv"))
+    def test_check_account_exists_propagates_missing_venv(self, _):
+        """A missing venv fails loudly instead of looking like "no account"."""
+        self.harness.set_leader(True)
+
+        with self.assertRaises(FileNotFoundError):
+            self.harness.charm._check_account_exists()
+
+    @patch("charm.get_landscape_python", side_effect=FileNotFoundError("no venv"))
+    def test_set_autoregistration_fails_without_venv(self, _):
+        """A missing venv fails the hook rather than silently skipping."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+
+        with self.assertRaises(FileNotFoundError):
+            self.harness.charm._set_autoregistration()
 
     @patch("subprocess.run")
     def test_hash_id_databases(self, run_mock):
