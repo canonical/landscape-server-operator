@@ -233,8 +233,10 @@ options:
     type: boolean
     default: false
     description: |
-      Bypassed Landscape administrator registration approval for clients that
-      register using the registration password.
+      Bypass Landscape administrator registration approval for clients that
+      register using the registration password. This only takes effect when
+      the account has a registration key, which can be set at bootstrap time
+      with the `registration_key` config option.
   redirect_https:
     type: string
     default: default
