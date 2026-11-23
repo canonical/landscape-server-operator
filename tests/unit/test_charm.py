@@ -45,7 +45,9 @@ from ops.testing import (
 import pytest
 
 from charm import (
+    AUTOREGISTRATION_SCRIPT,
     BOOTSTRAP_ACCOUNT_SCRIPT,
+    CHECK_ACCOUNT_SCRIPT,
     DEFAULT_OUTBOX_SNAP_CHANNEL,
     DEFAULT_SERVICES,
     get_modified_env_vars,
@@ -54,6 +56,7 @@ from charm import (
     HASH_ID_DATABASES,
     LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_PACKAGES,
+    LANDSCAPE_SCRIPT_TIMEOUT,
     LANDSCAPE_UBUNTU_INSTALLER_ATTACH,
     LandscapeServerCharm,
     LEADER_SERVICES,
@@ -63,6 +66,7 @@ from charm import (
     SCHEMA_SCRIPT,
     UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
 )
+from helpers import get_landscape_python, LANDSCAPE_VENV_PYTHON
 from settings_files import AMQP_USERNAME, VHOSTS
 from src.charm import LANDSCAPE_HASH_IDS, LANDSCAPE_HOSTED, LANDSCAPE_SERVER
 
@@ -2876,6 +2880,13 @@ class TestBootstrapAccount(unittest.TestCase):
             if c.args and c.args[0] and c.args[0][0] == BOOTSTRAP_ACCOUNT_SCRIPT
         ]
 
+    def _check_account_calls(self):
+        return [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and CHECK_ACCOUNT_SCRIPT in c.args[0]
+        ]
+
     @patch("charm.update_service_conf")
     def test_bootstrap_account_doesnt_run_with_missing_configs(self, _):
         self.harness.update_config(
@@ -2952,7 +2963,13 @@ class TestBootstrapAccount(unittest.TestCase):
     @patch("charm.update_service_conf")
     def test_bootstrap_account_runs_once_and_not_again_on_success(self, _):
         """bootstrap-account runs once on success and does not run again."""
-        self.process_mock.return_value.returncode = 0
+
+        def run(args, **kwargs):
+            if CHECK_ACCOUNT_SCRIPT in args:
+                return Mock(returncode=1, stdout="", stderr="")
+            return Mock(returncode=0, stdout="", stderr="")
+
+        self.process_mock.side_effect = run
         admin_email = "hello@ubuntu.com"
         admin_name = "Hello Ubuntu"
         admin_password = "password"
@@ -2986,8 +3003,18 @@ class TestBootstrapAccount(unittest.TestCase):
     @patch("charm.update_service_conf")
     def test_bootstrap_account_retries_after_generic_error(self, _):
         """After a generic error, bootstrap runs again on the next config-changed."""
-        self.process_mock.return_value.returncode = 1
-        self.process_mock.return_value.stderr = "some transient error"
+        bootstrap_rc = [1]
+
+        def run(args, **kwargs):
+            if CHECK_ACCOUNT_SCRIPT in args:
+                return Mock(returncode=1, stdout="", stderr="")
+            return Mock(
+                returncode=bootstrap_rc[0],
+                stdout="",
+                stderr="some transient error",
+            )
+
+        self.process_mock.side_effect = run
         config = {
             "admin_email": "hello@ubuntu.com",
             "admin_name": "Hello Ubuntu",
@@ -2995,7 +3022,7 @@ class TestBootstrapAccount(unittest.TestCase):
             "root_url": "https://www.landscape.com",
         }
         self.harness.update_config(config)
-        self.process_mock.return_value.returncode = 0
+        bootstrap_rc[0] = 0
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
         self.assertEqual(len(self._bootstrap_calls()), 2)
@@ -3024,6 +3051,205 @@ class TestBootstrapAccount(unittest.TestCase):
         self.harness.update_config(config)
         self.harness.update_config(config)  # Third time
         self.assertEqual(len(self._bootstrap_calls()), 1)
+
+    @patch("charm.update_service_conf")
+    def test_bootstrap_account_skipped_when_account_already_exists(self, _):
+        """If the account exists, bootstrap is skipped and the flag is set."""
+        self.harness.set_leader(True)
+
+        def run(args, **kwargs):
+            exists = CHECK_ACCOUNT_SCRIPT in args
+            return Mock(returncode=0, stdout="true\n" if exists else "", stderr="")
+
+        self.process_mock.side_effect = run
+        self.harness.update_config(
+            {
+                "admin_email": "hello@ubuntu.com",
+                "admin_name": "Hello Ubuntu",
+                "admin_password": "password",
+                "root_url": "https://www.landscape.com",
+            }
+        )
+
+        self.assertEqual(self._bootstrap_calls(), [])
+        self.assertTrue(self.harness.charm._stored.account_bootstrapped)
+
+    def test_check_account_not_run_when_already_bootstrapped(self):
+        """The check script does not run if the stored flag is already set."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = ""
+
+        self.harness.charm._bootstrap_account()
+        self.harness.charm._set_autoregistration()
+
+        self.assertEqual(self._check_account_calls(), [])
+
+    def test_check_account_exists_short_circuits_when_bootstrapped(self):
+        """The stored flag is trusted without running the check script."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+
+        self.assertTrue(self.harness.charm._check_account_exists())
+        self.assertEqual(self._check_account_calls(), [])
+
+    def test_check_account_exists_sets_bootstrapped_flag(self):
+        """The stored flag is set when the check finds the account."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = "true\n"
+
+        self.assertTrue(self.harness.charm._check_account_exists())
+        self.assertTrue(self.harness.charm._stored.account_bootstrapped)
+
+    def test_set_autoregistration_sets_bootstrapped_when_account_exists(self):
+        """A False stored flag is corrected when the account exists."""
+        self.harness.set_leader(True)
+
+        def run(args, **kwargs):
+            exists = CHECK_ACCOUNT_SCRIPT in args
+            return Mock(returncode=0, stdout="true\n" if exists else "", stderr="")
+
+        self.process_mock.side_effect = run
+
+        self.harness.charm._set_autoregistration()
+
+        self.assertTrue(self.harness.charm._stored.account_bootstrapped)
+        self.assertEqual(len(self._check_account_calls()), 1)
+        autoregistration_calls = [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and AUTOREGISTRATION_SCRIPT in c.args[0]
+        ]
+        self.assertEqual(len(autoregistration_calls), 1)
+
+    def test_set_autoregistration_skipped_when_account_missing(self):
+        """Autoregistration is not touched when no account exists."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 1
+
+        self.harness.charm._set_autoregistration()
+
+        self.assertFalse(self.harness.charm._stored.account_bootstrapped)
+        self.log_mock.assert_any_call(
+            "Cannot modify autoregistration because no account exists."
+        )
+        autoregistration_calls = [
+            c
+            for c in self.process_mock.call_args_list
+            if c.args and c.args[0] and AUTOREGISTRATION_SCRIPT in c.args[0]
+        ]
+        self.assertEqual(autoregistration_calls, [])
+
+    @patch(
+        "charm.get_landscape_python",
+        return_value="/opt/venvs/landscape/bin/python3",
+    )
+    def test_check_account_uses_landscape_venv_python(self, _):
+        """The check script runs with the venv python when it is available."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = "true\n"
+
+        self.assertTrue(self.harness.charm._check_account_exists())
+        self.process_mock.assert_any_call(
+            ["/opt/venvs/landscape/bin/python3", CHECK_ACCOUNT_SCRIPT],
+            capture_output=True,
+            text=True,
+            env=ANY,
+            timeout=LANDSCAPE_SCRIPT_TIMEOUT,
+        )
+
+    @patch(
+        "charm.get_landscape_python",
+        return_value="/opt/venvs/landscape/bin/python3",
+    )
+    def test_set_autoregistration_uses_landscape_venv_python(self, _):
+        """The autoregistration script runs with the venv python when available."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+        self.process_mock.return_value.returncode = 0
+        self.process_mock.return_value.stdout = ""
+
+        self.harness.charm._set_autoregistration()
+        self.process_mock.assert_any_call(
+            [
+                "/opt/venvs/landscape/bin/python3",
+                AUTOREGISTRATION_SCRIPT,
+                "off",
+            ],
+            capture_output=True,
+            text=True,
+            env=ANY,
+            timeout=LANDSCAPE_SCRIPT_TIMEOUT,
+        )
+
+    def test_check_account_exists_returns_false_on_script_failure(self):
+        """A failing check script is treated as the account not existing."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 2
+        self.process_mock.return_value.stderr = "traceback"
+
+        self.assertFalse(self.harness.charm._check_account_exists())
+        self.assertFalse(self.harness.charm._stored.account_bootstrapped)
+        self.log_mock.assert_any_call("Account check script failed: %s", "traceback")
+
+    def test_check_account_exists_returns_false_when_account_missing(self):
+        """Exit code 1 means the account does not exist, with no error logged."""
+        self.harness.set_leader(True)
+        self.process_mock.return_value.returncode = 1
+
+        self.assertFalse(self.harness.charm._check_account_exists())
+        self.assertFalse(self.harness.charm._stored.account_bootstrapped)
+        self.assertNotIn(
+            "Account check script failed",
+            [str(c) for c in self.log_mock.call_args_list],
+        )
+
+    def test_check_account_exists_returns_false_on_timeout(self):
+        """A timed-out check script is treated as the account not existing."""
+        self.harness.set_leader(True)
+        self.process_mock.side_effect = subprocess.TimeoutExpired(
+            cmd="check_account.py", timeout=LANDSCAPE_SCRIPT_TIMEOUT
+        )
+
+        self.assertFalse(self.harness.charm._check_account_exists())
+
+    def test_check_account_exists_returns_false_on_oserror(self):
+        """A check script that cannot run is treated as the account not existing."""
+        self.harness.set_leader(True)
+        self.process_mock.side_effect = FileNotFoundError("python3")
+
+        self.assertFalse(self.harness.charm._check_account_exists())
+
+    @patch("helpers.os.path.exists", return_value=True)
+    def test_get_landscape_python_returns_venv_python(self, _):
+        """The venv python is returned when it exists."""
+        self.assertEqual(get_landscape_python(), LANDSCAPE_VENV_PYTHON)
+
+    @patch("helpers.os.path.exists", return_value=False)
+    def test_get_landscape_python_fails_without_venv(self, _):
+        """There is no fallback interpreter when the venv is missing."""
+        with self.assertRaises(FileNotFoundError):
+            get_landscape_python()
+
+    @patch("charm.get_landscape_python", side_effect=FileNotFoundError("no venv"))
+    def test_check_account_exists_propagates_missing_venv(self, _):
+        """A missing venv fails loudly instead of looking like "no account"."""
+        self.harness.set_leader(True)
+
+        with self.assertRaises(FileNotFoundError):
+            self.harness.charm._check_account_exists()
+
+    @patch("charm.get_landscape_python", side_effect=FileNotFoundError("no venv"))
+    def test_set_autoregistration_fails_without_venv(self, _):
+        """A missing venv fails the hook rather than silently skipping."""
+        self.harness.set_leader(True)
+        self.harness.charm._stored.account_bootstrapped = True
+
+        with self.assertRaises(FileNotFoundError):
+            self.harness.charm._set_autoregistration()
 
     @patch("subprocess.run")
     def test_hash_id_databases(self, run_mock):

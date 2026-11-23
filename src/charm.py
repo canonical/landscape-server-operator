@@ -99,7 +99,12 @@ from haproxy import (
     SERVER_OPTIONS,
     UBUNTU_INSTALLER_ATTACH_SERVICE,
 )
-from helpers import get_modified_env_vars, logger, migrate_service_conf
+from helpers import (
+    get_landscape_python,
+    get_modified_env_vars,
+    logger,
+    migrate_service_conf,
+)
 from settings_files import (
     AMQP_USERNAME,
     configure_for_deployment_mode,
@@ -139,6 +144,8 @@ POSTFIX_SASL_PASSWD = "/etc/postfix/sasl_passwd"
 SCHEMA_SCRIPT = "/usr/bin/landscape-schema"
 BOOTSTRAP_ACCOUNT_SCRIPT = "/opt/canonical/landscape/bootstrap-account"
 AUTOREGISTRATION_SCRIPT = os.path.join(os.path.dirname(__file__), "autoregistration.py")
+CHECK_ACCOUNT_SCRIPT = os.path.join(os.path.dirname(__file__), "check_account.py")
+LANDSCAPE_SCRIPT_TIMEOUT = 60  # seconds; for scripts run with the landscape python
 HASH_ID_DATABASES = "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
 UPDATE_WSL_DISTRIBUTIONS_SCRIPT = "/opt/canonical/landscape/update-wsl-distributions"
 
@@ -2528,11 +2535,40 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         )
         self.unit.status = WaitingStatus("Waiting on relations")
 
+    def _check_account_exists(self) -> bool:
+        """Checks whether the initial account exists in the database.
+
+        The check script exits 0 if the account exists and 1 if it does not;
+        any other failure is treated as "no account".
+        """
+        if self._stored.account_bootstrapped:
+            return True
+
+        logger.info("Checking whether the account has been bootstrapped...")
+        python = get_landscape_python()
+        try:
+            result = subprocess.run(
+                [python, CHECK_ACCOUNT_SCRIPT],
+                capture_output=True,
+                text=True,
+                env=get_modified_env_vars(),
+                timeout=LANDSCAPE_SCRIPT_TIMEOUT,
+            )
+        except (OSError, subprocess.TimeoutExpired) as e:
+            logger.error("Failed to run account check script: %s", e)
+            return False
+        if result.returncode == 1:
+            return False
+        if result.returncode:
+            logger.error("Account check script failed: %s", result.stderr)
+            return False
+
+        self._stored.account_bootstrapped = True
+        return True
+
     def _bootstrap_account(self):
         """If admin account details are provided, create admin"""
         if not self.unit.is_leader():
-            return
-        if self._stored.account_bootstrapped:  # Admin already created
             return
         karg = {}  # Keyword args for command line
         karg["admin_email"] = self.charm_config.admin_email
@@ -2540,6 +2576,8 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["admin_password"] = self.charm_config.admin_password
         required_args = karg.values()
         if not any(required_args):  # Return since no args are specified
+            return
+        if self._check_account_exists():  # Admin already created
             return
         if not all(required_args):  # Some required args are missing
             logger.error(
@@ -2602,16 +2640,17 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         if not self.unit.is_leader():
             return
 
-        if not self._stored.account_bootstrapped:
+        if not self._check_account_exists():
             logger.error("Cannot modify autoregistration because no account exists.")
             return
 
         logger.info("Setting autoregistration...")
         result = subprocess.run(
-            ["python3", AUTOREGISTRATION_SCRIPT, on],
+            [get_landscape_python(), AUTOREGISTRATION_SCRIPT, on],
             capture_output=True,
             text=True,
             env=get_modified_env_vars(),
+            timeout=LANDSCAPE_SCRIPT_TIMEOUT,
         )
 
         logger.info(result.stdout)
