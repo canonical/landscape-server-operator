@@ -2,7 +2,7 @@
 
 """
 This script can turn autoregistration on or off for a given landscape-server
-installation. It's in a seperate script to avoid polluting the charm source
+installation. It's in a separate script to avoid polluting the charm source
 with landscape imports.
 """
 

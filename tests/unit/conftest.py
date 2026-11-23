@@ -84,6 +84,12 @@ def check_call_fixture(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def landscape_python_fixture(monkeypatch: pytest.MonkeyPatch):
+    """The test environment has no Landscape venv; stub the interpreter."""
+    monkeypatch.setattr("charm.get_landscape_python", lambda: "python3")
+
+
+@pytest.fixture(autouse=True)
 def get_haproxy_error_files():
     with patch("charm.get_haproxy_error_files") as m:
         m.return_value = ()
