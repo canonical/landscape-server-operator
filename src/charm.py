@@ -1633,6 +1633,9 @@ class LandscapeServerCharm(CharmBase):
         # names, so they can't be set to `hostname` when that's still the
         # leader_ip fallback (i.e. root_url isn't configured with a real hostname).
         sni = hostname if validators.domain(hostname) else None
+        # Extra hostnames (e.g. a wildcard for subdomain accounts) only make
+        # sense alongside a primary hostname, so they're dropped without one.
+        additional_hostnames = cfg.additional_hostnames if sni else []
 
         appserver_paths = ["/", "/hash-id-databases"]
 
@@ -1649,6 +1652,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=sni,
+            additional_hostnames=additional_hostnames,
             # Because this route contains `/`
             # it will swallow the others so they
             # need to be denied to avoid a race.
@@ -1673,6 +1677,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=sni,
+            additional_hostnames=additional_hostnames,
         )
         self.message_server_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-message-server-{model_uuid}",
@@ -1685,6 +1690,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=sni,
+            additional_hostnames=additional_hostnames,
         )
         self.api_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-api-{model_uuid}",
@@ -1697,6 +1703,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=sni,
+            additional_hostnames=additional_hostnames,
         )
         self.package_upload_haproxy_route.provide_haproxy_route_requirements(
             service=f"landscape-package-upload-{model_uuid}",
@@ -1709,6 +1716,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_default,
             unit_address=unit_ip,
             hostname=sni,
+            additional_hostnames=additional_hostnames,
         )
         # Repository uses appserver ports and allow_http=True because clients
         # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
@@ -1725,6 +1733,7 @@ class LandscapeServerCharm(CharmBase):
             allow_http=allow_http_always,
             unit_address=unit_ip,
             hostname=sni,
+            additional_hostnames=additional_hostnames,
         )
         if self._hostagent_messenger_tls_serving():
             self.hostagent_messenger_haproxy_route.provide_haproxy_route_requirements(

@@ -62,6 +62,18 @@ options:
     description: |
       The root URL for this Landscape deployment. If left blank, the
       public IP of the first related HAProxy unit will be used instead.
+  additional_hostnames:
+    type: string
+    default: ""
+    description: |
+      Comma-separated list of extra hostnames that the haproxy-route ingress
+      should route to Landscape, in addition to the hostname of `root_url`.
+      Wildcards are allowed as the leftmost label, for example
+      "*.landscape.example.com,landscape-alt.example.com". The hostnames are
+      added to the HTTP haproxy-route routes (appserver, pingserver,
+      message-server, API, package upload and repository) and only take
+      effect when `root_url` has a domain name. The gRPC routes are not
+      affected. An invalid entry puts the unit in the blocked status.
   system_email:
     type: string
     default:

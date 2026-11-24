@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 from charmlibs.interfaces.tls_certificates import CertificateRequestAttributes
+from ops.model import BlockedStatus
 from ops.testing import Context, Relation, State
 import pytest
 
@@ -220,6 +221,85 @@ class TestHostname:
             assert c.kwargs.get("hostname") is None, (
                 f"A leader IP is not a valid hostname for {c.kwargs.get('service')}"
             )
+
+
+HTTP_ROUTES = (
+    "appserver",
+    "pingserver",
+    "message-server",
+    "api",
+    "package-upload",
+    "repository",
+)
+
+
+class TestAdditionalHostnames:
+    """additional_hostnames is passed on every HTTP route when a hostname is set."""
+
+    def test_unset_passes_no_additional_hostnames(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={"root_url": "https://my.landscape.example.com/"},
+            **replicas_network_state,
+        )
+        mock = _run_provide(context, state)
+        assert mock.called
+        for c in mock.call_args_list:
+            assert not c.kwargs.get("additional_hostnames"), (
+                f"Unexpected additional_hostnames for {c.kwargs.get('service')}"
+            )
+
+    def test_set_passed_on_all_http_routes(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "root_url": "https://my.landscape.example.com/",
+                "additional_hostnames": "*.saas.example.com, alt.example.com",
+                "enable_hostagent_messenger": True,
+                "enable_ubuntu_installer_attach": True,
+            },
+            **replicas_network_state,
+        )
+        mock = _run_provide(context, state)
+        for route in HTTP_ROUTES:
+            calls = _calls_for(mock, f"landscape-{route}-")
+            assert calls, f"No call for {route}"
+            for c in calls:
+                assert c.kwargs["hostname"] == "my.landscape.example.com"
+                assert c.kwargs["additional_hostnames"] == [
+                    "*.saas.example.com",
+                    "alt.example.com",
+                ], f"Wrong additional_hostnames for {route}"
+        for grpc_route in ("hostagent-messenger", "ubuntu-installer-attach"):
+            for c in _calls_for(mock, grpc_route):
+                assert "additional_hostnames" not in c.kwargs
+
+    def test_dropped_without_hostname(self, replicas_network_state):
+        """Without a root_url domain there is no primary hostname to extend."""
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={"additional_hostnames": "*.saas.example.com"},
+            **replicas_network_state,
+        )
+        mock = _run_provide(context, state)
+        assert mock.called
+        for c in mock.call_args_list:
+            assert c.kwargs.get("hostname") is None
+            assert not c.kwargs.get("additional_hostnames")
+
+    def test_invalid_value_blocks(self, replicas_network_state):
+        context = Context(LandscapeServerCharm)
+        state = State(
+            config={
+                "root_url": "https://my.landscape.example.com/",
+                "additional_hostnames": "*.saas.example.com,not a hostname",
+            },
+            **replicas_network_state,
+        )
+        result = context.run(context.on.config_changed(), state)
+        assert result.unit_status == BlockedStatus(
+            "Invalid configuration. See `juju debug-log`."
+        )
 
 
 class TestServiceNames:

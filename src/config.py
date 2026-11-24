@@ -9,7 +9,10 @@ from pathlib import Path
 import re
 from typing import Any
 
-from charms.haproxy.v2.haproxy_route import HAPROXY_CONFIG_INVALID_CHARACTERS
+from charms.haproxy.v2.haproxy_route import (
+    HAPROXY_CONFIG_INVALID_CHARACTERS,
+    valid_domain_with_wildcard,
+)
 from pydantic import BaseModel, Field, field_validator, model_validator
 import yaml
 
@@ -130,6 +133,7 @@ class LandscapeCharmConfiguration(BaseModel):
     oidc_client_secret: str | None = None
     oidc_logout_url: str | None = None
     root_url: str | None = None
+    additional_hostnames: list[str] = Field(default_factory=list)
     system_email: str | None = None
     admin_email: str | None = None
     admin_name: str | None = None
@@ -183,6 +187,30 @@ class LandscapeCharmConfiguration(BaseModel):
             for arg in self.bootstrap_schema_override_args.split(",")
             if arg.strip()
         ]
+
+    @field_validator("additional_hostnames", mode="before")
+    @classmethod
+    def additional_hostnames_are_domains(cls, v: Any) -> list[str]:
+        """
+        Parse the comma-separated `additional_hostnames` option into a list of
+        hostnames, each of which must be a valid domain, optionally with a
+        leading `*.` wildcard label.
+        """
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = v.split(",")
+        hostnames = [h.strip() for h in v if h and h.strip()]
+        for hostname in hostnames:
+            try:
+                valid_domain_with_wildcard(hostname)
+            except ValueError:
+                raise ValueError(
+                    f"additional_hostnames entry {hostname!r} is not a valid "
+                    "hostname. Use a domain name such as 'landscape.example.com' "
+                    "or a wildcard such as '*.example.com'."
+                ) from None
+        return hostnames
 
     @field_validator("deployment_mode")
     @classmethod
