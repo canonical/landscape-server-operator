@@ -3166,7 +3166,7 @@ class LandscapeServerCharm(CharmBase):
         logger.info("Setting autoregistration...")
         command = ["python3", AUTOREGISTRATION_SCRIPT, on]
         if self._install_source_is_snap:
-            # The confined snap cannot read the charm source; stage the helper in SNAP_DATA.
+            # Stage the helper in SNAP_DATA for the confined snap.
             snap_script = self._stage_snap_script(
                 AUTOREGISTRATION_SCRIPT, "autoregistration.py"
             )

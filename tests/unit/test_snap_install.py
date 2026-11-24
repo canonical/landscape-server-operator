@@ -9,8 +9,8 @@ import pytest
 from charm import (
     DEB_TO_SNAP_MIGRATION_PATHS,
     LANDSCAPE_OUTBOX_SNAP,
-    LANDSCAPE_SNAP,
     LANDSCAPE_SCRIPT_TIMEOUT,
+    LANDSCAPE_SNAP,
     LANDSCAPE_SNAP_UPGRADE_SCHEMA,
     LANDSCAPE_SNAP_WITH_HASH_IDS,
     LandscapeServerCharm,
@@ -368,9 +368,7 @@ def test_autoregistration_is_staged_in_snap_data(tmp_path, monkeypatch, snap_cha
     assert "/var/lib/landscape/autoregistration.py off" in command[5]
 
 
-def test_check_account_exists_is_staged_in_snap_data(
-    tmp_path, monkeypatch, snap_charm
-):
+def test_check_account_exists_is_staged_in_snap_data(tmp_path, monkeypatch, snap_charm):
     charm = snap_charm
     monkeypatch.setattr(settings_files, "SNAP_DATA_ROOT", str(tmp_path))
     (tmp_path / "var" / "lib" / "landscape").mkdir(parents=True)
