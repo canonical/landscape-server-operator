@@ -25,6 +25,10 @@ from helpers import migrate_service_conf
 CONFIGS_DIR = "/opt/canonical/landscape/configs"
 
 DEFAULT_SETTINGS = "/etc/default/landscape-server"
+SNAP_DATA_ROOT = "/var/snap/landscape-server/current"
+
+SNAP_NAME = "landscape-server"
+_active_install_source = "deb"
 
 LANDSCAPE_HOSTED_CRON = "/etc/cron.d/landscape-hosted"
 
@@ -80,12 +84,23 @@ _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE = [
     "landscape-pingserver.service",
 ]
 
+_SNAP_SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE = [
+    f"snap.{SNAP_NAME}.api.service",
+    f"snap.{SNAP_NAME}.appserver.service",
+    f"snap.{SNAP_NAME}.async-frontend.service",
+    f"snap.{SNAP_NAME}.job-handler.service",
+    f"snap.{SNAP_NAME}.message-server.service",
+    f"snap.{SNAP_NAME}.package-search.service",
+    f"snap.{SNAP_NAME}.pingserver.service",
+]
+
 _DEPLOYMENT_MODE_OVERRIDE_CONF = "deployment-mode.conf"
 
 _ANALYTICS_ID_OVERRIDE_CONF = "analytics-id.conf"
 
 # Only the web frontend renders the Google Analytics tracker into HTML pages.
 _ANALYTICS_SERVICE = "landscape-appserver.service"
+_SNAP_ANALYTICS_SERVICE = f"snap.{SNAP_NAME}.appserver.service"
 
 
 def write_deployment_mode_systemd_override(mode: str) -> None:
@@ -95,7 +110,12 @@ def write_deployment_mode_systemd_override(mode: str) -> None:
     Necessary because the package hardcodes 'standalone' in each unit file's
     Environment= directive.
     """
-    for service in _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE:
+    services = (
+        _SNAP_SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE
+        if _active_install_source == "snap"
+        else _SERVICES_WITH_HARDCODED_DEPLOYMENT_MODE
+    )
+    for service in services:
         override_dir = f"/etc/systemd/system/{service}.d"
         os.makedirs(override_dir, exist_ok=True)
         with open(os.path.join(override_dir, _DEPLOYMENT_MODE_OVERRIDE_CONF), "w") as f:
@@ -114,7 +134,12 @@ def write_analytics_id_systemd_override(analytics_id: str | None) -> None:
     analytics_id is empty, any existing drop-in is removed so Landscape falls
     back to its default.
     """
-    override_dir = f"/etc/systemd/system/{_ANALYTICS_SERVICE}.d"
+    svc = (
+        _SNAP_ANALYTICS_SERVICE
+        if _active_install_source == "snap"
+        else _ANALYTICS_SERVICE
+    )
+    override_dir = f"/etc/systemd/system/{svc}.d"
     override_path = os.path.join(override_dir, _ANALYTICS_ID_OVERRIDE_CONF)
 
     if analytics_id:
@@ -181,17 +206,77 @@ def enable_landscape_hosted_cron_jobs() -> None:
     os.rename(temp_path, LANDSCAPE_HOSTED_CRON)
 
 
+def set_active_install_source(install_source: str) -> None:
+    """Select the paths and config format used by the active install source."""
+    global _active_install_source
+    _active_install_source = install_source
+
+
+def get_landscape_host_path(path: str) -> str:
+    """Return the host-side path for snap data, or the original deb path."""
+    if _active_install_source == "snap":
+        return f"{SNAP_DATA_ROOT}{path}"
+    return path
+
+
+def get_default_settings_path() -> str:
+    """Return the host path to the Landscape default settings file."""
+    return get_landscape_host_path(DEFAULT_SETTINGS)
+
+
+def get_service_conf_path() -> str:
+    """Return the host path to the Landscape service.conf file."""
+    return get_landscape_host_path(SERVICE_CONF)
+
+
+def _normalize_service_conf(config: ConfigParser) -> ConfigParser:
+    """Return config using the section/key names required by the snap."""
+    if _active_install_source == "deb":
+        return config
+
+    normalized = ConfigParser()
+    section_names = {"global": "system", "landscape": "appserver"}
+    for section in config.sections():
+        new_section = section_names.get(section, section.replace("-", "_"))
+        if not normalized.has_section(new_section):
+            normalized.add_section(new_section)
+        for key, value in config.items(section):
+            normalized[new_section][key.replace("-", "_")] = value
+    return normalized
+
+
+def sync_service_conf_to_host() -> None:
+    """Keep the outbox-compatible host copy of service.conf up to date."""
+    if _active_install_source != "snap":
+        return
+
+    source = get_service_conf_path()
+    if not os.path.isfile(source):
+        return
+
+    os.makedirs(os.path.dirname(SERVICE_CONF), exist_ok=True)
+    if os.path.islink(SERVICE_CONF):
+        os.unlink(SERVICE_CONF)
+    shutil.copyfile(source, SERVICE_CONF)
+    os.chmod(SERVICE_CONF, 0o640)
+    os.chown(SERVICE_CONF, 0, 0)
+
+
 def merge_service_conf(other: str) -> None:
     """
     Merges `other` into the Landscape Server configuration file,
     overwriting existing config.
     """
+    path = get_service_conf_path()
     config = ConfigParser()
-    config.read(SERVICE_CONF)
+    config.read(path)
     config.read_string(other)
+    config = _normalize_service_conf(config)
 
-    with open(SERVICE_CONF, "w") as config_fp:
+    with open(path, "w") as config_fp:
         config.write(config_fp)
+
+    sync_service_conf_to_host()
 
 
 def prepend_default_settings(updates: dict) -> None:
@@ -199,10 +284,11 @@ def prepend_default_settings(updates: dict) -> None:
     Adds `updates` to the start of the Landscape Server default
     settings file.
     """
-    with open(DEFAULT_SETTINGS, "r") as settings_fp:
+    path = get_default_settings_path()
+    with open(path, "r") as settings_fp:
         settings = settings_fp.read()
 
-    with open(DEFAULT_SETTINGS, "w") as settings_fp:
+    with open(path, "w") as settings_fp:
         for k, v in updates.items():
             settings_fp.write(f'{k}="{v}"\n')
 
@@ -216,7 +302,8 @@ def update_default_settings(updates: dict) -> None:
     This file is mainly used to determine which services should be
     running for this installation.
     """
-    with open(DEFAULT_SETTINGS, "r") as settings_fp:
+    path = get_default_settings_path()
+    with open(path, "r") as settings_fp:
         new_lines = []
 
         for line in settings_fp:
@@ -228,7 +315,7 @@ def update_default_settings(updates: dict) -> None:
 
             new_lines.append(new_line)
 
-    with open(DEFAULT_SETTINGS, "w") as settings_file:
+    with open(path, "w") as settings_file:
         settings_file.write("".join(new_lines))
 
 
@@ -239,13 +326,14 @@ def update_service_conf(updates: dict) -> None:
     `updates` is a mapping of {section => {key => value}}, to be applied
         to the config file.
     """
-    if not os.path.isfile(SERVICE_CONF):
+    path = get_service_conf_path()
+    if not os.path.isfile(path):
         # Landscape server will not overwrite this file on install, so we
         # cannot get the default values if we create it here
         raise ServiceConfMissing("Landscape server install failed!")
 
     config = ConfigParser()
-    config.read(SERVICE_CONF)
+    config.read(path)
 
     for section, data in updates.items():
         for key, value in data.items():
@@ -254,10 +342,15 @@ def update_service_conf(updates: dict) -> None:
 
             config[section][key] = value
 
-    with open(SERVICE_CONF, "w") as config_fp:
+    config = _normalize_service_conf(config)
+    with open(path, "w") as config_fp:
         config.write(config_fp)
 
-    migrate_service_conf()
+    if _active_install_source == "snap":
+        migrate_service_conf("snap")
+    else:
+        migrate_service_conf()
+    sync_service_conf_to_host()
 
 
 def _write_file(path: str, content: str, mode: int, uid: int, gid: int) -> bool:
@@ -291,14 +384,19 @@ def _write_grpc_server_tls(
 
     Returns True if any file or setting changed.
     """
-    os.makedirs(tls_dir, mode=0o750, exist_ok=True)
-    os.chmod(tls_dir, 0o750)
-    os.chown(tls_dir, uid, gid)
+    host_tls_dir = get_landscape_host_path(tls_dir)
+    os.makedirs(host_tls_dir, mode=0o750, exist_ok=True)
+    os.chmod(host_tls_dir, 0o750)
+    os.chown(host_tls_dir, uid, gid)
 
     cert_path = os.path.join(tls_dir, "server.crt")
     key_path = os.path.join(tls_dir, "server.key")
-    changed = _write_file(cert_path, certificate, 0o644, uid, gid)
-    changed |= _write_file(key_path, private_key, 0o640, uid, gid)
+    changed = _write_file(
+        get_landscape_host_path(cert_path), certificate, 0o644, uid, gid
+    )
+    changed |= _write_file(
+        get_landscape_host_path(key_path), private_key, 0o640, uid, gid
+    )
 
     desired = {"ssl_server_cert": cert_path, "ssl_server_private_key": key_path}
     if grpc_server_tls_settings(section) == desired:
@@ -306,7 +404,7 @@ def _write_grpc_server_tls(
 
     update_service_conf({section: desired})
     if grpc_server_tls_settings(section) != desired:
-        shutil.rmtree(tls_dir, ignore_errors=True)
+        shutil.rmtree(get_landscape_host_path(tls_dir), ignore_errors=True)
         return False
     return True
 
@@ -323,7 +421,7 @@ def _remove_grpc_server_tls(section: str, tls_dir: str) -> bool:
             {section: {"ssl_server_cert": "", "ssl_server_private_key": ""}}
         )
         changed = True
-    shutil.rmtree(tls_dir, ignore_errors=True)
+    shutil.rmtree(get_landscape_host_path(tls_dir), ignore_errors=True)
     return changed
 
 
@@ -412,11 +510,12 @@ def write_license_file(license_file: str, uid: int, gid: int) -> None:
         except binascii.Error:
             raise LicenseFileReadException("Unable to read b64-encoded license file")
 
-    with open(LICENSE_FILE, "wb") as license_fp:
+    license_path = get_landscape_host_path(LICENSE_FILE)
+    with open(license_path, "wb") as license_fp:
         license_fp.write(license_file_data)
 
-    os.chmod(LICENSE_FILE, 0o640)
-    os.chown(LICENSE_FILE, uid, gid)
+    os.chmod(license_path, 0o640)
+    os.chown(license_path, uid, gid)
 
 
 def write_ssl_cert(ssl_cert: str) -> None:
@@ -456,7 +555,7 @@ def get_postgres_roles(postgresql_version: str) -> PostgresRoles:
     version and the values written in `service.conf`.
     """
     config = ConfigParser()
-    config.read(SERVICE_CONF)
+    config.read(get_service_conf_path())
 
     owner = get_postgres_owner_role_from_version(postgresql_version)
 
@@ -481,5 +580,5 @@ def read_service_conf() -> dict:
     {section: {key: value}}, suitable for serialisation to JSON.
     """
     config = ConfigParser(interpolation=None)
-    config.read(SERVICE_CONF)
+    config.read(get_service_conf_path())
     return {section: dict(config[section]) for section in config.sections()}

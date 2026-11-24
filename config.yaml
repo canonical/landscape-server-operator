@@ -539,3 +539,7 @@ options:
     description: |
       Comma-separated extra arguments to append to `landscape-schema --bootstrap`.
       Example: --with-extra-computers,10,--with-openstack
+  landscape_install_source:
+    type: string
+    default: deb
+    description: Install Landscape Server from the deb PPA ("deb") or the snap ("snap").

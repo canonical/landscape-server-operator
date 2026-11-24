@@ -1,5 +1,6 @@
 import logging
 import os
+import shlex
 import subprocess
 import sys
 
@@ -7,6 +8,8 @@ logger = logging.getLogger("landscape-charm")
 
 MIGRATE_SERVICE_CONF_SCRIPT = "/opt/canonical/landscape/migrate-service-conf"
 LANDSCAPE_VENV_PYTHON = "/opt/venvs/landscape/bin/python3"
+LANDSCAPE_SNAP = "landscape-server"
+LANDSCAPE_SNAP_SETUP_APP = f"{LANDSCAPE_SNAP}.setup"
 
 
 def get_landscape_python():
@@ -45,20 +48,34 @@ def get_modified_env_vars():
     return env_vars
 
 
-def migrate_service_conf() -> None:
-    if os.path.isfile(MIGRATE_SERVICE_CONF_SCRIPT):
-        try:
-            migrate_result = subprocess.run(
-                [MIGRATE_SERVICE_CONF_SCRIPT],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=get_modified_env_vars(),
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(
-                "Migrating service.conf failed with return code %s", e.returncode
-            )
-            logger.error("Failed to migrate service.conf: %s", migrate_result)
-        else:
-            logger.info("Migrated service.conf: %s", migrate_result)
+def get_landscape_command(command: list[str], install_source: str) -> list[str]:
+    """Return a command with the snap environment and layouts when needed."""
+    if install_source == "deb":
+        return command
+    return [
+        "snap",
+        "run",
+        "--shell",
+        LANDSCAPE_SNAP_SETUP_APP,
+        "-c",
+        f"exec {shlex.join(command)}",
+    ]
+
+
+def migrate_service_conf(install_source: str = "deb") -> None:
+    if install_source == "deb" and not os.path.isfile(MIGRATE_SERVICE_CONF_SCRIPT):
+        return
+
+    try:
+        migrate_result = subprocess.run(
+            get_landscape_command([MIGRATE_SERVICE_CONF_SCRIPT], install_source),
+            capture_output=True,
+            text=True,
+            check=True,
+            env=get_modified_env_vars() if install_source == "deb" else None,
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error("Migrating service.conf failed with return code %s", e.returncode)
+        logger.error("Failed to migrate service.conf: %s", e.stderr or e.stdout)
+    else:
+        logger.info("Migrated service.conf: %s", migrate_result)
