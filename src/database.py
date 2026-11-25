@@ -1,10 +1,9 @@
 from dataclasses import dataclass
-import os
 from subprocess import CalledProcessError, check_call
 
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 
-from helpers import get_landscape_command, get_modified_env_vars, logger
+from helpers import get_landscape_command, get_landscape_env_vars, logger
 
 
 class PgHbaNotReadyError(Exception):
@@ -124,7 +123,7 @@ def execute_psql(
         sql,
     ]
 
-    env = get_modified_env_vars() if install_source == "deb" else os.environ.copy()
+    env = get_landscape_env_vars(install_source)
     env["PGPASSWORD"] = relation_password
 
     try:

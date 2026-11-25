@@ -55,5 +55,10 @@ def test_get_snap_revision_rejects_missing_architecture(monkeypatch):
 )
 def test_landscape_server_revision_is_pinned(monkeypatch, machine, revision):
     monkeypatch.setattr(snap_revisions.platform, "machine", lambda: machine)
+    monkeypatch.setattr(
+        snap_revisions,
+        "_load_snap_revisions",
+        lambda: {"landscape-server": {"amd64": "82", "arm64": "81"}},
+    )
 
     assert get_snap_revision("landscape-server") == revision

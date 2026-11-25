@@ -48,6 +48,13 @@ def get_modified_env_vars():
     return env_vars
 
 
+def get_landscape_env_vars(install_source: str) -> dict:
+    """Return the subprocess environment for the active install source."""
+    if install_source == "deb":
+        return get_modified_env_vars()
+    return os.environ.copy()
+
+
 def get_landscape_command(command: list[str], install_source: str) -> list[str]:
     """Return a command with the snap environment and layouts when needed."""
     if install_source == "deb":
@@ -72,10 +79,12 @@ def migrate_service_conf(install_source: str = "deb") -> None:
             capture_output=True,
             text=True,
             check=True,
-            env=get_modified_env_vars() if install_source == "deb" else None,
+            env=get_landscape_env_vars(install_source),
         )
     except subprocess.CalledProcessError as e:
         logger.error("Migrating service.conf failed with return code %s", e.returncode)
         logger.error("Failed to migrate service.conf: %s", e.stderr or e.stdout)
+        if install_source == "snap":
+            raise
     else:
         logger.info("Migrated service.conf: %s", migrate_result)

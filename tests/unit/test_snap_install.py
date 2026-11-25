@@ -1,4 +1,3 @@
-from configparser import ConfigParser
 import subprocess
 from unittest.mock import ANY, DEFAULT, MagicMock, Mock, patch
 
@@ -7,6 +6,7 @@ from ops.testing import Context, Harness, State, StoredState
 import pytest
 
 from charm import (
+    DEB_CRON_FILES,
     DEB_TO_SNAP_MIGRATION_PATHS,
     LANDSCAPE_OUTBOX_SNAP,
     LANDSCAPE_SCRIPT_TIMEOUT,
@@ -14,13 +14,17 @@ from charm import (
     LANDSCAPE_SNAP_UPGRADE_SCHEMA,
     LANDSCAPE_SNAP_WITH_HASH_IDS,
     LandscapeServerCharm,
+    LEADER_SERVICES,
     SNAP_CORE_SERVICES,
+    SNAP_DAEMON_NAMES,
     SNAP_HOST_APT_PACKAGES,
     SNAP_TIMER_SERVICES,
 )
 from database import execute_psql
-from helpers import get_landscape_command
+from helpers import get_landscape_command, migrate_service_conf
 import settings_files
+
+TEST_SNAP_REVISION = "78"
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +36,7 @@ def reset_install_source():
 
 @pytest.fixture(autouse=True)
 def pin_snap_revision(monkeypatch):
-    monkeypatch.setattr("charm.get_snap_revision", lambda _: "78")
+    monkeypatch.setattr("charm.get_snap_revision", lambda _: TEST_SNAP_REVISION)
 
 
 @pytest.fixture
@@ -79,60 +83,18 @@ def test_snap_command_uses_snap_run_and_quotes_arguments():
     ]
 
 
-def test_snap_service_conf_uses_host_path_and_modern_names(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings_files, "SNAP_DATA_ROOT", str(tmp_path))
-    monkeypatch.setattr(settings_files, "SERVICE_CONF", "/etc/landscape/service.conf")
-    settings_files.set_active_install_source("snap")
-    conf_path = tmp_path / "etc" / "landscape" / "service.conf"
-    conf_path.parent.mkdir(parents=True)
-    conf_path.write_text("[global]\ndeployment-mode = standalone\n")
-
+def test_snap_service_conf_migration_failure_raises():
+    error = subprocess.CalledProcessError(1, ["snap"], stderr="migration failed")
     with (
-        patch("settings_files.migrate_service_conf") as migrate,
-        patch("settings_files.sync_service_conf_to_host"),
+        patch("helpers.subprocess.run", side_effect=error),
+        pytest.raises(subprocess.CalledProcessError) as raised,
     ):
-        settings_files.update_service_conf(
-            {
-                "global": {"root-url": "https://landscape.example/"},
-                "landscape": {"secret-token": "secret"},
-                "api": {"cookie-encryption-key": "cookie"},
-                "message-server": {"base_port": "8090"},
-            }
-        )
+        migrate_service_conf("snap")
 
-    config = ConfigParser()
-    config.read(conf_path)
-    assert config["system"]["deployment_mode"] == "standalone"
-    assert config["system"]["root_url"] == "https://landscape.example/"
-    assert config["appserver"]["secret_token"] == "secret"
-    assert config["api"]["cookie_encryption_key"] == "cookie"
-    assert config["message_server"]["base_port"] == "8090"
-    assert "global" not in config.sections()
-    assert "landscape" not in config.sections()
-    migrate.assert_called_once_with("snap")
+    assert raised.value is error
 
 
-def test_sync_service_conf_replaces_symlink_with_regular_host_copy(
-    tmp_path, monkeypatch
-):
-    snap_root = tmp_path / "snap"
-    host_conf = tmp_path / "host.conf"
-    monkeypatch.setattr(settings_files, "SNAP_DATA_ROOT", str(snap_root))
-    monkeypatch.setattr(settings_files, "SERVICE_CONF", str(host_conf))
-    settings_files.set_active_install_source("snap")
-
-    snap_conf = snap_root / str(host_conf).lstrip("/")
-    snap_conf.parent.mkdir(parents=True)
-    snap_conf.write_text("[system]\ndeployment_mode = standalone\n")
-    host_conf.symlink_to(snap_conf)
-
-    settings_files.sync_service_conf_to_host()
-
-    assert not host_conf.is_symlink()
-    assert host_conf.read_text() == "[system]\ndeployment_mode = standalone\n"
-
-
-def test_install_snap_installs_component_and_postfix_without_ppa():
+def test_install_snap_installs_component_and_host_packages_without_ppa():
     harness = Harness(LandscapeServerCharm)
     harness.update_config({"landscape_install_source": "snap"})
     relation_id = harness.add_relation("replicas", "landscape-server")
@@ -146,7 +108,6 @@ def test_install_snap_installs_component_and_postfix_without_ppa():
         apt=DEFAULT,
         snap=DEFAULT,
         os=DEFAULT,
-        sync_service_conf_to_host=DEFAULT,
         prepend_default_settings=DEFAULT,
         update_service_conf=DEFAULT,
     ) as mocks:
@@ -160,7 +121,7 @@ def test_install_snap_installs_component_and_postfix_without_ppa():
             "install",
             LANDSCAPE_SNAP_WITH_HASH_IDS,
             "--revision",
-            "78",
+            TEST_SNAP_REVISION,
         ]
     )
     mocks["apt"].add_package.assert_any_call(
@@ -168,7 +129,7 @@ def test_install_snap_installs_component_and_postfix_without_ppa():
     )
     landscape_snap.ensure.assert_called_once_with(
         mocks["snap"].SnapState.Latest,
-        revision="78",
+        revision=TEST_SNAP_REVISION,
     )
     landscape_snap.hold.assert_called_once_with()
     mocks["snap"].add.assert_any_call(LANDSCAPE_OUTBOX_SNAP, channel=ANY)
@@ -186,7 +147,6 @@ def test_unavailable_hash_id_component_does_not_fail_install(snap_charm):
         patch("charm.apt"),
         patch("charm.snap"),
         patch("charm.os"),
-        patch("charm.sync_service_conf_to_host"),
         patch("charm.check_call") as check_call,
         patch("charm.logger.warning") as warning,
     ):
@@ -199,7 +159,7 @@ def test_unavailable_hash_id_component_does_not_fail_install(snap_charm):
         "The hash-id-databases component is unavailable for "
         "landscape-server revision %s; continuing without pre-canned "
         "hash-id databases",
-        "78",
+        TEST_SNAP_REVISION,
     )
 
 
@@ -216,7 +176,7 @@ def test_refresh_landscape_snap_unholds_and_reholds_pinned_revision(snap_charm):
     landscape_snap.unhold.assert_called_once_with()
     landscape_snap.ensure.assert_called_once_with(
         snap_module.SnapState.Latest,
-        revision="78",
+        revision=TEST_SNAP_REVISION,
     )
     landscape_snap.hold.assert_called_once_with()
 
@@ -287,18 +247,6 @@ def test_demo_data_is_only_created_once(snap_charm):
     assert "--with-computers" not in second_command
 
 
-def test_package_upload_is_started_when_snap_provides_it(snap_charm):
-    charm = snap_charm
-    charm.unit.is_leader = Mock(return_value=True)
-    landscape_snap = MagicMock()
-    landscape_snap.services = {"package-upload": {}}
-
-    with patch("charm.snap.SnapCache", return_value={LANDSCAPE_SNAP: landscape_snap}):
-        charm._start_snap_services()
-
-    assert "package-upload" in landscape_snap.start.call_args.args[0]
-
-
 def test_start_snap_services_enables_core_leader_and_optional_daemons(snap_charm):
     charm = snap_charm
     charm.unit.is_leader = Mock(return_value=True)
@@ -332,10 +280,15 @@ def test_start_snap_services_disables_leader_services_on_follower(snap_charm):
     with patch("charm.snap.SnapCache", return_value={LANDSCAPE_SNAP: landscape_snap}):
         charm._start_snap_services()
 
+    leader_daemons = {
+        SNAP_DAEMON_NAMES[service]
+        for service in LEADER_SERVICES
+        if SNAP_DAEMON_NAMES.get(service) in landscape_snap.services
+    }
     assert set(landscape_snap.start.call_args.args[0]) == set(SNAP_CORE_SERVICES)
     assert set(landscape_snap.stop.call_args.args[0]) == {
         *SNAP_TIMER_SERVICES,
-        "package-search",
+        *leader_daemons,
         "hostagent-messenger",
         "ubuntu-installer-attach-messenger",
     }
@@ -404,32 +357,27 @@ def test_wsl_update_uses_catalog_packaged_in_snap(snap_charm):
 
 def test_outbox_uses_landscape_conf_content_interface(snap_charm):
     charm = snap_charm
-    with (
-        patch("charm.subprocess.run") as run,
-        patch("charm.sync_service_conf_to_host") as sync,
-    ):
-        run.return_value = subprocess.CompletedProcess([], 0)
+    with patch("charm.check_call") as connect:
         charm._configure_outbox_config()
 
-    assert run.call_args.args[0] == [
-        "snap",
-        "connect",
-        "landscape-outbox:landscape-conf",
-        "landscape-server:landscape-conf",
-    ]
-    sync.assert_not_called()
+    connect.assert_called_once_with(
+        [
+            "snap",
+            "connect",
+            "landscape-outbox:landscape-conf",
+            "landscape-server:landscape-conf",
+        ]
+    )
 
 
-def test_outbox_falls_back_to_host_config_copy(snap_charm):
+def test_outbox_connection_failure_raises(snap_charm):
     charm = snap_charm
     with (
-        patch("charm.subprocess.run") as run,
-        patch("charm.sync_service_conf_to_host") as sync,
+        patch("charm.check_call") as connect,
+        pytest.raises(subprocess.CalledProcessError),
     ):
-        run.return_value = subprocess.CompletedProcess([], 1)
+        connect.side_effect = subprocess.CalledProcessError(1, ["snap", "connect"])
         charm._configure_outbox_config()
-
-    sync.assert_called_once_with()
 
 
 def test_copy_migration_path_handles_files_and_directories(deb_charm):
@@ -470,6 +418,33 @@ def test_copy_migration_path_handles_files_and_directories(deb_charm):
     ]
 
 
+def test_deb_cron_files_are_disabled_and_restored(deb_charm):
+    charm = deb_charm
+    with (
+        patch("charm.os.path.exists", return_value=True),
+        patch("charm.os.replace") as replace,
+    ):
+        charm._disable_deb_cron_jobs()
+        charm._restore_deb_cron_jobs()
+
+    assert replace.call_args_list[0].args == (
+        DEB_CRON_FILES[0],
+        f"{DEB_CRON_FILES[0]}.deb",
+    )
+    assert replace.call_args_list[1].args == (
+        DEB_CRON_FILES[1],
+        f"{DEB_CRON_FILES[1]}.deb",
+    )
+    assert replace.call_args_list[2].args == (
+        f"{DEB_CRON_FILES[0]}.deb",
+        DEB_CRON_FILES[0],
+    )
+    assert replace.call_args_list[3].args == (
+        f"{DEB_CRON_FILES[1]}.deb",
+        DEB_CRON_FILES[1],
+    )
+
+
 def test_deb_to_snap_migration_copies_state_and_marks_success(deb_charm):
     charm = deb_charm
     charm._stored.running = True
@@ -478,15 +453,16 @@ def test_deb_to_snap_migration_copies_state_and_marks_success(deb_charm):
     with (
         patch("charm.check_call") as check_call,
         patch.object(charm, "_backup_deb_config") as backup_config,
+        patch.object(charm, "_disable_deb_cron_jobs") as disable_cron,
         patch.object(charm, "_install_snap") as install_snap,
         patch.object(charm, "_copy_migration_path") as copy_path,
         patch("charm.migrate_service_conf") as migrate_conf,
-        patch("charm.sync_service_conf_to_host") as sync,
         patch.object(charm, "_configure_outbox_config") as configure_outbox,
     ):
         assert charm._migrate_deb_to_snap()
 
     backup_config.assert_called_once_with()
+    disable_cron.assert_called_once_with()
     check_call.assert_any_call(["/usr/bin/lsctl", "stop"], env=ANY)
     check_call.assert_any_call(
         [LANDSCAPE_SNAP_UPGRADE_SCHEMA, "--allow-connections"], env=ANY
@@ -502,7 +478,6 @@ def test_deb_to_snap_migration_copies_state_and_marks_success(deb_charm):
         ],
         env=None,
     )
-    sync.assert_called_once_with()
     configure_outbox.assert_called_once_with()
     assert charm._stored.install_source == "snap"
     assert not charm._stored.running
@@ -517,18 +492,18 @@ def test_failed_deb_to_snap_migration_restores_deb(deb_charm):
         patch("charm.check_call") as check_call,
         patch.object(charm, "_backup_deb_config"),
         patch.object(charm, "_restore_deb_config_backup") as restore_config,
+        patch.object(charm, "_restore_deb_cron_jobs") as restore_cron,
         patch.object(
             charm, "_install_snap", side_effect=RuntimeError("install failed")
         ),
-        patch("charm.sync_service_conf_to_host") as sync,
         patch("charm.snap.SnapCache", return_value={LANDSCAPE_SNAP: landscape_snap}),
     ):
         assert not charm._migrate_deb_to_snap()
 
     restore_config.assert_called_once_with()
+    restore_cron.assert_called_once_with()
     check_call.assert_any_call(["/usr/bin/lsctl", "start"], env=ANY)
     landscape_snap.stop.assert_called_once_with()
-    sync.assert_not_called()
     assert charm._stored.install_source == "deb"
     assert charm._stored.running
     assert isinstance(charm.unit.status, BlockedStatus)

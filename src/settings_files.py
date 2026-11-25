@@ -229,39 +229,6 @@ def get_service_conf_path() -> str:
     return get_landscape_host_path(SERVICE_CONF)
 
 
-def _normalize_service_conf(config: ConfigParser) -> ConfigParser:
-    """Return config using the section/key names required by the snap."""
-    if _active_install_source == "deb":
-        return config
-
-    normalized = ConfigParser()
-    section_names = {"global": "system", "landscape": "appserver"}
-    for section in config.sections():
-        new_section = section_names.get(section, section.replace("-", "_"))
-        if not normalized.has_section(new_section):
-            normalized.add_section(new_section)
-        for key, value in config.items(section):
-            normalized[new_section][key.replace("-", "_")] = value
-    return normalized
-
-
-def sync_service_conf_to_host() -> None:
-    """Keep the outbox-compatible host copy of service.conf up to date."""
-    if _active_install_source != "snap":
-        return
-
-    source = get_service_conf_path()
-    if not os.path.isfile(source):
-        return
-
-    os.makedirs(os.path.dirname(SERVICE_CONF), exist_ok=True)
-    if os.path.islink(SERVICE_CONF):
-        os.unlink(SERVICE_CONF)
-    shutil.copyfile(source, SERVICE_CONF)
-    os.chmod(SERVICE_CONF, 0o640)
-    os.chown(SERVICE_CONF, 0, 0)
-
-
 def merge_service_conf(other: str) -> None:
     """
     Merges `other` into the Landscape Server configuration file,
@@ -271,12 +238,9 @@ def merge_service_conf(other: str) -> None:
     config = ConfigParser()
     config.read(path)
     config.read_string(other)
-    config = _normalize_service_conf(config)
 
     with open(path, "w") as config_fp:
         config.write(config_fp)
-
-    sync_service_conf_to_host()
 
 
 def prepend_default_settings(updates: dict) -> None:
@@ -342,7 +306,6 @@ def update_service_conf(updates: dict) -> None:
 
             config[section][key] = value
 
-    config = _normalize_service_conf(config)
     with open(path, "w") as config_fp:
         config.write(config_fp)
 
@@ -350,7 +313,6 @@ def update_service_conf(updates: dict) -> None:
         migrate_service_conf("snap")
     else:
         migrate_service_conf()
-    sync_service_conf_to_host()
 
 
 def _write_file(path: str, content: str, mode: int, uid: int, gid: int) -> bool:

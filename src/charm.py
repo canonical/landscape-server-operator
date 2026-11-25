@@ -126,7 +126,6 @@ from settings_files import (
     ServiceConfMissing,
     set_active_install_source,
     SSLCertReadException,
-    sync_service_conf_to_host,
     UBUNTU_INSTALLER_ATTACH_SECTION,
     update_db_conf,
     update_default_settings,
@@ -168,6 +167,10 @@ LANDSCAPE_SNAP_WITH_HASH_IDS = f"{LANDSCAPE_SNAP}+hash-id-databases"
 LANDSCAPE_SNAP_UPGRADE_SCHEMA = "/snap/bin/landscape-server.upgrade-schema"
 SNAP_HOST_APT_PACKAGES = ("postfix",)
 DEB_MIGRATION_CONFIG_BACKUP = "/var/lib/juju/landscape-snap-migration-backup"
+DEB_CRON_FILES = (
+    "/etc/cron.d/landscape-server",
+    "/etc/cron.d/landscape-hosted",
+)
 DEB_TO_SNAP_MIGRATION_PATHS = (
     ("/etc/landscape", "/var/snap/landscape-server/current/etc/landscape"),
     (
@@ -1116,26 +1119,18 @@ class LandscapeServerCharm(CharmBase):
                 raise e
 
     def _configure_outbox_config(self) -> None:
-        """Connect outbox to landscape-conf, or use the host config fallback."""
+        """Connect outbox to the snap's landscape-conf interface."""
         if not self._install_source_is_snap:
             return
 
-        result = subprocess.run(
+        check_call(
             [
                 "snap",
                 "connect",
                 "landscape-outbox:landscape-conf",
                 "landscape-server:landscape-conf",
-            ],
-            capture_output=True,
-            text=True,
+            ]
         )
-        if result.returncode:
-            logger.info(
-                "landscape-outbox has no landscape-conf interface; "
-                "using the host service.conf copy"
-            )
-            sync_service_conf_to_host()
 
     def _copy_migration_path(self, source: str, destination: str) -> None:
         """Copy deb data into the snap and make it writable by snap services."""
@@ -1171,6 +1166,7 @@ class LandscapeServerCharm(CharmBase):
         set_active_install_source("deb")
         try:
             self._restore_deb_config_backup()
+            self._restore_deb_cron_jobs()
         except (CalledProcessError, OSError) as e:
             logger.error("Failed to restore deb configuration: %s", e)
         try:
@@ -1185,6 +1181,19 @@ class LandscapeServerCharm(CharmBase):
                 "Failed to restart deb services after migration failure: %s", e
             )
 
+    def _disable_deb_cron_jobs(self) -> None:
+        """Disable deb cron files while preserving them for rollback."""
+        for path in DEB_CRON_FILES:
+            if os.path.exists(path):
+                os.replace(path, f"{path}.deb")
+
+    def _restore_deb_cron_jobs(self) -> None:
+        """Restore deb cron files disabled during migration."""
+        for path in DEB_CRON_FILES:
+            disabled = f"{path}.deb"
+            if os.path.exists(disabled):
+                os.replace(disabled, path)
+
     def _migrate_deb_to_snap(self) -> bool:
         """Migrate deb to snap, preserving the deb installation for rollback."""
         was_running = self._stored.running
@@ -1192,6 +1201,7 @@ class LandscapeServerCharm(CharmBase):
         try:
             self._backup_deb_config()
             check_call([LSCTL, "stop"], env=get_modified_env_vars())
+            self._disable_deb_cron_jobs()
             set_active_install_source("snap")
             self._install_snap()
 
@@ -1221,8 +1231,6 @@ class LandscapeServerCharm(CharmBase):
                     env=None,
                 )
 
-            # Update the outbox host config only after migration succeeds.
-            sync_service_conf_to_host()
             self._configure_outbox_config()
         except (
             CalledProcessError,
