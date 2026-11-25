@@ -260,7 +260,17 @@ class TestAdditionalHostnames:
             },
             **replicas_network_state,
         )
-        mock = _run_provide(context, state)
+        with (
+            patch(
+                "charm.LandscapeServerCharm._hostagent_messenger_tls_serving",
+                return_value=True,
+            ),
+            patch(
+                "charm.LandscapeServerCharm._ubuntu_installer_attach_tls_ready",
+                return_value=True,
+            ),
+        ):
+            mock = _run_provide(context, state)
         for route in HTTP_ROUTES:
             calls = _calls_for(mock, f"landscape-{route}-")
             assert calls, f"No call for {route}"
@@ -271,7 +281,9 @@ class TestAdditionalHostnames:
                     "alt.example.com",
                 ], f"Wrong additional_hostnames for {route}"
         for grpc_route in ("hostagent-messenger", "ubuntu-installer-attach"):
-            for c in _calls_for(mock, grpc_route):
+            calls = _calls_for(mock, grpc_route)
+            assert calls, f"No gRPC call for {grpc_route}"
+            for c in calls:
                 assert "additional_hostnames" not in c.kwargs
 
     def test_dropped_without_hostname(self, replicas_network_state):
