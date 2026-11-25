@@ -81,6 +81,23 @@ def test_defaults():
     assert config.ubuntu_installer_attach_base_port == 53354
     assert config.gpg_secret_id is None
     assert config.bootstrap_schema_override_args is None
+    assert config.landscape_install_source == "deb"
+    assert config.landscape_snap_channel == "latest/edge"
+
+
+def test_install_source_must_be_deb_or_snap():
+    defaults = get_config_defaults()
+    defaults["landscape_install_source"] = "ppa"
+    with pytest.raises(ValidationError, match="must be 'deb' or 'snap'"):
+        LandscapeCharmConfiguration(**defaults)
+
+
+def test_snap_install_source_requires_standalone():
+    defaults = get_config_defaults()
+    defaults["landscape_install_source"] = "snap"
+    defaults["deployment_mode"] = "prod"
+    with pytest.raises(ValidationError, match="only supported"):
+        LandscapeCharmConfiguration(**defaults)
 
 
 @pytest.mark.parametrize(

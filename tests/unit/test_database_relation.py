@@ -676,7 +676,7 @@ class TestDatabaseHelpers:
         assert result == "postgres"
         logger.warning.assert_called_once()
 
-    @patch("database.get_modified_env_vars", return_value={"PATH": "/usr/bin"})
+    @patch("database.get_landscape_env_vars", return_value={"PATH": "/usr/bin"})
     @patch("database.check_call")
     def test_execute_psql_calls_check_call(self, check_call_mock, get_env):
         execute_psql(
@@ -704,9 +704,9 @@ class TestDatabaseHelpers:
             ],
             env={"PATH": "/usr/bin", "PGPASSWORD": "hunter2"},
         )
-        get_env.assert_called_once_with()
+        get_env.assert_called_once_with("deb")
 
-    @patch("database.get_modified_env_vars", return_value={})
+    @patch("database.get_landscape_env_vars", return_value={})
     @patch("database.check_call", side_effect=CalledProcessError(1, "psql"))
     def test_execute_psql_raises_on_error(self, check_call_mock, _):
         with patch("database.logger") as logger, pytest.raises(CalledProcessError):
@@ -721,7 +721,7 @@ class TestDatabaseHelpers:
         logger.error.assert_called_once()
         check_call_mock.assert_called_once()
 
-    @patch("database.get_modified_env_vars", return_value={})
+    @patch("database.get_landscape_env_vars", return_value={})
     @patch("database.check_call")
     def test_execute_psql_uses_default_database(self, check_call_mock, _):
         execute_psql(

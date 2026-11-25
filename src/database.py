@@ -3,7 +3,7 @@ from subprocess import CalledProcessError, check_call
 
 from charms.data_platform_libs.v0.data_interfaces import DatabaseRequires
 
-from helpers import get_modified_env_vars, logger
+from helpers import get_landscape_command, get_landscape_env_vars, logger
 
 
 class PgHbaNotReadyError(Exception):
@@ -104,6 +104,7 @@ def execute_psql(
     relation_password: str,
     sql: str,
     database: str = "postgres",
+    install_source: str = "deb",
 ) -> None:
     """
     :raises `CalledProcessError`: The command failed.
@@ -122,11 +123,11 @@ def execute_psql(
         sql,
     ]
 
-    env = get_modified_env_vars()
+    env = get_landscape_env_vars(install_source)
     env["PGPASSWORD"] = relation_password
 
     try:
-        check_call(cmd, env=env)
+        check_call(get_landscape_command(cmd, install_source), env=env)
     except CalledProcessError as e:
         logger.error(
             "Running `psql` failed: (exit %s): %s",
@@ -143,6 +144,7 @@ def grant_role(
     relation_password: str,
     user: str,
     role: str,
+    install_source: str = "deb",
 ) -> None:
     """
     Because Charmed Postgres 16 now forces us to use one of the existing
@@ -157,12 +159,16 @@ def grant_role(
     sql = f"GRANT {role} TO {user};"
 
     try:
+        optional_source = (
+            {"install_source": install_source} if install_source == "snap" else {}
+        )
         execute_psql(
             host=host,
             port=port,
             relation_user=relation_user,
             relation_password=relation_password,
             sql=sql,
+            **optional_source,
         )
 
     except CalledProcessError as e:

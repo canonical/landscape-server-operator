@@ -521,6 +521,12 @@ options:
     default: 53354
     description: |
       Port for ubuntu-installer-attach service worker to use on each unit.
+  landscape_snap_channel:
+    type: string
+    default: latest/edge
+    description: |
+      Snap channel used when installing or refreshing landscape-server to the
+      charm's pinned revision.
   outbox_snap_channel:
     type: string
     default: latest/stable
@@ -539,3 +545,7 @@ options:
     description: |
       Comma-separated extra arguments to append to `landscape-schema --bootstrap`.
       Example: --with-extra-computers,10,--with-openstack
+  landscape_install_source:
+    type: string
+    default: deb
+    description: Install Landscape Server from the deb PPA ("deb") or the snap ("snap").

@@ -18,6 +18,7 @@ from functools import cached_property
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 from subprocess import CalledProcessError, check_call
 from typing import List
@@ -100,6 +101,7 @@ from haproxy import (
     UBUNTU_INSTALLER_ATTACH_SERVICE,
 )
 from helpers import (
+    get_landscape_command,
     get_landscape_python,
     get_modified_env_vars,
     logger,
@@ -112,6 +114,7 @@ from settings_files import (
     enable_landscape_hosted_cron_jobs,
     generate_cookie_encryption_key,
     generate_secret_token,
+    get_landscape_host_path,
     get_postgres_roles,
     grpc_server_tls_settings,
     HOSTAGENT_SERVER_SECTION,
@@ -121,6 +124,7 @@ from settings_files import (
     remove_hostagent_messenger_tls,
     remove_ubuntu_installer_attach_tls,
     ServiceConfMissing,
+    set_active_install_source,
     SSLCertReadException,
     UBUNTU_INSTALLER_ATTACH_SECTION,
     update_db_conf,
@@ -134,6 +138,7 @@ from settings_files import (
     write_ssl_cert,
     write_ubuntu_installer_attach_tls,
 )
+from snap_revisions import get_snap_revision, SnapRevisionError
 
 DEBCONF_SET_SELECTIONS = "/usr/bin/debconf-set-selections"
 DPKG_RECONFIGURE = "/usr/sbin/dpkg-reconfigure"
@@ -157,6 +162,31 @@ GPG_SERVICE_CONF_SECTIONS = (
 )
 
 LANDSCAPE_SERVER = "landscape-server"
+LANDSCAPE_SNAP = "landscape-server"
+LANDSCAPE_SNAP_WITH_HASH_IDS = f"{LANDSCAPE_SNAP}+hash-id-databases"
+LANDSCAPE_SNAP_UPGRADE_SCHEMA = "/snap/bin/landscape-server.upgrade-schema"
+SNAP_HOST_APT_PACKAGES = ("postfix",)
+DEB_MIGRATION_CONFIG_BACKUP = "/var/lib/juju/landscape-snap-migration-backup"
+DEB_CRON_FILES = (
+    "/etc/cron.d/landscape-server",
+    "/etc/cron.d/landscape-hosted",
+)
+DEB_TO_SNAP_MIGRATION_PATHS = (
+    ("/etc/landscape", "/var/snap/landscape-server/current/etc/landscape"),
+    (
+        "/etc/default/landscape-server",
+        "/var/snap/landscape-server/current/etc/default/landscape-server",
+    ),
+    ("/var/lib/landscape", "/var/snap/landscape-server/current/var/lib/landscape"),
+    (
+        "/var/lib/landscape-server",
+        "/var/snap/landscape-server/current/var/lib/landscape-server",
+    ),
+    (
+        "/var/log/landscape-server",
+        "/var/snap/landscape-server/current/var/log/landscape-server",
+    ),
+)
 LANDSCAPE_HASH_IDS = "landscape-hashids"
 LANDSCAPE_HOSTED = "landscape-hosted"
 LANDSCAPE_PACKAGES = (
@@ -195,6 +225,44 @@ LEADER_SERVICES = (
     "landscape-package-search",
     "landscape-package-upload",
 )
+
+SNAP_CORE_SERVICES = (
+    "api",
+    "appserver",
+    "async-frontend",
+    "health-check",
+    "hostagent-consumer",
+    "job-handler",
+    "message-server",
+    "pingserver",
+    "secrets-service",
+)
+SNAP_TIMER_SERVICES = (
+    "maintenance",
+    "security-db-update",
+    "alerts",
+    "upgrade-profiles",
+    "scheduled-profiles",
+    "script-profiles",
+    "usg-profiles",
+    "cancel-expired-activities",
+    "hash-id-databases",
+    "meta-releases",
+    "package-change-plans",
+)
+SNAP_DAEMON_NAMES = {
+    "landscape-api": "api",
+    "landscape-appserver": "appserver",
+    "landscape-async-frontend": "async-frontend",
+    "landscape-hostagent-consumer": "hostagent-consumer",
+    "landscape-hostagent-messenger": "hostagent-messenger",
+    "landscape-job-handler": "job-handler",
+    "landscape-msgserver": "message-server",
+    "landscape-package-search": "package-search",
+    "landscape-package-upload": "package-upload",
+    "landscape-pingserver": "pingserver",
+    LANDSCAPE_UBUNTU_INSTALLER_ATTACH: "ubuntu-installer-attach-messenger",
+}
 
 OPENID_CONFIG_VALS = (
     "openid_provider_url",
@@ -457,6 +525,8 @@ class LandscapeServerCharm(CharmBase):
         self._stored.set_default(secret_token=None)
         self._stored.set_default(cookie_encryption_key=None)
         self._stored.set_default(enable_ubuntu_installer_attach=False)
+        self._stored.set_default(install_source=None)
+        self._stored.set_default(demo_data_created=False)
 
         self.root_gid = group_exists("root").gr_gid
 
@@ -479,6 +549,10 @@ class LandscapeServerCharm(CharmBase):
             self.unit.status = BlockedStatus(
                 "Invalid configuration. See `juju debug-log`."
             )
+
+        set_active_install_source(
+            self._stored.install_source or self.charm_config.landscape_install_source
+        )
 
         self.appserver_haproxy_route = HaproxyRouteRequirer(
             self, relation_name="appserver-haproxy-route"
@@ -556,6 +630,28 @@ class LandscapeServerCharm(CharmBase):
 
         return str(bind_address) if bind_address else None
 
+    @property
+    def _install_source_is_snap(self) -> bool:
+        """Return True if the installed Landscape source is the snap."""
+        source = (
+            self._stored.install_source or self.charm_config.landscape_install_source
+        )
+        return source == "snap"
+
+    @property
+    def _landscape_uid(self) -> int:
+        """Return the UID of the landscape user (deb) or root (snap)."""
+        if self._install_source_is_snap:
+            return 0  # snap services run as root inside the snap namespace
+        return user_exists("landscape").pw_uid
+
+    @property
+    def _landscape_gid(self) -> int:
+        """Return the GID for landscape-owned files."""
+        if self._install_source_is_snap:
+            return 0
+        return user_exists("landscape").pw_gid
+
     def _generate_scrape_configs(self) -> list[dict]:
         """
         Return a scrape config for every metric-instrumented Landscape service.
@@ -572,6 +668,11 @@ class LandscapeServerCharm(CharmBase):
                 ],
             }
             for service, port in METRIC_INSTRUMENTED_SERVICE_PORTS
+            if (
+                not self._install_source_is_snap
+                or service != "package-upload"
+                or self._snap_daemon_name("landscape-package-upload") is not None
+            )
         ]
 
     def _on_config_changed(self, _) -> None:
@@ -582,6 +683,10 @@ class LandscapeServerCharm(CharmBase):
             self.charm_config = LandscapeCharmConfiguration.model_validate(
                 self.model.config
             )
+            set_active_install_source(
+                self._stored.install_source
+                or self.charm_config.landscape_install_source
+            )
             self.unit.status = WaitingStatus("Configuration validated...")
         except ValidationError as e:
             logger.error(f"Invalid configuration: {e.errors()}")
@@ -589,6 +694,24 @@ class LandscapeServerCharm(CharmBase):
                 "Invalid configuration. See `juju debug-log`."
             )
             return
+
+        if (
+            self._stored.install_source
+            and self._stored.install_source
+            != self.charm_config.landscape_install_source
+        ):
+            if (
+                self._stored.install_source == "deb"
+                and self.charm_config.landscape_install_source == "snap"
+            ):
+                if not self._migrate_deb_to_snap():
+                    return
+            else:
+                self.unit.status = BlockedStatus(
+                    "Changing landscape_install_source after installation "
+                    "is only supported from deb to snap"
+                )
+                return
 
         try:
             snap.ensure(
@@ -603,11 +726,13 @@ class LandscapeServerCharm(CharmBase):
             logger.exception(e)
             return
 
+        self._configure_outbox_config()
+
         try:
             self._configure_ubuntu_installer_attach(
                 self.charm_config.enable_ubuntu_installer_attach
             )
-        except PackageError as e:
+        except (PackageError, snap.SnapError) as e:
             # TODO Should be "blocked" eventually, but this causes the charm to be
             # stuck in the "blocked" state permanently.
             self.unit.status = MaintenanceStatus(
@@ -668,7 +793,7 @@ class LandscapeServerCharm(CharmBase):
             self.unit.status = MaintenanceStatus("Writing Landscape license file")
             write_license_file(
                 self.charm_config.license_file,
-                user_exists("landscape").pw_uid,
+                self._landscape_uid,
                 self.root_gid,
             )
             self.unit.status = WaitingStatus("Waiting on relations")
@@ -760,7 +885,10 @@ class LandscapeServerCharm(CharmBase):
                 Port("tcp", self.charm_config.api_base_port + i),
             ]
 
-        if self.unit.is_leader():
+        if self.unit.is_leader() and (
+            not self._install_source_is_snap
+            or self._snap_daemon_name("landscape-package-upload") is not None
+        ):
             ports.append(Port("tcp", self.charm_config.package_upload_base_port))
 
         if self.charm_config.enable_hostagent_messenger:
@@ -850,36 +978,39 @@ class LandscapeServerCharm(CharmBase):
         )
         gpg_passphrase_file = os.path.join(gpg_home_dir, "gpg-passphrase.txt")
 
-        landscape_user = user_exists("landscape")
-        landscape_uid = landscape_user.pw_uid
-        landscape_gid = landscape_user.pw_gid
+        landscape_uid = self._landscape_uid
+        landscape_gid = self._landscape_gid
+        host_gpg_home_dir = get_landscape_host_path(gpg_home_dir)
+        host_gpg_passphrase_file = get_landscape_host_path(gpg_passphrase_file)
 
-        os.makedirs(gpg_home_dir, mode=0o700, exist_ok=True)
+        os.makedirs(host_gpg_home_dir, mode=0o700, exist_ok=True)
         # Enforce 0700 explicitly — makedirs is subject to umask
-        os.chmod(gpg_home_dir, 0o700)
-        os.chown(gpg_home_dir, landscape_uid, landscape_gid)
+        os.chmod(host_gpg_home_dir, 0o700)
+        os.chown(host_gpg_home_dir, landscape_uid, landscape_gid)
 
         # Set umask to 0o177 so open() creates the file with 0o600 immediately,
         # avoiding a window where it could be world-readable
         old_umask = os.umask(0o177)
         try:
-            with open(gpg_passphrase_file, "w") as fp:
+            with open(host_gpg_passphrase_file, "w") as fp:
                 fp.write(passphrase)
         finally:
             os.umask(old_umask)
-        os.chown(gpg_passphrase_file, landscape_uid, landscape_gid)
+        os.chown(host_gpg_passphrase_file, landscape_uid, landscape_gid)
 
         try:
             subprocess.run(
-                [
-                    "gpg",
-                    "--homedir",
-                    gpg_home_dir,
-                    "--batch",
-                    "--passphrase-file",
-                    gpg_passphrase_file,
-                    "--import",
-                ],
+                self._landscape_command(
+                    [
+                        "gpg",
+                        "--homedir",
+                        gpg_home_dir,
+                        "--batch",
+                        "--passphrase-file",
+                        gpg_passphrase_file,
+                        "--import",
+                    ]
+                ),
                 input=private_key,
                 check=True,
                 text=True,
@@ -910,7 +1041,60 @@ class LandscapeServerCharm(CharmBase):
                 self._update_ready_status(restart_services=True)
 
     def _on_upgrade_charm(self, _: UpgradeCharmEvent) -> None:
+        # Mark Postfix manually installed so apt autoremove keeps it.
+        if self._install_source_is_snap:
+            apt.add_package(list(SNAP_HOST_APT_PACKAGES), update_cache=True)
+            try:
+                self._ensure_landscape_snap(refresh=True)
+                self._install_hash_id_component()
+            except (snap.SnapError, SnapRevisionError) as e:
+                logger.error("Failed to refresh landscape-server snap: %s", e)
+                self.unit.status = BlockedStatus(
+                    "Failed to refresh landscape-server snap"
+                )
+                return
         self._provide_all_haproxy_route_requirements()
+
+    def _landscape_command(self, command: list[str]) -> list[str]:
+        """Wrap an administrative command for the active install source."""
+        source = "snap" if self._install_source_is_snap else "deb"
+        return get_landscape_command(command, source)
+
+    def _landscape_env(self) -> dict | None:
+        """Return the deb subprocess environment, or None for snap run."""
+        return None if self._install_source_is_snap else get_modified_env_vars()
+
+    def _stage_snap_script(self, source: str, filename: str) -> str:
+        """Copy a charm helper into writable storage visible to the snap."""
+        snap_path = f"/var/lib/landscape/{filename}"
+        host_path = get_landscape_host_path(snap_path)
+        shutil.copyfile(source, host_path)
+        os.chmod(host_path, 0o600)
+        return snap_path
+
+    def _schema_command(self, args: list[str]) -> list[str]:
+        """Run schema with the deb script or the snap's upgrade-schema app."""
+        if self._install_source_is_snap:
+            return [LANDSCAPE_SNAP_UPGRADE_SCHEMA, *args]
+        return [SCHEMA_SCRIPT, *args]
+
+    @property
+    def _bootstrap_account_script(self) -> str:
+        if self._install_source_is_snap:
+            return "/opt/canonical/landscape/bootstrap-account"
+        return BOOTSTRAP_ACCOUNT_SCRIPT
+
+    @property
+    def _hash_id_databases_script(self) -> str:
+        if self._install_source_is_snap:
+            return "/opt/canonical/landscape/hash-id-databases-ignore-maintenance"
+        return HASH_ID_DATABASES
+
+    @property
+    def _update_wsl_distributions_script(self) -> str:
+        if self._install_source_is_snap:
+            return "/opt/canonical/landscape/update-wsl-distributions"
+        return UPDATE_WSL_DISTRIBUTIONS_SCRIPT
 
     def _install_debian_packages_with_recommends(
         self, package_names: list[str]
@@ -934,17 +1118,256 @@ class LandscapeServerCharm(CharmBase):
                 logger.error("Error trying to hold %s: %s", p, str(e))
                 raise e
 
+    def _configure_outbox_config(self) -> None:
+        """Connect outbox to the snap's landscape-conf interface."""
+        if not self._install_source_is_snap:
+            return
+
+        check_call(
+            [
+                "snap",
+                "connect",
+                "landscape-outbox:landscape-conf",
+                "landscape-server:landscape-conf",
+            ]
+        )
+
+    def _copy_migration_path(self, source: str, destination: str) -> None:
+        """Copy deb data into the snap and make it writable by snap services."""
+        if not os.path.exists(source):
+            return
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        if os.path.isdir(source):
+            check_call(["cp", "-a", f"{source}/.", f"{destination}/"])
+        else:
+            check_call(["cp", "-a", source, destination])
+        check_call(["chown", "-R", "root:root", destination])
+
+    def _backup_deb_config(self) -> None:
+        """Back up the small config files that migration may replace."""
+        os.makedirs(DEB_MIGRATION_CONFIG_BACKUP, exist_ok=True)
+        for source in ("/etc/landscape", "/etc/default/landscape-server"):
+            if os.path.exists(source):
+                check_call(["cp", "-a", source, f"{DEB_MIGRATION_CONFIG_BACKUP}/"])
+
+    def _restore_deb_config_backup(self) -> None:
+        """Restore the deb config backup, if one exists."""
+        for source in ("/etc/landscape", "/etc/default/landscape-server"):
+            backup = os.path.join(DEB_MIGRATION_CONFIG_BACKUP, os.path.basename(source))
+            if not os.path.exists(backup):
+                continue
+            if os.path.isdir(backup):
+                check_call(["cp", "-a", f"{backup}/.", f"{source}/"])
+            else:
+                check_call(["cp", "-a", backup, source])
+
+    def _restore_deb_after_failed_migration(self, running: bool) -> None:
+        """Restore deb operation after a failed migration."""
+        set_active_install_source("deb")
+        try:
+            self._restore_deb_config_backup()
+            self._restore_deb_cron_jobs()
+        except (CalledProcessError, OSError) as e:
+            logger.error("Failed to restore deb configuration: %s", e)
+        try:
+            snap.SnapCache()[LANDSCAPE_SNAP].stop()
+        except snap.SnapError as e:
+            logger.warning("Failed to stop snap during migration rollback: %s", e)
+        if running:
+            try:
+                check_call([LSCTL, "start"], env=get_modified_env_vars())
+            except CalledProcessError as e:
+                logger.error(
+                    "Failed to restart deb services after migration failure: %s", e
+                )
+        self._stored.running = running
+
+    def _disable_deb_cron_jobs(self) -> None:
+        """Disable deb cron files while preserving them for rollback."""
+        for path in DEB_CRON_FILES:
+            if os.path.exists(path):
+                os.replace(path, f"{path}.deb")
+
+    def _restore_deb_cron_jobs(self) -> None:
+        """Restore deb cron files disabled during migration."""
+        for path in DEB_CRON_FILES:
+            disabled = f"{path}.deb"
+            if os.path.exists(disabled):
+                os.replace(disabled, path)
+
+    def _migrate_deb_to_snap(self) -> bool:
+        """Migrate deb to snap, preserving the deb installation for rollback."""
+        was_running = self._stored.running
+        self.unit.status = MaintenanceStatus("Migrating Landscape from deb to snap")
+        try:
+            self._backup_deb_config()
+            check_call([LSCTL, "stop"], env=get_modified_env_vars())
+            self._disable_deb_cron_jobs()
+            set_active_install_source("snap")
+            self._install_snap()
+
+            for source, destination in DEB_TO_SNAP_MIGRATION_PATHS:
+                self._copy_migration_path(source, destination)
+
+            # Move the deb defaults out of the confined snap's view.
+            if os.path.exists("/etc/default/landscape-server"):
+                os.replace(
+                    "/etc/default/landscape-server",
+                    "/etc/default/landscape-server.deb",
+                )
+
+            migrate_service_conf("snap")
+            if self.unit.is_leader():
+                # Apply pending patches before bootstrapping the existing database.
+                check_call(
+                    [LANDSCAPE_SNAP_UPGRADE_SCHEMA, "--allow-connections"],
+                    env=None,
+                )
+                check_call(
+                    [
+                        LANDSCAPE_SNAP_UPGRADE_SCHEMA,
+                        "--bootstrap",
+                        "--allow-connections",
+                    ],
+                    env=None,
+                )
+
+            self._configure_outbox_config()
+        except (
+            CalledProcessError,
+            OSError,
+            PackageError,
+            PgHbaNotReadyError,
+            RuntimeError,
+            ServiceConfMissing,
+            snap.SnapError,
+        ) as e:
+            logger.error("Deb-to-snap migration failed: %s", e)
+            self._restore_deb_after_failed_migration(was_running)
+            self.unit.status = BlockedStatus(
+                "Deb-to-snap migration failed; deb services restored"
+            )
+            return False
+
+        self._stored.install_source = "snap"
+        self._stored.running = False
+        return True
+
     def _on_install(self, event: InstallEvent) -> None:
         """Handle the install event."""
-        self.unit.status = MaintenanceStatus("Installing apt packages")
-        # Create /sbin symlinks for fuse mount helpers, missing on
-        # resolute where /sbin and /usr/sbin are not merged,
-        # causing snapd's syscheck to fail.
+        # Create FUSE mount-helper symlinks required by snapd on resolute.
         for helper in ["mount.fuse", "mount.fuse3"]:
             src = Path(f"/usr/sbin/{helper}")
             dst = Path(f"/sbin/{helper}")
             if src.exists() and not dst.exists():
                 dst.symlink_to(src)
+
+        if self._install_source_is_snap:
+            self._install_snap()
+        else:
+            self._install_deb()
+
+        self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
+        try:
+            snap.add(
+                LANDSCAPE_OUTBOX_SNAP,
+                channel=self.charm_config.outbox_snap_channel,
+            )
+        except snap.SnapError as exc:
+            logger.error("Failed to install landscape-outbox snap")
+            raise exc
+
+        self._configure_outbox_config()
+
+        license_file = self.charm_config.license_file
+        if license_file:
+            self.unit.status = MaintenanceStatus("Writing Landscape license file")
+            write_license_file(license_file, self._landscape_uid, self.root_gid)
+            self.unit.status = WaitingStatus("Waiting on relations")
+
+        prepend_default_settings({"DEPLOYED_FROM": "charm"})
+
+        self._configure_gpg()
+
+        self._stored.install_source = self.charm_config.landscape_install_source
+        self._update_ready_status()
+
+    @cached_property
+    def _landscape_snap_revision(self) -> str:
+        """Return the Landscape snap revision pinned for this architecture."""
+        return get_snap_revision(LANDSCAPE_SNAP)
+
+    def _ensure_landscape_snap(self, refresh: bool = False) -> None:
+        """Install or refresh Landscape Server to the charm's pinned revision."""
+        landscape_snap = snap.SnapCache()[LANDSCAPE_SNAP]
+        if not landscape_snap.present or refresh:
+            if refresh and landscape_snap.held:
+                landscape_snap.unhold()
+            landscape_snap.ensure(
+                snap.SnapState.Latest,
+                channel=self.charm_config.landscape_snap_channel,
+                revision=self._landscape_snap_revision,
+            )
+
+        # Hold the snap except while applying the charm-pinned revision.
+        landscape_snap.hold()
+
+    def _install_hash_id_component(self) -> None:
+        """Install the hash-id component associated with the pinned snap."""
+        if self.charm_config.min_install:
+            return
+
+        # Missing components must not block the base snap installation.
+        try:
+            check_call(
+                [
+                    "snap",
+                    "install",
+                    LANDSCAPE_SNAP_WITH_HASH_IDS,
+                    "--channel",
+                    self.charm_config.landscape_snap_channel,
+                    "--revision",
+                    self._landscape_snap_revision,
+                ]
+            )
+        except CalledProcessError:
+            logger.warning(
+                "The hash-id-databases component is unavailable for "
+                "landscape-server revision %s; continuing without pre-canned "
+                "hash-id databases",
+                self._landscape_snap_revision,
+            )
+
+    def _install_snap(self) -> None:
+        """Install Landscape Server from the snap."""
+        self.unit.status = MaintenanceStatus("Installing landscape-server snap")
+        try:
+            # needrestart can hang package installation.
+            apt.remove_package(["needrestart"])
+        except (PackageNotFoundError, PackageError) as e:
+            logger.error("Failed to remove needrestart package: %s", str(e))
+            raise e
+
+        # Install the host MTA required by SMTP handling.
+        try:
+            apt.add_package(list(SNAP_HOST_APT_PACKAGES), update_cache=True)
+        except PackageError as e:
+            logger.error("Failed to install postfix: %s", str(e))
+            raise e
+
+        try:
+            self._ensure_landscape_snap()
+        except (snap.SnapError, SnapRevisionError) as exc:
+            logger.error("Failed to install landscape-server snap")
+            raise exc
+
+        self._install_hash_id_component()
+
+        self.unit.status = WaitingStatus("Waiting on relations")
+
+    def _install_deb(self) -> None:
+        """Install Landscape Server from the deb PPA."""
+        self.unit.status = MaintenanceStatus("Installing apt packages")
 
         landscape_ppa_key = self.charm_config.landscape_ppa_key
         if landscape_ppa_key != "":
@@ -1003,33 +1426,6 @@ class LandscapeServerCharm(CharmBase):
             self.unit.status = MaintenanceStatus("Enabling landscape-hosted cron jobs")
             enable_landscape_hosted_cron_jobs()
 
-        self.unit.status = MaintenanceStatus("Installing landscape-outbox snap")
-        try:
-            snap.add(
-                LANDSCAPE_OUTBOX_SNAP,
-                channel=self.charm_config.outbox_snap_channel,
-            )
-        except snap.SnapError as exc:
-            logger.error("Failed to install landscape-outbox snap")
-            raise exc
-
-        # Write the license file, if it exists.
-        license_file = self.charm_config.license_file
-
-        if license_file:
-            self.unit.status = MaintenanceStatus("Writing Landscape license file")
-            write_license_file(
-                license_file, user_exists("landscape").pw_uid, self.root_gid
-            )
-            self.unit.status = WaitingStatus("Waiting on relations")
-
-        # Indicate that this install is a charm install.
-        prepend_default_settings({"DEPLOYED_FROM": "charm"})
-
-        self._configure_gpg()
-
-        self._update_ready_status()
-
     def _update_status(self, event: UpdateStatusEvent) -> None:
         """Called at regular intervals by juju."""
         self._update_ready_status()
@@ -1057,10 +1453,7 @@ class LandscapeServerCharm(CharmBase):
         self._stored.running = self._start_services()
 
     def _start_services(self) -> bool:
-        """
-        Starts all Landscape Server systemd services. Returns True if
-        successful, False otherwise.
-        """
+        """Start all Landscape Server services, returning True on success."""
         self.unit.status = MaintenanceStatus("Starting services")
         is_leader = self.unit.is_leader()
         deployment_mode = self.charm_config.deployment_mode
@@ -1087,14 +1480,112 @@ class LandscapeServerCharm(CharmBase):
         logger.info("Starting services")
 
         try:
-            check_call([LSCTL, "restart"], env=get_modified_env_vars())
+            if self._install_source_is_snap:
+                self._start_snap_services()
+            else:
+                check_call([LSCTL, "restart"], env=get_modified_env_vars())
             check_call(["snap", "restart", LANDSCAPE_OUTBOX_SNAP])
             self.unit.status = ActiveStatus("Unit is ready")
             return True
-        except CalledProcessError as e:
-            logger.error("Starting services failed with output: %s", e.output)
+        except (CalledProcessError, snap.SnapError) as e:
+            logger.error("Starting services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to start services")
             return False
+
+    def _start_snap_services(self) -> None:
+        """Enable the snap daemons appropriate for this unit."""
+        landscape_snap = snap.SnapCache()[LANDSCAPE_SNAP]
+        available = landscape_snap.services
+        enabled = list(SNAP_CORE_SERVICES)
+        disabled = []
+
+        if self.unit.is_leader():
+            enabled.append("package-search")
+            enabled.extend(
+                service for service in SNAP_TIMER_SERVICES if service in available
+            )
+            if "package-upload" in available:
+                enabled.append("package-upload")
+            else:
+                logger.warning(
+                    "The landscape-server snap does not provide package-upload; "
+                    "the /upload endpoint will be unavailable"
+                )
+        else:
+            disabled.extend(
+                [
+                    daemon
+                    for daemon in ("package-search", "package-upload")
+                    if daemon in available
+                ]
+            )
+            disabled.extend(SNAP_TIMER_SERVICES)
+
+        if self.charm_config.enable_hostagent_messenger:
+            enabled.append("hostagent-messenger")
+        else:
+            disabled.append("hostagent-messenger")
+
+        if self._stored.enable_ubuntu_installer_attach:
+            enabled.append("ubuntu-installer-attach-messenger")
+        else:
+            disabled.append("ubuntu-installer-attach-messenger")
+
+        if enabled:
+            landscape_snap.start(enabled, enable=True)
+        if disabled:
+            landscape_snap.stop(disabled, disable=True)
+
+    def _snap_daemon_name(self, service: str) -> str | None:
+        """Map a deb service name to an installed snap daemon, if present."""
+        daemon = SNAP_DAEMON_NAMES.get(service)
+        if daemon is None:
+            return None
+        if daemon not in snap.SnapCache()[LANDSCAPE_SNAP].services:
+            return None
+        return daemon
+
+    def _service_running(self, service: str) -> bool:
+        """Return whether a Landscape service is running, snap or deb."""
+        if self._install_source_is_snap:
+            daemon = self._snap_daemon_name(service)
+            if daemon is None:
+                return False
+            services = snap.SnapCache()[LANDSCAPE_SNAP].services
+            return bool(services.get(daemon, {}).get("active"))
+        return service_running(service)
+
+    def _service_resume(self, service: str) -> None:
+        """Resume (start) a Landscape service, snap or deb."""
+        if self._install_source_is_snap:
+            daemon = self._snap_daemon_name(service)
+            if daemon is None:
+                logger.warning("The landscape-server snap does not provide %s", service)
+                return
+            snap.SnapCache()[LANDSCAPE_SNAP].start([daemon], enable=True)
+            return
+        service_resume(service)
+
+    def _service_pause(self, service: str) -> None:
+        """Pause (stop) a Landscape service, snap or deb."""
+        if self._install_source_is_snap:
+            daemon = self._snap_daemon_name(service)
+            if daemon is None:
+                return
+            snap.SnapCache()[LANDSCAPE_SNAP].stop([daemon], disable=True)
+            return
+        service_pause(service)
+
+    def _service_restart(self, service: str) -> None:
+        """Restart a Landscape service, snap or deb."""
+        if self._install_source_is_snap:
+            daemon = self._snap_daemon_name(service)
+            if daemon is None:
+                logger.warning("The landscape-server snap does not provide %s", service)
+                return
+            snap.SnapCache()[LANDSCAPE_SNAP].restart([daemon])
+            return
+        service_restart(service)
 
     def _db_relation_changed(self, event: RelationChangedEvent) -> None:
         unit_data = event.relation.data[event.unit]
@@ -1174,6 +1665,12 @@ class LandscapeServerCharm(CharmBase):
         self._stored.ready["db"] = True
         self.unit.status = ActiveStatus("Unit is ready")
         self._update_ready_status(restart_services=True)
+
+    def _grant_role(self, **kwargs) -> None:
+        """Grant a PostgreSQL role using the active install source."""
+        if self._install_source_is_snap:
+            kwargs["install_source"] = "snap"
+        grant_role(**kwargs)
 
     def _database_relation_changed(
         self, _: DatabaseCreatedEvent | DatabaseEndpointsChangedEvent
@@ -1271,7 +1768,7 @@ class LandscapeServerCharm(CharmBase):
         supports_charmed_roles = roles.owner == "charmed_dba"
 
         if supports_charmed_roles:
-            grant_role(
+            self._grant_role(
                 host=host,
                 port=port,
                 relation_user=relation_username,
@@ -1281,7 +1778,7 @@ class LandscapeServerCharm(CharmBase):
             )
 
             if roles.superuser:
-                grant_role(
+                self._grant_role(
                     host=host,
                     port=port,
                     relation_user=relation_username,
@@ -1326,9 +1823,10 @@ class LandscapeServerCharm(CharmBase):
         """Returns True if the installed schema script accepts the given flag."""
         try:
             result = subprocess.run(
-                [SCHEMA_SCRIPT, "--help"],
+                self._schema_command(["--help"]),
                 capture_output=True,
                 text=True,
+                env=self._landscape_env(),
             )
             return flag in result.stdout or flag in result.stderr
         except OSError:
@@ -1349,7 +1847,7 @@ class LandscapeServerCharm(CharmBase):
 
         :returns: True on success.
         """
-        call = [SCHEMA_SCRIPT, "--bootstrap"]
+        call = ["--bootstrap"]
 
         if owner_role and self._schema_supports_flag("--db-owner-role"):
             call.extend(["--db-owner-role", owner_role])
@@ -1357,13 +1855,14 @@ class LandscapeServerCharm(CharmBase):
         if self._proxy_settings:
             call.extend(self._proxy_settings)
 
-        if demo_data:
+        create_demo_data = demo_data and not self._stored.demo_data_created
+        if create_demo_data:
             call.extend(self._demo_schema_args())
 
         call.extend(self.charm_config.bootstrap_schema_override_args_list)
 
         try:
-            check_call(call, env=get_modified_env_vars())
+            check_call(self._schema_command(call), env=self._landscape_env())
         except CalledProcessError as e:
             logger.error(
                 "Landscape Server schema update failed with return code %d",
@@ -1371,6 +1870,9 @@ class LandscapeServerCharm(CharmBase):
             )
             self.unit.status = BlockedStatus("Failed to update database schema")
             return False
+
+        if create_demo_data:
+            self._stored.demo_data_created = True
 
         self._bootstrap_account()
         self._set_autoregistration()
@@ -1391,15 +1893,15 @@ class LandscapeServerCharm(CharmBase):
 
         try:
             check_call(
-                [UPDATE_WSL_DISTRIBUTIONS_SCRIPT],
-                env=get_modified_env_vars(),
+                self._landscape_command([self._update_wsl_distributions_script]),
+                env=self._landscape_env(),
             )
             return True
         except FileNotFoundError:
             logger.warning(
                 "WSL distributions script not found at '%s'; "
                 "Landscape may not be installed yet.",
-                UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
+                self._update_wsl_distributions_script,
             )
             return True
         except CalledProcessError as e:
@@ -1408,7 +1910,7 @@ class LandscapeServerCharm(CharmBase):
             )
             logger.info(
                 "Try updating the stock WSL distributions again later by running '%s'.",
-                UPDATE_WSL_DISTRIBUTIONS_SCRIPT,
+                self._update_wsl_distributions_script,
             )
 
     def _amqp_relation_joined(self, event: RelationJoinedEvent) -> None:
@@ -1478,6 +1980,13 @@ class LandscapeServerCharm(CharmBase):
         self._update_ready_status()
 
     def _update_haproxy_connection(self, relation: Relation) -> None:
+        if self._install_source_is_snap:
+            self.unit.status = BlockedStatus(
+                "The legacy `website` relation is not supported with the snap; "
+                "use haproxy-route instead"
+            )
+            return
+
         logger.warning(
             "The legacy HAProxy charm integration (`website` relation) is deprecated "
             "and support will be dropped in Landscape 26.10. "
@@ -1698,18 +2207,24 @@ class LandscapeServerCharm(CharmBase):
             unit_address=unit_ip,
             hostname=sni,
         )
-        self.package_upload_haproxy_route.provide_haproxy_route_requirements(
-            service=f"landscape-package-upload-{model_uuid}",
-            ports=[cfg.package_upload_base_port],
-            paths=["/upload"],
-            protocol="http",
-            **cfg.haproxy_health_checks.package_upload.route_kwargs(),
-            **cfg.haproxy_timeouts.package_upload.route_kwargs(),
-            header_rewrite_expressions=forwarded_proto_https,
-            allow_http=allow_http_default,
-            unit_address=unit_ip,
-            hostname=sni,
-        )
+        if (
+            self._install_source_is_snap
+            and self._snap_daemon_name("landscape-package-upload") is None
+        ):
+            self._clear_route_relation_data("package-upload-haproxy-route")
+        else:
+            self.package_upload_haproxy_route.provide_haproxy_route_requirements(
+                service=f"landscape-package-upload-{model_uuid}",
+                ports=[cfg.package_upload_base_port],
+                paths=["/upload"],
+                protocol="http",
+                **cfg.haproxy_health_checks.package_upload.route_kwargs(),
+                **cfg.haproxy_timeouts.package_upload.route_kwargs(),
+                header_rewrite_expressions=forwarded_proto_https,
+                allow_http=allow_http_default,
+                unit_address=unit_ip,
+                hostname=sni,
+            )
         # Repository uses appserver ports and allow_http=True because clients
         # (e.g. apt) call it over plain HTTP and cannot follow HTTPS redirects.
         # It has its own route rather than being merged with appserver because
@@ -1868,7 +2383,7 @@ class LandscapeServerCharm(CharmBase):
                 else:
                     changed = write_tls(
                         *tls_material,
-                        user_exists("landscape").pw_uid,
+                        self._landscape_uid,
                         self.root_gid,
                     )
                     if not grpc_server_tls_settings(section):
@@ -1883,8 +2398,8 @@ class LandscapeServerCharm(CharmBase):
 
             if changed and enabled and not self._stored.paused:
                 try:
-                    service_restart(service)
-                except SystemdError as e:
+                    self._service_restart(service)
+                except (SystemdError, CalledProcessError, snap.SnapError) as e:
                     logger.error("Failed to restart %s: %s", service, e)
 
     def _grpc_tls_material(self) -> tuple[str, str] | None:
@@ -1922,6 +2437,13 @@ class LandscapeServerCharm(CharmBase):
             services_to_add = DEFAULT_SERVICES
             services_to_remove = LEADER_SERVICES
 
+        if self._install_source_is_snap:
+            services_to_add = tuple(
+                service
+                for service in services_to_add
+                if self._snap_daemon_name(service) is not None
+            )
+
         monitors = {
             "monitors": {
                 "remote": {
@@ -1944,8 +2466,13 @@ class LandscapeServerCharm(CharmBase):
             service_cfg = service.replace("-", "_")
             cfg_filename = os.path.join(NRPE_D_DIR, f"check_{service_cfg}.cfg")
 
-            if os.path.exists(cfg_filename):
+            if os.path.exists(cfg_filename) and not self._install_source_is_snap:
                 continue
+
+            systemd_service = service
+            if self._install_source_is_snap:
+                daemon = self._snap_daemon_name(service)
+                systemd_service = f"snap.{LANDSCAPE_SNAP}.{daemon}.service"
 
             with open(cfg_filename, "w") as cfg_fp:
                 cfg_fp.write(
@@ -1953,8 +2480,9 @@ class LandscapeServerCharm(CharmBase):
 # The following header was added by the landscape-server charm
 # Modifying it will affect nagios monitoring and alerting
 # servicegroups: juju
-command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service}
 """
+                    f"command[check_{service}]=/usr/local/lib/nagios/plugins/"
+                    f"check_systemd.py {systemd_service}\n"
                 )
 
         for service in services_to_remove:
@@ -2330,19 +2858,21 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         if self.unit.is_leader():
             # Enable leader services on this unit.
-            paused_services = (s for s in LEADER_SERVICES if not service_running(s))
+            paused_services = (
+                s for s in LEADER_SERVICES if not self._service_running(s)
+            )
             for service in paused_services:
                 try:
-                    service_resume(service)
-                except SystemdError as e:
+                    self._service_resume(service)
+                except (SystemdError, CalledProcessError, snap.SnapError) as e:
                     logger.warning(str(e))
         else:
             # Disable leader services on this unit. Requests will be directed to the
             # leader anyways.
             for service in LEADER_SERVICES:
                 try:
-                    service_pause(service)
-                except SystemdError as e:
+                    self._service_pause(service)
+                except (SystemdError, CalledProcessError, snap.SnapError) as e:
                     logger.warning(str(e))
 
         self._set_ports()
@@ -2537,13 +3067,21 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return True
 
         logger.info("Checking whether the account has been bootstrapped...")
-        python = get_landscape_python()
+        if self._install_source_is_snap:
+            script = self._stage_snap_script(CHECK_ACCOUNT_SCRIPT, "check_account.py")
+            command = self._landscape_command(
+                ["/opt/venvs/landscape/bin/python3", script]
+            )
+            env = self._landscape_env()
+        else:
+            command = [get_landscape_python(), CHECK_ACCOUNT_SCRIPT]
+            env = get_modified_env_vars()
         try:
             result = subprocess.run(
-                [python, CHECK_ACCOUNT_SCRIPT],
+                command,
                 capture_output=True,
                 text=True,
-                env=get_modified_env_vars(),
+                env=env,
                 timeout=LANDSCAPE_SCRIPT_TIMEOUT,
             )
         except (OSError, subprocess.TimeoutExpired) as e:
@@ -2586,7 +3124,7 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         karg["system_email"] = self.charm_config.system_email
 
         # Collect command line arguments
-        args = [BOOTSTRAP_ACCOUNT_SCRIPT]
+        args = [self._bootstrap_account_script]
         for key, value in karg.items():
             if not value:
                 continue
@@ -2599,11 +3137,14 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
 
         try:
             result = subprocess.run(
-                args, capture_output=True, text=True, env=get_modified_env_vars()
+                self._landscape_command(args),
+                capture_output=True,
+                text=True,
+                env=self._landscape_env(),
             )
         except FileNotFoundError:
             logger.error("Bootstrap script not found!")
-            logger.error(BOOTSTRAP_ACCOUNT_SCRIPT)
+            logger.error(self._bootstrap_account_script)
             return
         logger.info(result.stdout)
         if result.returncode:
@@ -2637,11 +3178,26 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return
 
         logger.info("Setting autoregistration...")
+        command = ["python3", AUTOREGISTRATION_SCRIPT, on]
+        if self._install_source_is_snap:
+            # Stage the helper in SNAP_DATA for the confined snap.
+            snap_script = self._stage_snap_script(
+                AUTOREGISTRATION_SCRIPT, "autoregistration.py"
+            )
+            command = ["/opt/venvs/landscape/bin/python3", snap_script, on]
+
+        if self._install_source_is_snap:
+            command = self._landscape_command(command)
+            env = self._landscape_env()
+        else:
+            command = [get_landscape_python(), AUTOREGISTRATION_SCRIPT, on]
+            env = get_modified_env_vars()
+
         result = subprocess.run(
-            [get_landscape_python(), AUTOREGISTRATION_SCRIPT, on],
+            command,
             capture_output=True,
             text=True,
-            env=get_modified_env_vars(),
+            env=env,
             timeout=LANDSCAPE_SCRIPT_TIMEOUT,
         )
 
@@ -2655,8 +3211,11 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         event.log("Stopping services")
 
         try:
-            check_call([LSCTL, "stop"], env=get_modified_env_vars())
-        except CalledProcessError as e:
+            if self._install_source_is_snap:
+                snap.SnapCache()[LANDSCAPE_SNAP].stop()
+            else:
+                check_call([LSCTL, "stop"], env=get_modified_env_vars())
+        except (CalledProcessError, snap.SnapError) as e:
             logger.error("Stopping services failed: %s", e)
             self.unit.status = BlockedStatus("Failed to stop services")
             event.fail("Failed to stop services")
@@ -2679,20 +3238,27 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         event.log("Starting services")
 
         try:
-            start_result = subprocess.run(
-                [LSCTL, "start"],
-                capture_output=True,
-                text=True,
-                env=get_modified_env_vars(),
-            )
-            check_call([LSCTL, "status"], env=get_modified_env_vars())
-        except CalledProcessError as e:
+            if self._install_source_is_snap:
+                self._start_snap_services()
+            else:
+                start_result = subprocess.run(
+                    [LSCTL, "start"],
+                    capture_output=True,
+                    text=True,
+                    env=get_modified_env_vars(),
+                )
+                check_call([LSCTL, "status"], env=get_modified_env_vars())
+        except (CalledProcessError, snap.SnapError) as e:
             logger.error("Starting services failed: %s", e)
-            logger.error("lsctl start output: %s", start_result.stdout)
             self.unit.status = MaintenanceStatus("Stopping services")
-            subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
+            if self._install_source_is_snap:
+                snap.SnapCache()[LANDSCAPE_SNAP].stop()
+                event.fail(f"Failed to start services: {e}")
+            else:
+                logger.error("lsctl start output: %s", start_result.stdout)
+                subprocess.run([LSCTL, "stop"], env=get_modified_env_vars())
+                event.fail(f"Failed to start services: {start_result.stdout}")
             self.unit.status = BlockedStatus("Failed to start services")
-            event.fail(f"Failed to start services: {start_result.stdout}")
             return
 
         try:
@@ -2747,6 +3313,21 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             return
 
         prev_status = self.unit.status
+
+        if self._install_source_is_snap:
+            self.unit.status = MaintenanceStatus("Ensuring pinned snap revision")
+            event.log("Ensuring the pinned landscape-server snap revision...")
+            try:
+                self._ensure_landscape_snap(refresh=True)
+                self._install_hash_id_component()
+            except (snap.SnapError, SnapRevisionError) as e:
+                logger.error("Failed to refresh landscape-server snap: %s", e)
+                event.fail(f"Failed to refresh landscape-server snap: {e}")
+                self.unit.status = BlockedStatus("Failed to refresh snap")
+                return
+            self.unit.status = prev_status
+            return
+
         self.unit.status = MaintenanceStatus("Upgrading packages")
         event.log("Upgrading Landscape packages...")
 
@@ -2812,14 +3393,17 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         self.unit.status = MaintenanceStatus("Migrating schemas...")
         event.log("Running schema migration...")
 
-        schema_args = [SCHEMA_SCRIPT]
+        schema_args = []
 
         if allow_conn and self._schema_supports_flag("--allow-connections"):
             schema_args.append("--allow-connections")
 
         try:
             subprocess.run(
-                schema_args, check=True, text=True, env=get_modified_env_vars()
+                self._schema_command(schema_args),
+                check=True,
+                text=True,
+                env=self._landscape_env(),
             )
         except CalledProcessError as e:
             logger.error("Schema migration failed with error code %s", e.returncode)
@@ -2834,11 +3418,16 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
         event.log("Running hash_id_databases")
 
         try:
+            cmd = (
+                [self._hash_id_databases_script]
+                if self._install_source_is_snap
+                else ["sudo", "-u", "landscape", self._hash_id_databases_script]
+            )
             subprocess.run(
-                ["sudo", "-u", "landscape", HASH_ID_DATABASES],
+                self._landscape_command(cmd),
                 check=True,
                 text=True,
-                env=get_modified_env_vars(),
+                env=self._landscape_env(),
             )
         except CalledProcessError as e:
             logger.error("Hashing ID databases failed with error code %s", e.returncode)
@@ -2847,40 +3436,70 @@ command[check_{service}]=/usr/local/lib/nagios/plugins/check_systemd.py {service
             self.unit.status = prev_status
 
     def _migrate_service_conf(self, event: ActionEvent) -> None:
-        migrate_service_conf()
+        source = "snap" if self._install_source_is_snap else "deb"
+        migrate_service_conf(source)
 
     def _configure_ubuntu_installer_attach(self, enable: bool) -> None:
         """
         Install/uninstall the Ubuntu installer attach service. Do nothing if the
         configuration has not changed.
+
+        In snap mode, the service is already present as a snap daemon; only
+        start/stop is needed.
         """
         currently_enabled = self._stored.enable_ubuntu_installer_attach
         if currently_enabled and enable:
             return
         if not currently_enabled and enable:
             self.unit.status = MaintenanceStatus(
-                "Installing `landscape-ubuntu-installer-attach`"
+                "Enabling `landscape-ubuntu-installer-attach`"
             )
-            try:
-                apt.add_package(LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True)
+            if self._install_source_is_snap:
+                try:
+                    snap.SnapCache()[LANDSCAPE_SNAP].start(
+                        ["ubuntu-installer-attach-messenger"], enable=True
+                    )
+                except snap.SnapError as e:
+                    logger.error(
+                        "Failed to start ubuntu-installer-attach-messenger: %s", e
+                    )
+                    raise e
                 self._stored.enable_ubuntu_installer_attach = True
-            except PackageError as e:
-                logger.error(
-                    f"Failed to install ubuntu installer attach with error: {e}"
-                )
-                raise e
+            else:
+                try:
+                    apt.add_package(
+                        LANDSCAPE_UBUNTU_INSTALLER_ATTACH, update_cache=True
+                    )
+                    self._stored.enable_ubuntu_installer_attach = True
+                except PackageError as e:
+                    logger.error(
+                        f"Failed to install ubuntu installer attach with error: {e}"
+                    )
+                    raise e
         elif currently_enabled and not enable:
             self.unit.status = MaintenanceStatus(
-                "Removing `landscape-ubuntu-installer-attach`"
+                "Disabling `landscape-ubuntu-installer-attach`"
             )
-            try:
-                apt.remove_package(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+            if self._install_source_is_snap:
+                try:
+                    snap.SnapCache()[LANDSCAPE_SNAP].stop(
+                        ["ubuntu-installer-attach-messenger"], disable=True
+                    )
+                except snap.SnapError as e:
+                    logger.error(
+                        "Failed to stop ubuntu-installer-attach-messenger: %s", e
+                    )
+                    raise e
                 self._stored.enable_ubuntu_installer_attach = False
-            except PackageError as e:
-                logger.error(
-                    f"Failed to remove ubuntu installer attach with error: {e}"
-                )
-                raise e
+            else:
+                try:
+                    apt.remove_package(LANDSCAPE_UBUNTU_INSTALLER_ATTACH)
+                    self._stored.enable_ubuntu_installer_attach = False
+                except PackageError as e:
+                    logger.error(
+                        f"Failed to remove ubuntu installer attach with error: {e}"
+                    )
+                    raise e
         self.unit.status = WaitingStatus("Waiting on relations")
 
 

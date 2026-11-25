@@ -170,9 +170,11 @@ class LandscapeCharmConfiguration(BaseModel):
     package_upload_base_port: int
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
+    landscape_snap_channel: str
     outbox_snap_channel: str
     demo_data: bool = False
     bootstrap_schema_override_args: str | None = None
+    landscape_install_source: str
 
     @property
     def bootstrap_schema_override_args_list(self) -> list[str]:
@@ -327,6 +329,27 @@ class LandscapeCharmConfiguration(BaseModel):
                 f"the following ports: {', '.join(map(str, overused_ports))}"
             )
 
+        return self
+
+    @field_validator("landscape_install_source")
+    @classmethod
+    def validate_install_source(cls, v):
+        if v not in ("deb", "snap"):
+            raise ValueError(
+                f"landscape_install_source must be 'deb' or 'snap', got {v!r}."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def snap_only_standalone(self):
+        if (
+            self.landscape_install_source == "snap"
+            and self.deployment_mode != "standalone"
+        ):
+            raise ValueError(
+                "landscape_install_source='snap' is only supported with "
+                f"deployment_mode='standalone', got {self.deployment_mode!r}."
+            )
         return self
 
     @model_validator(mode="after")
