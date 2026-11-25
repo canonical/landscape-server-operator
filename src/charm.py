@@ -1173,13 +1173,14 @@ class LandscapeServerCharm(CharmBase):
             snap.SnapCache()[LANDSCAPE_SNAP].stop()
         except snap.SnapError as e:
             logger.warning("Failed to stop snap during migration rollback: %s", e)
-        try:
-            check_call([LSCTL, "start"], env=get_modified_env_vars())
-            self._stored.running = running
-        except CalledProcessError as e:
-            logger.error(
-                "Failed to restart deb services after migration failure: %s", e
-            )
+        if running:
+            try:
+                check_call([LSCTL, "start"], env=get_modified_env_vars())
+            except CalledProcessError as e:
+                logger.error(
+                    "Failed to restart deb services after migration failure: %s", e
+                )
+        self._stored.running = running
 
     def _disable_deb_cron_jobs(self) -> None:
         """Disable deb cron files while preserving them for rollback."""
@@ -1497,7 +1498,9 @@ class LandscapeServerCharm(CharmBase):
 
         if self.unit.is_leader():
             enabled.append("package-search")
-            enabled.extend(SNAP_TIMER_SERVICES)
+            enabled.extend(
+                service for service in SNAP_TIMER_SERVICES if service in available
+            )
             if "package-upload" in available:
                 enabled.append("package-upload")
             else:

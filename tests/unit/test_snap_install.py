@@ -255,6 +255,7 @@ def test_start_snap_services_enables_core_leader_and_optional_daemons(snap_charm
     )
     charm._stored.enable_ubuntu_installer_attach = True
     landscape_snap = MagicMock()
+    landscape_snap.services = {service: {} for service in SNAP_TIMER_SERVICES}
 
     with patch("charm.snap.SnapCache", return_value={LANDSCAPE_SNAP: landscape_snap}):
         charm._start_snap_services()
@@ -269,6 +270,22 @@ def test_start_snap_services_enables_core_leader_and_optional_daemons(snap_charm
     }
     assert landscape_snap.start.call_args.kwargs == {"enable": True}
     landscape_snap.stop.assert_not_called()
+
+
+def test_start_snap_services_skips_unavailable_optional_timer(snap_charm):
+    charm = snap_charm
+    charm.unit.is_leader = Mock(return_value=True)
+    landscape_snap = MagicMock()
+    landscape_snap.services = {
+        service: {} for service in SNAP_TIMER_SERVICES if service != "hash-id-databases"
+    }
+
+    with patch("charm.snap.SnapCache", return_value={LANDSCAPE_SNAP: landscape_snap}):
+        charm._start_snap_services()
+
+    started = set(landscape_snap.start.call_args.args[0])
+    assert "hash-id-databases" not in started
+    assert set(SNAP_TIMER_SERVICES) - {"hash-id-databases"} <= started
 
 
 def test_start_snap_services_disables_leader_services_on_follower(snap_charm):
@@ -483,9 +500,10 @@ def test_deb_to_snap_migration_copies_state_and_marks_success(deb_charm):
     assert not charm._stored.running
 
 
-def test_failed_deb_to_snap_migration_restores_deb(deb_charm):
+@pytest.mark.parametrize("was_running", [True, False])
+def test_failed_deb_to_snap_migration_restores_deb(deb_charm, was_running):
     charm = deb_charm
-    charm._stored.running = True
+    charm._stored.running = was_running
     landscape_snap = Mock()
 
     with (
@@ -502,12 +520,36 @@ def test_failed_deb_to_snap_migration_restores_deb(deb_charm):
 
     restore_config.assert_called_once_with()
     restore_cron.assert_called_once_with()
-    check_call.assert_any_call(["/usr/bin/lsctl", "start"], env=ANY)
+    if was_running:
+        check_call.assert_any_call(["/usr/bin/lsctl", "start"], env=ANY)
+    else:
+        assert all(
+            call.args[0] != ["/usr/bin/lsctl", "start"]
+            for call in check_call.call_args_list
+        )
     landscape_snap.stop.assert_called_once_with()
     assert charm._stored.install_source == "deb"
-    assert charm._stored.running
+    assert charm._stored.running is was_running
     assert isinstance(charm.unit.status, BlockedStatus)
     assert "deb services restored" in charm.unit.status.message
+
+
+def test_rollback_restores_running_state_when_service_start_fails(deb_charm):
+    charm = deb_charm
+    charm._stored.running = False
+
+    with (
+        patch.object(charm, "_restore_deb_config_backup"),
+        patch.object(charm, "_restore_deb_cron_jobs"),
+        patch("charm.snap.SnapCache", return_value={LANDSCAPE_SNAP: Mock()}),
+        patch(
+            "charm.check_call",
+            side_effect=subprocess.CalledProcessError(1, ["lsctl", "start"]),
+        ),
+    ):
+        charm._restore_deb_after_failed_migration(True)
+
+    assert charm._stored.running
 
 
 def test_snap_to_deb_change_is_blocked():
