@@ -82,6 +82,7 @@ def test_defaults():
     assert config.gpg_secret_id is None
     assert config.bootstrap_schema_override_args is None
     assert config.landscape_install_source == "deb"
+    assert config.landscape_snap_channel == "latest/edge"
 
 
 def test_install_source_must_be_deb_or_snap():

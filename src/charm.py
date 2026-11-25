@@ -1305,6 +1305,7 @@ class LandscapeServerCharm(CharmBase):
                 landscape_snap.unhold()
             landscape_snap.ensure(
                 snap.SnapState.Latest,
+                channel=self.charm_config.landscape_snap_channel,
                 revision=self._landscape_snap_revision,
             )
 
@@ -1323,6 +1324,8 @@ class LandscapeServerCharm(CharmBase):
                     "snap",
                     "install",
                     LANDSCAPE_SNAP_WITH_HASH_IDS,
+                    "--channel",
+                    self.charm_config.landscape_snap_channel,
                     "--revision",
                     self._landscape_snap_revision,
                 ]

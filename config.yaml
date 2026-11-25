@@ -521,6 +521,12 @@ options:
     default: 53354
     description: |
       Port for ubuntu-installer-attach service worker to use on each unit.
+  landscape_snap_channel:
+    type: string
+    default: latest/edge
+    description: |
+      Snap channel used when installing or refreshing landscape-server to the
+      charm's pinned revision.
   outbox_snap_channel:
     type: string
     default: latest/stable

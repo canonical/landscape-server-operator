@@ -25,6 +25,7 @@ from helpers import get_landscape_command, migrate_service_conf
 import settings_files
 
 TEST_SNAP_REVISION = "78"
+TEST_SNAP_CHANNEL = "latest/edge"
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +57,10 @@ def snap_charm():
     harness.begin()
     charm = harness.charm
     charm.charm_config = charm.charm_config.model_copy(
-        update={"landscape_install_source": "snap"}
+        update={
+            "landscape_install_source": "snap",
+            "landscape_snap_channel": TEST_SNAP_CHANNEL,
+        }
     )
     charm._stored.install_source = "snap"
     settings_files.set_active_install_source("snap")
@@ -96,7 +100,12 @@ def test_snap_service_conf_migration_failure_raises():
 
 def test_install_snap_installs_component_and_host_packages_without_ppa():
     harness = Harness(LandscapeServerCharm)
-    harness.update_config({"landscape_install_source": "snap"})
+    harness.update_config(
+        {
+            "landscape_install_source": "snap",
+            "landscape_snap_channel": TEST_SNAP_CHANNEL,
+        }
+    )
     relation_id = harness.add_relation("replicas", "landscape-server")
     harness.update_relation_data(
         relation_id, "landscape-server", {"leader-ip": "192.0.2.1"}
@@ -120,6 +129,8 @@ def test_install_snap_installs_component_and_host_packages_without_ppa():
             "snap",
             "install",
             LANDSCAPE_SNAP_WITH_HASH_IDS,
+            "--channel",
+            TEST_SNAP_CHANNEL,
             "--revision",
             TEST_SNAP_REVISION,
         ]
@@ -129,6 +140,7 @@ def test_install_snap_installs_component_and_host_packages_without_ppa():
     )
     landscape_snap.ensure.assert_called_once_with(
         mocks["snap"].SnapState.Latest,
+        channel=TEST_SNAP_CHANNEL,
         revision=TEST_SNAP_REVISION,
     )
     landscape_snap.hold.assert_called_once_with()
@@ -176,6 +188,7 @@ def test_refresh_landscape_snap_unholds_and_reholds_pinned_revision(snap_charm):
     landscape_snap.unhold.assert_called_once_with()
     landscape_snap.ensure.assert_called_once_with(
         snap_module.SnapState.Latest,
+        channel=TEST_SNAP_CHANNEL,
         revision=TEST_SNAP_REVISION,
     )
     landscape_snap.hold.assert_called_once_with()

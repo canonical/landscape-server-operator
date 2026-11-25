@@ -170,6 +170,7 @@ class LandscapeCharmConfiguration(BaseModel):
     package_upload_base_port: int
     hostagent_server_base_port: int
     ubuntu_installer_attach_base_port: int
+    landscape_snap_channel: str
     outbox_snap_channel: str
     demo_data: bool = False
     bootstrap_schema_override_args: str | None = None
