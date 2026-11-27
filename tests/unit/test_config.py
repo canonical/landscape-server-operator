@@ -28,6 +28,7 @@ def test_defaults():
     assert config.oidc_logout_url is None
 
     assert config.root_url is None
+    assert config.additional_hostnames == []
     assert config.system_email is None
     assert config.admin_email is None
     assert config.admin_name is None
@@ -422,3 +423,40 @@ def test_timeouts_are_grouped_per_service():
         "queue_timeout": 60,
         "server_timeout": 9,
     }
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", []),
+        (None, []),
+        (" , ,", []),
+        ("landscape.example.com", ["landscape.example.com"]),
+        (
+            " *.saas.example.com , alt.example.com,, ",
+            ["*.saas.example.com", "alt.example.com"],
+        ),
+    ],
+)
+def test_additional_hostnames_parsed(value, expected):
+    defaults = get_config_defaults()
+    defaults["additional_hostnames"] = value
+    config = LandscapeCharmConfiguration(**defaults)
+    assert config.additional_hostnames == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not a hostname",
+        "*.com",
+        "foo.*.example.com",
+        "https://landscape.example.com",
+        "landscape.example.com,bad_host!",
+    ],
+)
+def test_additional_hostnames_invalid(value):
+    defaults = get_config_defaults()
+    defaults["additional_hostnames"] = value
+    with pytest.raises(ValidationError, match="additional_hostnames entry"):
+        LandscapeCharmConfiguration(**defaults)
